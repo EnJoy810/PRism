@@ -1,6 +1,9 @@
 import json
-import anthropic
+from openai import AsyncOpenAI
 from app.models.review import ReviewIssue, ReviewResult, Severity
+
+MODEL = "deepseek-v4-pro"
+BASE_URL = "https://api.deepseek.com/v1"
 
 SYSTEM_PROMPT = """You are a senior software engineer conducting a thorough code review.
 Your goal is to identify real issues, not style nitpicks.
@@ -45,9 +48,13 @@ Analyze this PR and return a JSON response with this exact structure:
 Return only valid JSON, no markdown fences."""
 
 
+def _make_client() -> AsyncOpenAI:
+    import os
+    return AsyncOpenAI(api_key=os.environ["DEEPSEEK_API_KEY"], base_url=BASE_URL)
+
+
 async def analyze_pr(pr_context: dict, include_style: bool = False) -> ReviewResult:
-    """Send PR context to Claude and parse structured review."""
-    client = anthropic.AsyncAnthropic()
+    client = _make_client()
 
     prompt = REVIEW_PROMPT_TEMPLATE.format(
         title=pr_context["title"],
@@ -58,14 +65,18 @@ async def analyze_pr(pr_context: dict, include_style: bool = False) -> ReviewRes
         diff=pr_context["diff"][:80000],
     )
 
-    message = await client.messages.create(
-        model="claude-opus-4-5",
+    response = await client.chat.completions.create(
+        model=MODEL,
         max_tokens=4096,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": prompt}],
+        temperature=1.0,
+        top_p=1.0,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
     )
 
-    raw = message.content[0].text if message.content else "{}"
+    raw = response.choices[0].message.content or "{}"
     data = json.loads(raw)
 
     issues = [ReviewIssue(**issue) for issue in data.get("issues", [])]

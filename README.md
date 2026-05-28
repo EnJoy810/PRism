@@ -6,7 +6,7 @@
   <p>
     <img src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react" />
     <img src="https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square&logo=fastapi" />
-    <img src="https://img.shields.io/badge/Claude-Opus_4.5-D97757?style=flat-square" />
+    <img src="https://img.shields.io/badge/DeepSeek-V4_Pro-4A90D9?style=flat-square" />
     <img src="https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript" />
     <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" />
   </p>
@@ -157,7 +157,7 @@ pnpm dev
 
 **后端**
 - FastAPI 0.115 + Python 3.12
-- Anthropic SDK（Claude Opus 4.5）
+- OpenAI SDK（DeepSeek V4 Pro，OpenAI 兼容接口）
 - httpx 异步调用 GitHub API
 - Pydantic v2 数据校验
 
@@ -165,9 +165,9 @@ pnpm dev
 
 ## 🧠 设计决策
 
-### 为什么选择 Claude Opus 4.5？
+### 为什么选择 DeepSeek V4 Pro？
 
-Claude Opus 4.5 拥有 200k token 上下文窗口，在真实代码审查任务上优于 GPT-4o — 更擅长解释细微 bug、处理多文件重构。超大上下文窗口意味着即便面对大型 PR 也几乎无需截断。
+DeepSeek V4 Pro 拥有 1M token 上下文窗口，1.6T 参数（49B 激活），在代码理解和多文件重构任务上表现出色。使用 OpenAI 兼容接口，迁移成本极低，同时价格远低于同级别闭源模型。
 
 ### 为什么用确定性门控而不是让 LLM 判断严重程度？
 
