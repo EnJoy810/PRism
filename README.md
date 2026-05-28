@@ -183,6 +183,31 @@ LLM 自行分配严重级别不可靠 — 模型倾向于过度上报警告。PR
 
 ---
 
+## 🎬 Demo 视频
+
+> 视频链接（待上传 Bilibili）：`TODO`
+
+视频覆盖以下核心模块：
+- 输入 GitHub PR URL，获取 Review 结果
+- 流式输出实时渲染效果
+- 严重程度分级展示（ERROR / WARNING / INFO）
+- 风险评估总览
+
+---
+
+## 📦 第三方依赖说明
+
+| 依赖 | 用途 | 原创功能 |
+|------|------|---------|
+| `openai` SDK | 调用 DeepSeek V4 Pro OpenAI 兼容接口 | Severity Gating、ReAct 提示词设计 |
+| `httpx` | 异步调用 GitHub REST API | PR 上下文多层级获取策略 |
+| `fastapi` | HTTP 服务框架 | SSE 流式输出端点 |
+| `@tanstack/react-query` | 服务端状态管理 | — |
+| `antd` | UI 组件库 | Review 结果可视化卡片 |
+| `zustand` | 前端 UI 状态 | — |
+
+---
+
 ## 📍 后续规划
 
 - [ ] 通过 GitHub GraphQL 获取调用链上下文（Level 3）
