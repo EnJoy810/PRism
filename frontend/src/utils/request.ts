@@ -8,14 +8,12 @@ export interface ApiResponse<T> {
 
 const request = axios.create({
   baseURL: '/api',
-  timeout: 60000,
+  timeout: 120000,
 })
 
 request.interceptors.response.use(
   (response) => response,
-  (error) => {
-    return Promise.reject(error)
-  },
+  (error) => Promise.reject(error),
 )
 
 export default request
