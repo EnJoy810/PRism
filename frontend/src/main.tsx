@@ -21,12 +21,21 @@ const theme = {
   },
 }
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <ConfigProvider theme={theme}>
-        <App />
-      </ConfigProvider>
-    </QueryClientProvider>
-  </React.StrictMode>,
-)
+async function bootstrap() {
+  if (import.meta.env.DEV) {
+    const { worker } = await import('./mocks/browser')
+    await worker.start({ onUnhandledRequest: 'bypass' })
+  }
+
+  ReactDOM.createRoot(document.getElementById('root')!).render(
+    <React.StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider theme={theme}>
+          <App />
+        </ConfigProvider>
+      </QueryClientProvider>
+    </React.StrictMode>,
+  )
+}
+
+bootstrap()
