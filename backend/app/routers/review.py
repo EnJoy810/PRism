@@ -44,6 +44,9 @@ async def create_review_stream(request: ReviewRequest):
         raise HTTPException(status_code=502, detail=f"GitHub API error: {str(e)}")
 
     async def event_stream():
+        diff_lines = pr_context["diff"].split("\n")[:80]
+        yield f"data: {json.dumps({'type': 'diff', 'lines': diff_lines, 'title': pr_context['title']})}\n\n"
+
         async for delta in stream_analyze_pr(pr_context):
             yield f"data: {json.dumps({'delta': delta})}\n\n"
         yield "data: [DONE]\n\n"

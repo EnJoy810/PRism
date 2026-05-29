@@ -12,6 +12,8 @@ interface UseReviewStreamReturn {
   isStreaming: boolean
   isPending: boolean
   error: string | null
+  diffLines: string[]
+  diffTitle: string
   startStream: (prUrl: string, githubToken?: string, options?: StreamOptions) => void
   reset: () => void
 }
@@ -22,6 +24,8 @@ export function useReviewStream(): UseReviewStreamReturn {
   const [isStreaming, setIsStreaming] = useState(false)
   const [isPending, setIsPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [diffLines, setDiffLines] = useState<string[]>([])
+  const [diffTitle, setDiffTitle] = useState('')
   const abortRef = useRef<AbortController | null>(null)
 
   const reset = useCallback(() => {
@@ -31,6 +35,8 @@ export function useReviewStream(): UseReviewStreamReturn {
     setIsStreaming(false)
     setIsPending(false)
     setError(null)
+    setDiffLines([])
+    setDiffTitle('')
   }, [])
 
   const startStream = useCallback(async (prUrl: string, githubToken?: string, options?: StreamOptions) => {
@@ -102,6 +108,12 @@ export function useReviewStream(): UseReviewStreamReturn {
 
           try {
             const parsed = JSON.parse(payload)
+            if (parsed.type === 'diff' && Array.isArray(parsed.lines)) {
+              setDiffLines(parsed.lines)
+              setDiffTitle(parsed.title ?? '')
+              setIsPending(false)
+              continue
+            }
             if (typeof parsed.delta === 'string') {
               accumulated += parsed.delta
               setStreamText(accumulated)
@@ -109,6 +121,7 @@ export function useReviewStream(): UseReviewStreamReturn {
                 hasFirstChunk = true
                 setIsPending(false)
                 setIsStreaming(true)
+                setDiffLines([])
               }
             }
           } catch {
@@ -125,5 +138,5 @@ export function useReviewStream(): UseReviewStreamReturn {
     }
   }, [reset])
 
-  return { streamText, result, isStreaming, isPending, error, startStream, reset }
+  return { streamText, result, isStreaming, isPending, error, diffLines, diffTitle, startStream, reset }
 }
