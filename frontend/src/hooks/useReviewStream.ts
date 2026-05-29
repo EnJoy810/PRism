@@ -1,13 +1,18 @@
 import { useState, useRef, useCallback } from 'react'
 import type { ReviewResult } from '../types/review'
 
+interface StreamOptions {
+  includeStyle?: boolean
+  contextLines?: number
+}
+
 interface UseReviewStreamReturn {
   streamText: string
   result: ReviewResult | null
   isStreaming: boolean
   isPending: boolean
   error: string | null
-  startStream: (prUrl: string, githubToken?: string) => void
+  startStream: (prUrl: string, githubToken?: string, options?: StreamOptions) => void
   reset: () => void
 }
 
@@ -28,18 +33,27 @@ export function useReviewStream(): UseReviewStreamReturn {
     setError(null)
   }, [])
 
-  const startStream = useCallback(async (prUrl: string, githubToken?: string) => {
+  const startStream = useCallback(async (prUrl: string, githubToken?: string, options?: StreamOptions) => {
     reset()
     setIsPending(true)
 
     const controller = new AbortController()
     abortRef.current = controller
 
+    const body = {
+      pr_url: prUrl,
+      github_token: githubToken,
+      options: {
+        include_style: options?.includeStyle ?? false,
+        context_lines: options?.contextLines ?? 3,
+      },
+    }
+
     try {
       const response = await fetch('/api/review/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pr_url: prUrl, github_token: githubToken }),
+        body: JSON.stringify(body),
         signal: controller.signal,
       })
 
