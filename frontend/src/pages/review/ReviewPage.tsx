@@ -35,15 +35,17 @@ export default function ReviewPage() {
           </div>
         )}
 
-        {/* Connecting state / Diff Scanner */}
-        {isPending && !isStreaming && diffLines.length > 0 && (
-          <DiffScannerPanel lines={diffLines} title={diffTitle} active />
-        )}
+        {/* Connecting state — spinner before diff arrives */}
         {isPending && !isStreaming && diffLines.length === 0 && (
           <div className="flex flex-col items-center mt-16">
             <Spin size="large" />
             <p className="text-gray-500 mt-4">正在获取 PR 数据并分析...</p>
           </div>
+        )}
+
+        {/* Diff Scanner Panel — shows during LLM analysis */}
+        {diffLines.length > 0 && !isStreaming && !result && (
+          <DiffScannerPanel lines={diffLines} title={diffTitle} active />
         )}
 
         {/* Streaming state */}

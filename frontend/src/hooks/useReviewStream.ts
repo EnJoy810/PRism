@@ -121,7 +121,6 @@ export function useReviewStream(): UseReviewStreamReturn {
                 hasFirstChunk = true
                 setIsPending(false)
                 setIsStreaming(true)
-                setDiffLines([])
               }
             }
           } catch {
