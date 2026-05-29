@@ -13,7 +13,7 @@ export default function ReviewPage() {
   const { options } = useReviewOptions()
 
   return (
-    <div className="min-h-screen bg-neutral-bg flex flex-col items-center p-8">
+    <div className="min-h-screen bg-neutral-bg flex flex-col items-center p-4 sm:p-8">
       <div className="flex flex-col items-center w-full max-w-2xl">
         <ReviewForm
           onSubmit={(prUrl, githubToken) => startStream(prUrl, githubToken, options)}

@@ -21,16 +21,14 @@ export default function IssueCard({ issue }: IssueCardProps) {
       styles={{ body: { padding: '12px 16px' } }}
       style={{ borderLeft: `4px solid ${cfg.color}`, background: '#1e293b', borderColor: '#334155' }}
     >
-      <div className="flex items-start gap-3">
-        <Tag color={cfg.color} className="shrink-0 mt-0.5">
-          {cfg.label}
-        </Tag>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-2 mb-1">
-            <Text strong className="text-gray-100">
+      <div className="flex flex-col sm:flex-row items-start gap-2 sm:gap-3">
+        <Tag color={cfg.color} className="shrink-0">{cfg.label}</Tag>
+        <div className="min-w-0 flex-1 w-full">
+          <div className="flex flex-col sm:flex-row sm:items-baseline gap-1 sm:gap-2 mb-1">
+            <Text strong className="text-gray-100 break-words">
               {issue.title}
             </Text>
-            <Text className="text-gray-500 text-sm">
+            <Text className="text-gray-500 text-sm truncate">
               {issue.file}{issue.line != null ? `:${issue.line}` : ''}
             </Text>
           </div>
@@ -38,9 +36,8 @@ export default function IssueCard({ issue }: IssueCardProps) {
             {issue.description}
           </Paragraph>
           {issue.suggestion && (
-            <div className="bg-gray-800 rounded p-2">
-              <Text className="text-gray-300 text-sm">
-                <span className="text-brand-primary mr-1">💡</span>
+            <div className="bg-gray-800 rounded p-2 break-words">
+              <Text className="text-gray-300 text-sm italic">
                 {issue.suggestion}
               </Text>
             </div>
