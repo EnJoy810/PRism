@@ -85,8 +85,12 @@ export function useReviewStream(): UseReviewStreamReturn {
 
           const payload = trimmed.slice(6)
           if (payload === '[DONE]') {
+            const cleaned = accumulated
+              .replace(/```json\s*/g, '')
+              .replace(/```\s*/g, '')
+              .trim()
             try {
-              const parsed = JSON.parse(accumulated)
+              const parsed = JSON.parse(cleaned)
               setResult(parsed)
             } catch {
               setResult(null)

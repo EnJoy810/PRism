@@ -1,4 +1,6 @@
 import json
+import os
+import re
 from openai import AsyncOpenAI
 from app.models.review import ReviewIssue, ReviewResult, Severity
 
@@ -49,14 +51,19 @@ Return only valid JSON, no markdown fences."""
 
 
 def _make_client() -> AsyncOpenAI:
-    import os
     return AsyncOpenAI(api_key=os.environ["DEEPSEEK_API_KEY"], base_url=BASE_URL)
 
 
-async def analyze_pr(pr_context: dict, include_style: bool = False) -> ReviewResult:
-    client = _make_client()
+def _extract_json(text: str) -> str:
+    text = text.strip()
+    fence_m = re.search(r'```(?:json)?\s*([\s\S]*?)```', text)
+    if fence_m:
+        return fence_m.group(1).strip()
+    return text
 
-    prompt = REVIEW_PROMPT_TEMPLATE.format(
+
+def _build_prompt(pr_context: dict) -> str:
+    return REVIEW_PROMPT_TEMPLATE.format(
         title=pr_context["title"],
         description=pr_context["description"][:500],
         base_branch=pr_context["base_branch"],
@@ -64,6 +71,11 @@ async def analyze_pr(pr_context: dict, include_style: bool = False) -> ReviewRes
         files=", ".join(pr_context["files"][:20]),
         diff=pr_context["diff"][:80000],
     )
+
+
+async def analyze_pr(pr_context: dict, include_style: bool = False) -> ReviewResult:
+    client = _make_client()
+    prompt = _build_prompt(pr_context)
 
     response = await client.chat.completions.create(
         model=MODEL,
@@ -76,12 +88,11 @@ async def analyze_pr(pr_context: dict, include_style: bool = False) -> ReviewRes
         ],
     )
 
-    raw = response.choices[0].message.content or "{}"
+    raw = _extract_json(response.choices[0].message.content or "{}")
     data = json.loads(raw)
 
     issues = [ReviewIssue(**issue) for issue in data.get("issues", [])]
 
-    # Severity gating: filter INFO unless include_style
     if not include_style:
         issues = [i for i in issues if i.severity != Severity.INFO]
 
@@ -99,3 +110,25 @@ async def analyze_pr(pr_context: dict, include_style: bool = False) -> ReviewRes
         issues=issues,
         stats=stats,
     )
+
+
+async def stream_analyze_pr(pr_context: dict):
+    client = _make_client()
+    prompt = _build_prompt(pr_context)
+
+    stream = await client.chat.completions.create(
+        model=MODEL,
+        max_tokens=4096,
+        temperature=1.0,
+        top_p=1.0,
+        stream=True,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
+    )
+
+    async for chunk in stream:
+        delta = chunk.choices[0].delta.content or ""
+        if delta:
+            yield delta
