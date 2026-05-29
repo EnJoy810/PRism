@@ -4,7 +4,7 @@ import json
 
 from app.models.review import ReviewRequest
 from app.services.github import fetch_pr_context, parse_pr_url
-from app.services.llm import analyze_pr, stream_analyze_pr
+from app.services.llm import analyze_pr, generate_cursor_path, stream_analyze_pr
 
 router = APIRouter()
 
@@ -46,6 +46,12 @@ async def create_review_stream(request: ReviewRequest):
     async def event_stream():
         diff_lines = pr_context["diff"].split("\n")[:80]
         yield f"data: {json.dumps({'type': 'diff', 'lines': diff_lines, 'title': pr_context['title']})}\n\n"
+
+        try:
+            path = await generate_cursor_path(diff_lines)
+        except Exception:
+            path = list(range(1, min(len(diff_lines) + 1, 16)))
+        yield f"data: {json.dumps({'type': 'cursor_path', 'cursor_path': path})}\n\n"
 
         async for delta in stream_analyze_pr(pr_context):
             yield f"data: {json.dumps({'delta': delta})}\n\n"

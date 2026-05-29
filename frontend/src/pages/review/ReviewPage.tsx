@@ -10,7 +10,7 @@ import { GithubOutlined } from '@ant-design/icons'
 const { Text } = Typography
 
 export default function ReviewPage() {
-  const { streamText, result, isStreaming, isPending, error, diffLines, diffTitle, startStream, reset } = useReviewStream()
+  const { streamText, result, isStreaming, isPending, error, diffLines, diffTitle, cursorPath, startStream, reset } = useReviewStream()
   const { options } = useReviewOptions()
 
   return (
@@ -43,9 +43,9 @@ export default function ReviewPage() {
           </div>
         )}
 
-        {/* Diff Scanner Panel — shows during LLM analysis */}
-        {diffLines.length > 0 && !isStreaming && !result && (
-          <DiffScannerPanel lines={diffLines} title={diffTitle} active />
+        {/* Diff Scanner Panel — shows from diff arrival until result is ready */}
+        {diffLines.length > 0 && !result && (
+          <DiffScannerPanel lines={diffLines} title={diffTitle} cursorPath={cursorPath} active />
         )}
 
         {/* Streaming state */}

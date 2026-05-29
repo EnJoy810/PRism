@@ -13,20 +13,14 @@ function classifyLine(line: string): LineKind {
 interface DiffScannerPanelProps {
   lines: string[]
   title: string
+  cursorPath: number[]
   active: boolean
 }
 
 const LINE_HEIGHT = 20
 const LINE_NUM_WIDTH = 44
 const CHAR_WIDTH = 7.5
-const SCAN_INTERVAL_MS = 110
-const BACKTRACK_PROBABILITY = 0.05
-
-function getCursorX(line: string): number {
-  const content = line.slice(1)
-  const targetChar = Math.min(content.trimEnd().length, 60)
-  return LINE_NUM_WIDTH + 12 + targetChar * CHAR_WIDTH
-}
+const SCAN_INTERVAL_MS = 120
 
 const lineColors: Record<LineKind, { bg: string; color: string }> = {
   add: { bg: 'rgba(40, 120, 40, 0.25)', color: '#b5cea8' },
@@ -35,14 +29,18 @@ const lineColors: Record<LineKind, { bg: string; color: string }> = {
   ctx: { bg: 'transparent', color: '#d4d4d4' },
 }
 
-export default function DiffScannerPanel({ lines, title, active }: DiffScannerPanelProps) {
-  const [currentLine, setCurrentLine] = useState(0)
+function getCursorX(line: string): number {
+  const content = line.slice(1)
+  const targetChar = Math.min(content.trimEnd().length, 60)
+  return LINE_NUM_WIDTH + 12 + targetChar * CHAR_WIDTH
+}
+
+export default function DiffScannerPanel({ lines, title, cursorPath, active }: DiffScannerPanelProps) {
+  const [pathIndex, setPathIndex] = useState(0)
   const [visible, setVisible] = useState(false)
-  const linesRef = useRef(lines)
+  const [done, setDone] = useState(false)
   const lineRefs = useRef<(HTMLDivElement | null)[]>([])
   const skipRef = useRef(false)
-
-  linesRef.current = lines
 
   useEffect(() => {
     if (active) {
@@ -53,15 +51,23 @@ export default function DiffScannerPanel({ lines, title, active }: DiffScannerPa
     }
   }, [active])
 
+  const path = cursorPath.length > 0 ? cursorPath : lines.map((_, i) => i + 1)
+
   useEffect(() => {
     if (!active || lines.length === 0) return
 
-    setCurrentLine(0)
+    setPathIndex(0)
+    setDone(false)
     skipRef.current = false
 
     const interval = setInterval(() => {
-      setCurrentLine((prev) => {
-        const line = linesRef.current[prev] ?? ''
+      setPathIndex((prev) => {
+        if (prev >= path.length - 1) {
+          setDone(true)
+          return prev
+        }
+        const lineIdx = path[prev] - 1
+        const line = lines[lineIdx] ?? ''
         const kind = classifyLine(line)
 
         if ((kind === 'add' || kind === 'del') && !skipRef.current) {
@@ -70,27 +76,26 @@ export default function DiffScannerPanel({ lines, title, active }: DiffScannerPa
         }
         skipRef.current = false
 
-        if (Math.random() < BACKTRACK_PROBABILITY && prev > 0) {
-          return prev - 1
-        }
-
-        return (prev + 1) % linesRef.current.length
+        return prev + 1
       })
     }, SCAN_INTERVAL_MS)
 
     return () => clearInterval(interval)
-  }, [active, lines.length])
+  }, [active, lines.length, path])
 
   useEffect(() => {
-    const el = lineRefs.current[currentLine]
+    const lineIdx = path[pathIndex]
+    if (!lineIdx) return
+    const el = lineRefs.current[lineIdx - 1]
     if (!el) return
     el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-  }, [currentLine])
+  }, [pathIndex, path])
 
   if (!visible) return null
 
-  const cursorTop = currentLine * LINE_HEIGHT + 6
-  const cursorLeft = getCursorX(lines[currentLine] ?? '')
+  const lineIdx = path[pathIndex] ?? 1
+  const cursorTop = (lineIdx - 1) * LINE_HEIGHT + 6
+  const cursorLeft = getCursorX(lines[lineIdx - 1] ?? '')
 
   return (
     <div
@@ -121,8 +126,22 @@ export default function DiffScannerPanel({ lines, title, active }: DiffScannerPa
         className="flex items-center gap-1.5 px-3 text-xs select-none"
         style={{ height: 24, background: '#007acc', color: '#fff' }}
       >
-        <span className="animate-pulse font-bold">▌</span>
-        <span>AI Agent · Reading diff...</span>
+        {done ? (
+          <>
+            <span className="font-bold">✓</span>
+            <span>AI Agent · Diff scan complete</span>
+          </>
+        ) : cursorPath.length > 0 ? (
+          <>
+            <span className="animate-pulse font-bold">▌</span>
+            <span>AI Agent · Reading diff ({pathIndex + 1}/{path.length})</span>
+          </>
+        ) : (
+          <>
+            <span className="animate-pulse font-bold">▌</span>
+            <span>AI Agent · Reading diff...</span>
+          </>
+        )}
       </div>
 
       {/* Code area */}
@@ -164,7 +183,7 @@ export default function DiffScannerPanel({ lines, title, active }: DiffScannerPa
         {lines.map((line, i) => {
           const kind = classifyLine(line)
           const colors = lineColors[kind]
-          const isCurrent = i === currentLine
+          const isCurrent = i === lineIdx - 1
 
           return (
             <div

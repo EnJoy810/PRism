@@ -112,6 +112,54 @@ async def analyze_pr(pr_context: dict, include_style: bool = False) -> ReviewRes
     )
 
 
+CURSOR_PATH_SYSTEM_PROMPT = """You are analyzing a code diff for a reviewer.
+List the line numbers (1-indexed) that contain actual code changes.
+Focus on +/- lines. Prioritize logic changes over imports/boilerplate.
+Return a JSON array of integers, e.g. [5, 23, 8, 41]."""
+
+
+def _fallback_cursor_path(diff_lines: list[str]) -> list[int]:
+    add_del: list[int] = []
+    other: list[int] = []
+    for i, l in enumerate(diff_lines):
+        stripped = l.lstrip()
+        if stripped.startswith('--- ') or stripped.startswith('+++ ') or stripped.startswith('@@'):
+            other.append(i + 1)
+        elif l.startswith('+') or l.startswith('-'):
+            add_del.append(i + 1)
+        else:
+            other.append(i + 1)
+    return (add_del + other)[:15]
+
+
+async def generate_cursor_path(diff_lines: list[str]) -> list[int]:
+    client = _make_client()
+    numbered = "\n".join(f"{i+1}: {line}" for i, line in enumerate(diff_lines))
+    prompt = f"Diff lines:\n{numbered}\n\nReturn only a JSON array of the most interesting line numbers in reading order."
+
+    try:
+        response = await client.chat.completions.create(
+            model=MODEL,
+            max_tokens=150,
+            temperature=0.3,
+            messages=[
+                {"role": "system", "content": CURSOR_PATH_SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+        )
+
+        raw = _extract_json(response.choices[0].message.content or "[]")
+        path = json.loads(raw)
+        if isinstance(path, list) and len(path) > 0 and all(isinstance(i, int) for i in path):
+            valid = [i for i in path if 1 <= i <= len(diff_lines)]
+            if valid:
+                return valid[:15]
+    except Exception:
+        pass
+
+    return _fallback_cursor_path(diff_lines)
+
+
 async def stream_analyze_pr(pr_context: dict):
     client = _make_client()
     prompt = _build_prompt(pr_context)

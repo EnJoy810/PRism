@@ -14,6 +14,7 @@ interface UseReviewStreamReturn {
   error: string | null
   diffLines: string[]
   diffTitle: string
+  cursorPath: number[]
   startStream: (prUrl: string, githubToken?: string, options?: StreamOptions) => void
   reset: () => void
 }
@@ -26,6 +27,7 @@ export function useReviewStream(): UseReviewStreamReturn {
   const [error, setError] = useState<string | null>(null)
   const [diffLines, setDiffLines] = useState<string[]>([])
   const [diffTitle, setDiffTitle] = useState('')
+  const [cursorPath, setCursorPath] = useState<number[]>([])
   const abortRef = useRef<AbortController | null>(null)
 
   const reset = useCallback(() => {
@@ -37,6 +39,7 @@ export function useReviewStream(): UseReviewStreamReturn {
     setError(null)
     setDiffLines([])
     setDiffTitle('')
+    setCursorPath([])
   }, [])
 
   const startStream = useCallback(async (prUrl: string, githubToken?: string, options?: StreamOptions) => {
@@ -130,6 +133,10 @@ export function useReviewStream(): UseReviewStreamReturn {
               setIsPending(false)
               continue
             }
+            if (parsed.type === 'cursor_path' && Array.isArray(parsed.cursor_path)) {
+              setCursorPath(parsed.cursor_path)
+              continue
+            }
             if (typeof parsed.delta === 'string') {
               accumulated += parsed.delta
               setStreamText(accumulated)
@@ -153,5 +160,5 @@ export function useReviewStream(): UseReviewStreamReturn {
     }
   }, [reset])
 
-  return { streamText, result, isStreaming, isPending, error, diffLines, diffTitle, startStream, reset }
+  return { streamText, result, isStreaming, isPending, error, diffLines, diffTitle, cursorPath, startStream, reset }
 }
