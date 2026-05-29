@@ -1,11 +1,18 @@
-import { Collapse, Switch, Slider, Typography } from 'antd'
-import { SettingOutlined } from '@ant-design/icons'
-import { useReviewOptions } from '../../stores/reviewOptions'
+import { Collapse, Segmented, Switch, Slider, Typography } from 'antd'
+import { SettingOutlined, SafetyCertificateOutlined, ThunderboltOutlined, CodeOutlined, EyeOutlined } from '@ant-design/icons'
+import { useReviewOptions, PERSPECTIVE_LABELS, type Perspective } from '../../stores/reviewOptions'
 
 const { Text } = Typography
 
+const PERSPECTIVE_ICONS: Record<Perspective, React.ReactNode> = {
+  default: <EyeOutlined />,
+  security: <SafetyCertificateOutlined />,
+  performance: <ThunderboltOutlined />,
+  maintainability: <CodeOutlined />,
+}
+
 export default function ReviewOptions() {
-  const { options, setIncludeStyle, setContextLines } = useReviewOptions()
+  const { options, setIncludeStyle, setContextLines, setPerspective } = useReviewOptions()
 
   return (
     <Collapse
@@ -23,6 +30,23 @@ export default function ReviewOptions() {
           ),
           children: (
             <div className="space-y-4 px-1">
+              <div>
+                <Text className="text-gray-300 text-sm block mb-2">审查视角</Text>
+                <Segmented
+                  value={options.perspective}
+                  onChange={(v) => setPerspective(v as Perspective)}
+                  options={(['default', 'security', 'performance', 'maintainability'] as Perspective[]).map((p) => ({
+                    value: p,
+                    label: (
+                      <span className="flex items-center gap-1.5 text-xs">
+                        {PERSPECTIVE_ICONS[p]}
+                        {PERSPECTIVE_LABELS[p]}
+                      </span>
+                    ),
+                  }))}
+                  className="w-full"
+                />
+              </div>
               <div className="flex items-center justify-between">
                 <div>
                   <Text className="text-gray-300 text-sm block">包含风格问题（INFO）</Text>

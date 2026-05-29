@@ -1,9 +1,11 @@
 import { useState, useRef, useCallback } from 'react'
 import type { ReviewResult } from '../types/review'
+import type { Perspective } from '../stores/reviewOptions'
 
 interface StreamOptions {
   includeStyle?: boolean
   contextLines?: number
+  perspective?: Perspective
 }
 
 interface UseReviewStreamReturn {
@@ -52,6 +54,7 @@ export function useReviewStream(): UseReviewStreamReturn {
     const body = {
       pr_url: prUrl,
       github_token: githubToken,
+      perspective: options?.perspective ?? 'default',
       options: {
         include_style: options?.includeStyle ?? false,
         context_lines: options?.contextLines ?? 3,

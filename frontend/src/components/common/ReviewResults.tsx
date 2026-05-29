@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { Card, Tag, Typography, Segmented } from 'antd'
+import { Button, Card, Tag, Typography, Segmented, message } from 'antd'
+import { GithubOutlined, SendOutlined } from '@ant-design/icons'
 import type { ReviewResult, Severity } from '../../types/review'
-import IssueCard from './IssueCard'
 
 const { Text, Title } = Typography
 
@@ -13,11 +13,38 @@ const riskConfig = {
 
 interface ReviewResultsProps {
   result: ReviewResult
+  prUrl?: string
+  githubToken?: string
 }
 
-export default function ReviewResults({ result }: ReviewResultsProps) {
+export default function ReviewResults({ result, prUrl, githubToken }: ReviewResultsProps) {
   const risk = riskConfig[result.risk_level]
   const [filter, setFilter] = useState<Severity | 'ALL'>('ALL')
+  const [posting, setPosting] = useState(false)
+
+  const handlePostToGithub = async () => {
+    if (!prUrl || !githubToken) {
+      return
+    }
+    setPosting(true)
+    try {
+      const resp = await fetch('/api/review/post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pr_url: prUrl, github_token: githubToken, result: { ...result, issues: result.issues.map((i) => ({ ...i })) } }),
+      })
+      const data = await resp.json()
+      if (data.code === '0') {
+        message.success('Review 已提交到 GitHub！')
+      } else {
+        message.error(data.detail || '提交失败')
+      }
+    } catch {
+      message.error('网络错误')
+    } finally {
+      setPosting(false)
+    }
+  }
 
   const filteredIssues = filter === 'ALL'
     ? result.issues
@@ -42,9 +69,22 @@ export default function ReviewResults({ result }: ReviewResultsProps) {
           <Title level={4} className="text-gray-100 mb-0">
             Review Summary
           </Title>
-          <Tag color={risk.color} className="text-sm font-semibold px-3 py-0.5">
-            {risk.label}
-          </Tag>
+          <div className="flex items-center gap-2">
+            {prUrl && githubToken && (
+              <Button
+                size="small"
+                icon={<SendOutlined />}
+                loading={posting}
+                onClick={handlePostToGithub}
+                style={{ borderColor: '#2d8a4e', color: '#4ade80' }}
+              >
+                提交到 GitHub
+              </Button>
+            )}
+            <Tag color={risk.color} className="text-sm font-semibold px-3 py-0.5">
+              {risk.label}
+            </Tag>
+          </div>
         </div>
         <Text className="text-gray-300 block mb-5 leading-relaxed">
           {result.summary}

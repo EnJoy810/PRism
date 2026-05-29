@@ -1,9 +1,11 @@
+import { useEffect, useRef } from 'react'
 import { useReviewStream } from '../../hooks/useReviewStream'
 import ReviewForm from '../../components/common/ReviewForm'
 import ReviewResults from '../../components/common/ReviewResults'
 import ReviewOptions from '../../components/common/ReviewOptions'
 import DiffScannerPanel from '../../components/common/DiffScannerPanel'
 import { useReviewOptions } from '../../stores/reviewOptions'
+import type { Perspective } from '../../stores/reviewOptions'
 import { Alert, Button, Spin, Typography } from 'antd'
 import { GithubOutlined } from '@ant-design/icons'
 
@@ -12,12 +14,28 @@ const { Text } = Typography
 export default function ReviewPage() {
   const { streamText, result, isStreaming, isPending, error, diffLines, diffTitle, cursorPath, startStream, reset } = useReviewStream()
   const { options } = useReviewOptions()
+  const lastRef = useRef<{ prUrl: string; token?: string } | null>(null)
+  const prevPerspective = useRef<Perspective>(options.perspective)
+
+  // Re-submit when perspective changes and a PR was already submitted
+  useEffect(() => {
+    const prev = prevPerspective.current
+    prevPerspective.current = options.perspective
+    if (prev !== options.perspective && lastRef.current) {
+      startStream(lastRef.current.prUrl, lastRef.current.token, options)
+    }
+  }, [options.perspective, startStream, options])
+
+  const handleSubmit = (prUrl: string, githubToken?: string) => {
+    lastRef.current = { prUrl, token: githubToken }
+    startStream(prUrl, githubToken, options)
+  }
 
   return (
     <div className="min-h-screen bg-neutral-bg flex flex-col items-center p-4 sm:p-8">
       <div className="flex flex-col items-center w-full max-w-2xl">
         <ReviewForm
-          onSubmit={(prUrl, githubToken) => startStream(prUrl, githubToken, options)}
+          onSubmit={handleSubmit}
           loading={isPending || isStreaming}
         />
         <ReviewOptions />
@@ -75,7 +93,7 @@ export default function ReviewPage() {
         )}
 
         {/* Structured result */}
-        {result && <ReviewResults result={result} />}
+        {result && <ReviewResults result={result} prUrl={lastRef.current?.prUrl} githubToken={lastRef.current?.token} />}
 
         {/* Error state */}
         {error && (

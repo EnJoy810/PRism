@@ -35,4 +35,11 @@ class ReviewResult(BaseModel):
 class ReviewRequest(BaseModel):
     pr_url: str
     github_token: str | None = None
+    perspective: str = "default"
     options: dict | None = None
+
+
+class PostReviewRequest(BaseModel):
+    pr_url: str
+    github_token: str
+    result: dict
