@@ -97,7 +97,23 @@ export function useReviewStream(): UseReviewStreamReturn {
               .trim()
             try {
               const parsed = JSON.parse(cleaned)
-              setResult(parsed)
+              const issues = parsed.issues ?? []
+              setResult({
+                pr_url: '',
+                summary: parsed.summary ?? '',
+                risk_level: parsed.risk_level ?? 'LOW',
+                issues,
+                stats: {
+                  files_changed: 0,
+                  additions: 0,
+                  deletions: 0,
+                  issues_by_severity: {
+                    ERROR: issues.filter((i: { severity: string }) => i.severity === 'ERROR').length,
+                    WARNING: issues.filter((i: { severity: string }) => i.severity === 'WARNING').length,
+                    INFO: issues.filter((i: { severity: string }) => i.severity === 'INFO').length,
+                  },
+                },
+              } as ReviewResult)
             } catch {
               setResult(null)
             }
