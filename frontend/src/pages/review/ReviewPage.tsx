@@ -1,28 +1,24 @@
-import { useReview } from '../../hooks/useReview'
+import { useReviewStream } from '../../hooks/useReviewStream'
 import ReviewForm from '../../components/common/ReviewForm'
 import ReviewResults from '../../components/common/ReviewResults'
-import { getApiErrorMessage } from '../../utils/error'
 import { Alert, Button, Spin, Typography } from 'antd'
 import { GithubOutlined } from '@ant-design/icons'
 
 const { Text } = Typography
 
 export default function ReviewPage() {
-  const { mutate, data, isPending, error, reset } = useReview()
+  const { streamText, result, isStreaming, isPending, error, startStream, reset } = useReviewStream()
 
   return (
     <div className="min-h-screen bg-neutral-bg flex flex-col items-center p-8">
       <div className="flex flex-col items-center w-full max-w-2xl">
         <ReviewForm
-          onSubmit={(prUrl, githubToken) => {
-            reset()
-            mutate({ pr_url: prUrl, github_token: githubToken })
-          }}
-          loading={isPending}
+          onSubmit={(prUrl, githubToken) => startStream(prUrl, githubToken)}
+          loading={isPending || isStreaming}
         />
 
         {/* Empty state */}
-        {!data && !isPending && !error && (
+        {!streamText && !result && !isPending && !isStreaming && !error && (
           <div className="flex flex-col items-center mt-20 text-center">
             <GithubOutlined className="text-6xl text-gray-700 mb-6" />
             <Text className="text-gray-400 text-base max-w-md">
@@ -34,31 +30,57 @@ export default function ReviewPage() {
           </div>
         )}
 
-        {/* Loading state */}
-        {isPending && (
+        {/* Connecting state */}
+        {isPending && !isStreaming && (
           <div className="flex flex-col items-center mt-16">
             <Spin size="large" />
-            <p className="text-gray-500 mt-4">正在分析 PR，请稍候...</p>
+            <p className="text-gray-500 mt-4">正在获取 PR 数据并分析...</p>
           </div>
         )}
+
+        {/* Streaming state */}
+        {isStreaming && streamText && (
+          <div className="w-full max-w-2xl mt-8">
+            <div
+              className="rounded-lg p-4 font-mono text-sm leading-relaxed whitespace-pre-wrap"
+              style={{ background: '#1e293b', border: '1px solid #334155', color: '#e2e8f0' }}
+            >
+              {streamText}
+              <span className="animate-pulse ml-0.5" style={{ color: '#6366f1' }}>▊</span>
+            </div>
+          </div>
+        )}
+
+        {/* Streaming complete, show raw text if JSON parse failed */}
+        {!isPending && !isStreaming && streamText && !result && !error && (
+          <div className="w-full max-w-2xl mt-8">
+            <Text className="text-gray-400 text-sm block mb-2">分析完成（原始输出）：</Text>
+            <div
+              className="rounded-lg p-4 font-mono text-sm leading-relaxed whitespace-pre-wrap"
+              style={{ background: '#1e293b', border: '1px solid #334155', color: '#e2e8f0' }}
+            >
+              {streamText}
+            </div>
+          </div>
+        )}
+
+        {/* Structured result */}
+        {result && <ReviewResults result={result} />}
 
         {/* Error state */}
         {error && (
           <div className="mt-6 w-full max-w-2xl">
             <Alert
               message="Review 失败"
-              description={getApiErrorMessage(error)}
+              description={error}
               type="error"
               showIcon
               className="mb-4"
               style={{ background: '#450a0a', borderColor: '#dc2626', color: '#fca5a5' }}
             />
-            <Button onClick={() => reset()}>清除错误，重新输入</Button>
+            <Button onClick={reset}>清除错误，重新输入</Button>
           </div>
         )}
-
-        {/* Success state */}
-        {data && <ReviewResults result={data} />}
       </div>
     </div>
   )
