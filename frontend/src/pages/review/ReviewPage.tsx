@@ -2,6 +2,7 @@ import { useReviewStream } from '../../hooks/useReviewStream'
 import ReviewForm from '../../components/common/ReviewForm'
 import ReviewResults from '../../components/common/ReviewResults'
 import ReviewOptions from '../../components/common/ReviewOptions'
+import DiffScannerPanel from '../../components/common/DiffScannerPanel'
 import { useReviewOptions } from '../../stores/reviewOptions'
 import { Alert, Button, Spin, Typography } from 'antd'
 import { GithubOutlined } from '@ant-design/icons'
@@ -9,7 +10,7 @@ import { GithubOutlined } from '@ant-design/icons'
 const { Text } = Typography
 
 export default function ReviewPage() {
-  const { streamText, result, isStreaming, isPending, error, startStream, reset } = useReviewStream()
+  const { streamText, result, isStreaming, isPending, error, diffLines, diffTitle, startStream, reset } = useReviewStream()
   const { options } = useReviewOptions()
 
   return (
@@ -34,8 +35,11 @@ export default function ReviewPage() {
           </div>
         )}
 
-        {/* Connecting state */}
-        {isPending && !isStreaming && (
+        {/* Connecting state / Diff Scanner */}
+        {isPending && !isStreaming && diffLines.length > 0 && (
+          <DiffScannerPanel lines={diffLines} title={diffTitle} active />
+        )}
+        {isPending && !isStreaming && diffLines.length === 0 && (
           <div className="flex flex-col items-center mt-16">
             <Spin size="large" />
             <p className="text-gray-500 mt-4">正在获取 PR 数据并分析...</p>
