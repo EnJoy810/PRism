@@ -21,7 +21,7 @@ class ReviewStats(BaseModel):
     files_changed: int
     additions: int
     deletions: int
-    issues_by_severity: dict[Severity, int]
+    issues_by_severity: dict[str, int]
 
 
 class ReviewResult(BaseModel):

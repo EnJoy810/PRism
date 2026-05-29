@@ -1,3 +1,4 @@
+import os
 import re
 import httpx
 from app.models.review import ReviewStats
@@ -16,9 +17,10 @@ async def fetch_pr_context(
     owner: str, repo: str, pr_number: int, token: str | None = None
 ) -> dict:
     """Fetch PR diff, metadata, and related file context from GitHub."""
+    effective_token = token or os.environ.get("GITHUB_TOKEN")
     headers = {"Accept": "application/vnd.github.v3+json"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
+    if effective_token:
+        headers["Authorization"] = f"Bearer {effective_token}"
 
     async with httpx.AsyncClient() as client:
         # Fetch PR metadata
