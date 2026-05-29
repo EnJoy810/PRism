@@ -1,6 +1,8 @@
 import { useReviewStream } from '../../hooks/useReviewStream'
 import ReviewForm from '../../components/common/ReviewForm'
 import ReviewResults from '../../components/common/ReviewResults'
+import ReviewOptions from '../../components/common/ReviewOptions'
+import { useReviewOptions } from '../../stores/reviewOptions'
 import { Alert, Button, Spin, Typography } from 'antd'
 import { GithubOutlined } from '@ant-design/icons'
 
@@ -8,14 +10,16 @@ const { Text } = Typography
 
 export default function ReviewPage() {
   const { streamText, result, isStreaming, isPending, error, startStream, reset } = useReviewStream()
+  const { options } = useReviewOptions()
 
   return (
     <div className="min-h-screen bg-neutral-bg flex flex-col items-center p-8">
       <div className="flex flex-col items-center w-full max-w-2xl">
         <ReviewForm
-          onSubmit={(prUrl, githubToken) => startStream(prUrl, githubToken)}
+          onSubmit={(prUrl, githubToken) => startStream(prUrl, githubToken, options)}
           loading={isPending || isStreaming}
         />
+        <ReviewOptions />
 
         {/* Empty state */}
         {!streamText && !result && !isPending && !isStreaming && !error && (
