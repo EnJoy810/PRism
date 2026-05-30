@@ -3,9 +3,11 @@ export type Severity = 'ERROR' | 'WARNING' | 'INFO'
 export type ReviewType = 'all' | 'security' | 'performance' | 'bugs'
 
 export interface PRMeta {
+  pr_title?: string
   author_name: string
   author_avatar: string
   updated_at: string
+  created_at?: string
   commits: number
   base_branch: string
   head_branch: string
