@@ -15,6 +15,7 @@ interface DiffScannerPanelProps {
   title: string
   cursorPath: number[]
   active: boolean
+  analyzing?: boolean
 }
 
 const LINE_HEIGHT = 20
@@ -35,7 +36,7 @@ function getCursorX(line: string): number {
   return LINE_NUM_WIDTH + 12 + targetChar * CHAR_WIDTH
 }
 
-export default function DiffScannerPanel({ lines, title, cursorPath, active }: DiffScannerPanelProps) {
+export default function DiffScannerPanel({ lines, title, cursorPath, active, analyzing }: DiffScannerPanelProps) {
   const [pathIndex, setPathIndex] = useState(0)
   const [visible, setVisible] = useState(false)
   const [done, setDone] = useState(false)
@@ -127,7 +128,13 @@ export default function DiffScannerPanel({ lines, title, cursorPath, active }: D
         className="flex items-center gap-1.5 px-3 text-xs select-none"
         style={{ height: 24, background: '#007acc', color: '#fff' }}
       >
-        {done ? (
+        {done && analyzing ? (
+          <>
+            <span className="animate-pulse font-bold">▌</span>
+            <span>AI Agent · Analyzing</span>
+            <span className="animate-pulse">...</span>
+          </>
+        ) : done ? (
           <>
             <span className="font-bold">✓</span>
             <span>AI Agent · Diff scan complete</span>

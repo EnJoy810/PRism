@@ -63,7 +63,7 @@ export default function ReviewPage() {
 
         {/* Diff Scanner Panel — shows from diff arrival until result is ready */}
         {diffLines.length > 0 && !result && (
-          <DiffScannerPanel lines={diffLines} title={diffTitle} cursorPath={cursorPath} active />
+          <DiffScannerPanel lines={diffLines} title={diffTitle} cursorPath={cursorPath} active analyzing={isStreaming} />
         )}
 
         {/* Streaming state — only show raw text when no diff panel */}
