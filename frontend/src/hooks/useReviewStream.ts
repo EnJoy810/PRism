@@ -1,12 +1,5 @@
 import { useState, useRef, useCallback } from 'react'
 import type { ReviewResult } from '../types/review'
-import type { Perspective } from '../stores/reviewOptions'
-
-interface StreamOptions {
-  includeStyle?: boolean
-  contextLines?: number
-  perspective?: Perspective
-}
 
 interface UseReviewStreamReturn {
   streamText: string
@@ -17,7 +10,7 @@ interface UseReviewStreamReturn {
   diffLines: string[]
   diffTitle: string
   cursorPath: number[]
-  startStream: (prUrl: string, githubToken?: string, options?: StreamOptions) => void
+  startStream: (prUrl: string, githubToken?: string) => void
   reset: () => void
 }
 
@@ -44,7 +37,7 @@ export function useReviewStream(): UseReviewStreamReturn {
     setCursorPath([])
   }, [])
 
-  const startStream = useCallback(async (prUrl: string, githubToken?: string, options?: StreamOptions) => {
+  const startStream = useCallback(async (prUrl: string, githubToken?: string) => {
     reset()
     setIsPending(true)
 
@@ -54,11 +47,6 @@ export function useReviewStream(): UseReviewStreamReturn {
     const body = {
       pr_url: prUrl,
       github_token: githubToken,
-      perspective: options?.perspective ?? 'default',
-      options: {
-        include_style: options?.includeStyle ?? false,
-        context_lines: options?.contextLines ?? 3,
-      },
     }
 
     try {

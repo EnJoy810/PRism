@@ -1,11 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
 import { useReviewStream } from '../../hooks/useReviewStream'
 import ReviewForm from '../../components/common/ReviewForm'
 import ReviewResults from '../../components/common/ReviewResults'
-import ReviewOptions from '../../components/common/ReviewOptions'
 import DiffScannerPanel from '../../components/common/DiffScannerPanel'
-import { useReviewOptions } from '../../stores/reviewOptions'
-import type { Perspective } from '../../stores/reviewOptions'
 import { Alert, Button, Spin, Typography } from 'antd'
 import { GithubOutlined } from '@ant-design/icons'
 
@@ -13,22 +10,11 @@ const { Text } = Typography
 
 export default function ReviewPage() {
   const { streamText, result, isStreaming, isPending, error, diffLines, diffTitle, cursorPath, startStream, reset } = useReviewStream()
-  const { options } = useReviewOptions()
   const lastRef = useRef<{ prUrl: string; token?: string } | null>(null)
-  const prevPerspective = useRef<Perspective>(options.perspective)
-
-  // Re-submit when perspective changes and a PR was already submitted
-  useEffect(() => {
-    const prev = prevPerspective.current
-    prevPerspective.current = options.perspective
-    if (prev !== options.perspective && lastRef.current) {
-      startStream(lastRef.current.prUrl, lastRef.current.token, options)
-    }
-  }, [options.perspective, startStream, options])
 
   const handleSubmit = (prUrl: string, githubToken?: string) => {
     lastRef.current = { prUrl, token: githubToken }
-    startStream(prUrl, githubToken, options)
+    startStream(prUrl, githubToken)
   }
 
   return (
@@ -38,10 +24,9 @@ export default function ReviewPage() {
           onSubmit={handleSubmit}
           loading={isPending || isStreaming}
         />
-        <ReviewOptions />
 
         {/* Empty state */}
-        {!streamText && !result && !isPending && !isStreaming && !error && (
+        {!streamText && !result && !isPending && !isStreaming && !error && diffLines.length === 0 && (
           <div className="flex flex-col items-center mt-20 text-center">
             <GithubOutlined className="text-6xl text-gray-700 mb-6" />
             <Text className="text-gray-400 text-base max-w-md">

@@ -3,13 +3,13 @@
 @tailwind utilities;
 
 :root {
-  --canvas:      #07080a;
-  --surface:     #0d0d0d;
-  --surface-el:  #101111;
-  --surface-card:#121212;
-  --hairline:    #242728;
-  --hairline-soft: rgba(255,255,255,0.07);
-  --hairline-str:  rgba(255,255,255,0.14);
+  --canvas:      #0f1117;
+  --surface:     #141519;
+  --surface-el:  #1a1b20;
+  --surface-card:#1e1f26;
+  --hairline:    #2d2f36;
+  --hairline-soft: rgba(255,255,255,0.08);
+  --hairline-str:  rgba(255,255,255,0.16);
 
   --ink:         #f4f4f6;
   --ink-body:    #cdcdcd;
