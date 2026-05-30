@@ -21,6 +21,7 @@ class ReviewIssue(BaseModel):
     title: str
     description: str
     suggestion: str | None = None
+    diff_snippet: str | None = None
 
 
 class ReviewStats(BaseModel):
@@ -44,6 +45,7 @@ class ReviewRequest(BaseModel):
     github_token: str | None = None
     perspective: str = "default"
     options: dict | None = None
+    review_type: str = "all"
 
 
 class PostReviewRequest(BaseModel):

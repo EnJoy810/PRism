@@ -20,7 +20,7 @@ SYSTEM_PROMPT = """你是一位资深软件工程师，正在做代码审查。�
 2. 每个问题锚定到具体文件和行号
 3. 提供可操作的建议，而不是模糊的建议
 4. 如果 diff 看起来正确，直接说没问题
- 5. 除非 options.include_style 为 true，否则不报 INFO"""
+5. 除非 options.include_style 为 true，否则不报 INFO"""
 
 SECURITY_PROMPT = """你是一位专注于安全审计的资深工程师，正在做代码审查。用中文回答。
 
@@ -146,21 +146,58 @@ def _build_prompt(pr_context: dict) -> str:
     )
 
 
-async def judge_issues(
-    diff: str,
-    issues: list[ReviewIssue],
-) -> list[ReviewIssue]:
-    """用 Judge 模型对 issues 做二次验证，过滤误报。issues 为空时直接返回。"""
+def extract_diff_snippet(diff: str, file_path: str, line_num: int | None, context: int = 3) -> str | None:
+    if not file_path or line_num is None:
+        return None
+
+    in_file = False
+    hunk_lines: list[tuple[int | None, str]] = []
+    current_new_line = 0
+
+    for raw in diff.split('\n'):
+        if raw.startswith('+++ b/'):
+            in_file = (raw[6:] == file_path)
+            hunk_lines = []
+            current_new_line = 0
+            continue
+        if not in_file:
+            continue
+        if raw.startswith('@@'):
+            m = re.search(r'\+(\d+)', raw)
+            if m:
+                current_new_line = int(m.group(1)) - 1
+            hunk_lines.append((None, raw))
+            continue
+        if raw.startswith('+'):
+            current_new_line += 1
+            hunk_lines.append((current_new_line, raw))
+        elif raw.startswith('-'):
+            hunk_lines.append((None, raw))
+        elif raw.startswith(' '):
+            current_new_line += 1
+            hunk_lines.append((current_new_line, raw))
+
+    if not hunk_lines:
+        return None
+
+    target_idx = next((i for i, (ln, _) in enumerate(hunk_lines) if ln == line_num), None)
+    if target_idx is None:
+        return None
+
+    start = max(0, target_idx - context)
+    end = min(len(hunk_lines), target_idx + context + 1)
+    return '\n'.join(raw for (_, raw) in hunk_lines[start:end])
+
+
+async def judge_issues(diff: str, issues: list[ReviewIssue]) -> list[ReviewIssue]:
     if not issues:
         return issues
 
     client = _make_client()
-
     issues_text = "\n".join(
         f"{i+1}. [{issue.severity}] {issue.file}:{issue.line or '?'} — {issue.title}: {issue.description}"
         for i, issue in enumerate(issues)
     )
-
     prompt = f"""以下是对一个 PR 的代码审查发现的问题列表，基于下面的 diff。
 请逐一判断每个问题是 CONFIRM 还是 REJECT。
 
@@ -171,19 +208,13 @@ Diff（前 40000 字符）:
 {issues_text}
 
 返回 JSON 数组，每项包含序号和判断：
-[
-  {{"index": 1, "verdict": "CONFIRM"}},
-  {{"index": 2, "verdict": "REJECT"}},
-  ...
-]
+[{{"index": 1, "verdict": "CONFIRM"}}, ...]
 
 只返回 JSON 数组，不要其他内容。"""
 
     try:
         response = await client.chat.completions.create(
-            model=MODEL,
-            max_tokens=512,
-            temperature=0.2,
+            model=MODEL, max_tokens=512, temperature=0.2,
             messages=[
                 {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
@@ -191,30 +222,25 @@ Diff（前 40000 字符）:
         )
         raw = _extract_json(response.choices[0].message.content or "[]")
         verdicts = json.loads(raw)
-        confirmed_indices = {
-            v["index"] for v in verdicts
-            if isinstance(v, dict) and v.get("verdict") == "CONFIRM"
-        }
-        # 如果 judge 返回结果异常（全部 REJECT 或解析失败），降级保留原始 issues
-        if not confirmed_indices:
+        confirmed = {v["index"] for v in verdicts if isinstance(v, dict) and v.get("verdict") == "CONFIRM"}
+        if not confirmed:
             return issues
-        return [issue for i, issue in enumerate(issues, 1) if i in confirmed_indices]
+        return [issue for i, issue in enumerate(issues, 1) if i in confirmed]
     except Exception:
-        # judge 失败时降级：直接返回原始 issues，不中断主流程
         return issues
 
 
-async def analyze_pr(pr_context: dict, include_style: bool = False, perspective: str = "default") -> ReviewResult:
+async def analyze_pr(pr_context: dict, include_style: bool = False, perspective: str = "default", review_type: str = "all") -> ReviewResult:
+    type_to_perspective = {"all": "default", "bugs": "default", "security": "security", "performance": "performance"}
+    effective_perspective = type_to_perspective.get(review_type, perspective)
+
     client = _make_client()
     prompt = _build_prompt(pr_context)
 
     response = await client.chat.completions.create(
-        model=MODEL,
-        max_tokens=4096,
-        temperature=1.0,
-        top_p=1.0,
+        model=MODEL, max_tokens=4096, temperature=1.0, top_p=1.0,
         messages=[
-            {"role": "system", "content": _get_system_prompt(perspective)},
+            {"role": "system", "content": _get_system_prompt(effective_perspective)},
             {"role": "user", "content": prompt},
         ],
     )
@@ -223,12 +249,16 @@ async def analyze_pr(pr_context: dict, include_style: bool = False, perspective:
     data = json.loads(raw)
 
     issues = [ReviewIssue(**issue) for issue in data.get("issues", [])]
-
     if not include_style:
         issues = [i for i in issues if i.severity != Severity.INFO]
 
-    # Judge 二次验证，过滤误报
+    # Judge 二次验证
     issues = await judge_issues(pr_context["diff"], issues)
+
+    # 为每个 issue 提取 diff 片段
+    for issue in issues:
+        if issue.diff_snippet is None:
+            issue.diff_snippet = extract_diff_snippet(pr_context["diff"], issue.file, issue.line)
 
     walkthrough = [WalkthroughEntry(**w) for w in data.get("walkthrough", [])]
 
@@ -258,11 +288,11 @@ Return a JSON array of integers, e.g. [5, 23, 8, 41]."""
 def _fallback_cursor_path(diff_lines: list[str]) -> list[int]:
     add_del: list[int] = []
     other: list[int] = []
-    for i, l in enumerate(diff_lines):
-        stripped = l.lstrip()
+    for i, line in enumerate(diff_lines):
+        stripped = line.lstrip()
         if stripped.startswith('--- ') or stripped.startswith('+++ ') or stripped.startswith('@@'):
             other.append(i + 1)
-        elif l.startswith('+') or l.startswith('-'):
+        elif line.startswith('+') or line.startswith('-'):
             add_del.append(i + 1)
         else:
             other.append(i + 1)
@@ -276,15 +306,12 @@ async def generate_cursor_path(diff_lines: list[str]) -> list[int]:
 
     try:
         response = await client.chat.completions.create(
-            model=MODEL,
-            max_tokens=150,
-            temperature=0.3,
+            model=MODEL, max_tokens=150, temperature=0.3,
             messages=[
                 {"role": "system", "content": CURSOR_PATH_SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ],
         )
-
         raw = _extract_json(response.choices[0].message.content or "[]")
         path = json.loads(raw)
         if isinstance(path, list) and len(path) > 0 and all(isinstance(i, int) for i in path):
@@ -302,11 +329,7 @@ async def stream_analyze_pr(pr_context: dict, perspective: str = "default"):
     prompt = _build_prompt(pr_context)
 
     stream = await client.chat.completions.create(
-        model=MODEL,
-        max_tokens=4096,
-        temperature=1.0,
-        top_p=1.0,
-        stream=True,
+        model=MODEL, max_tokens=4096, temperature=1.0, top_p=1.0, stream=True,
         messages=[
             {"role": "system", "content": _get_system_prompt(perspective)},
             {"role": "user", "content": prompt},
