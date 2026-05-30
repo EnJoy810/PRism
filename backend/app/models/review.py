@@ -8,10 +8,16 @@ class Severity(str, Enum):
     INFO = "INFO"
 
 
+class WalkthroughEntry(BaseModel):
+    file: str
+    summary: str
+
+
 class ReviewIssue(BaseModel):
     severity: Severity
     file: str
     line: int | None = None
+    position: int | None = None
     title: str
     description: str
     suggestion: str | None = None
@@ -28,6 +34,7 @@ class ReviewResult(BaseModel):
     pr_url: str
     summary: str
     risk_level: str
+    walkthrough: list[WalkthroughEntry] = []
     issues: list[ReviewIssue]
     stats: ReviewStats
 

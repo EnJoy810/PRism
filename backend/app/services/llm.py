@@ -2,7 +2,7 @@ import json
 import os
 import re
 from openai import AsyncOpenAI
-from app.models.review import ReviewIssue, ReviewResult, Severity
+from app.models.review import ReviewIssue, ReviewResult, Severity, WalkthroughEntry
 
 MODEL = "deepseek-v4-pro"
 BASE_URL = "https://api.deepseek.com/v1"
@@ -73,11 +73,17 @@ PR 描述: {description}
 
 Diff:
 {diff}
-
+{file_contents_section}
 分析这个 PR，返回以下 JSON 结构（字段名用英文，内容用中文）：
 {{
   "summary": "2-3 句总结 PR 做了什么及整体质量",
   "risk_level": "HIGH|MEDIUM|LOW",
+  "walkthrough": [
+    {{
+      "file": "path/to/file.ts",
+      "summary": "一句话说明此文件改了什么（≤30字）"
+    }}
+  ],
   "issues": [
     {{
       "severity": "ERROR|WARNING|INFO",
@@ -90,6 +96,7 @@ Diff:
   ]
 }}
 
+重要：issues 中的 line 字段必须是你在 diff 中看到的 +号新增行的行号（新文件中的绝对行号）。
 只返回有效 JSON，不要 markdown 代码块标记。"""
 
 
@@ -110,13 +117,23 @@ def _get_system_prompt(perspective: str = "default") -> str:
 
 
 def _build_prompt(pr_context: dict) -> str:
+    file_contents = pr_context.get("file_contents", {})
+    if file_contents:
+        sections = ["\n### 文件内容（供参考）\n"]
+        for fname, content in file_contents.items():
+            sections.append(f"**{fname}**:\n```\n{content}\n```\n")
+        file_contents_section = "\n".join(sections)
+    else:
+        file_contents_section = ""
+
     return REVIEW_PROMPT_TEMPLATE.format(
         title=pr_context["title"],
         description=pr_context["description"][:500],
         base_branch=pr_context["base_branch"],
         head_branch=pr_context["head_branch"],
         files=", ".join(pr_context["files"][:20]),
-        diff=pr_context["diff"][:80000],
+        diff=pr_context["diff"][:60000],
+        file_contents_section=file_contents_section,
     )
 
 
@@ -143,6 +160,8 @@ async def analyze_pr(pr_context: dict, include_style: bool = False, perspective:
     if not include_style:
         issues = [i for i in issues if i.severity != Severity.INFO]
 
+    walkthrough = [WalkthroughEntry(**w) for w in data.get("walkthrough", [])]
+
     stats = pr_context["stats"]
     stats.issues_by_severity = {
         "ERROR": sum(1 for i in issues if i.severity == Severity.ERROR),
@@ -154,6 +173,7 @@ async def analyze_pr(pr_context: dict, include_style: bool = False, perspective:
         pr_url=pr_context.get("pr_url", ""),
         summary=data.get("summary", ""),
         risk_level=data.get("risk_level", "LOW"),
+        walkthrough=walkthrough,
         issues=issues,
         stats=stats,
     )
