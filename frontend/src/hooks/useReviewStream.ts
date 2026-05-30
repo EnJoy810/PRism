@@ -1,5 +1,12 @@
 import { useState, useRef, useCallback } from 'react'
-import type { ReviewResult, ReviewIssue, WalkthroughEntry } from '../types/review'
+import type { ReviewResult, ReviewIssue, WalkthroughEntry, PRMeta, ReviewType } from '../types/review'
+import type { Perspective } from '../stores/reviewOptions'
+
+interface StreamOptions {
+  includeStyle?: boolean
+  contextLines?: number
+  perspective?: Perspective
+}
 
 interface PartialResult {
   summary?: string
@@ -18,13 +25,11 @@ function extractPartial(text: string): PartialResult | null {
   const riskMatch = text.match(/"risk_level"\s*:\s*"(HIGH|MEDIUM|LOW)"/)
   if (riskMatch) partial.risk_level = riskMatch[1] as 'HIGH' | 'MEDIUM' | 'LOW'
 
-  // 提取已完整出现的 walkthrough 数组
   const wtSection = text.match(/"walkthrough"\s*:\s*\[([^\]]*)\]/)
   if (wtSection) {
     try { partial.walkthrough = JSON.parse(`[${wtSection[1]}]`) } catch { /* 尚不完整 */ }
   }
 
-  // 逐个提取已完整出现的 issue 对象（花括号配对）
   const issuesStart = text.indexOf('"issues"')
   if (issuesStart !== -1) {
     const arrStart = text.indexOf('[', issuesStart)
@@ -59,7 +64,8 @@ interface UseReviewStreamReturn {
   diffLines: string[]
   diffTitle: string
   cursorPath: number[]
-  startStream: (prUrl: string, githubToken?: string) => void
+  prMeta: PRMeta | null
+  startStream: (prUrl: string, githubToken?: string, reviewType?: ReviewType, options?: StreamOptions) => void
   reset: () => void
 }
 
@@ -73,6 +79,7 @@ export function useReviewStream(): UseReviewStreamReturn {
   const [diffLines, setDiffLines] = useState<string[]>([])
   const [diffTitle, setDiffTitle] = useState('')
   const [cursorPath, setCursorPath] = useState<number[]>([])
+  const [prMeta, setPrMeta] = useState<PRMeta | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
   const reset = useCallback(() => {
@@ -86,20 +93,32 @@ export function useReviewStream(): UseReviewStreamReturn {
     setDiffLines([])
     setDiffTitle('')
     setCursorPath([])
+    setPrMeta(null)
   }, [])
 
-  const startStream = useCallback(async (prUrl: string, githubToken?: string) => {
+  const startStream = useCallback(async (prUrl: string, githubToken?: string, reviewType?: ReviewType, options?: StreamOptions) => {
     reset()
     setIsPending(true)
 
     const controller = new AbortController()
     abortRef.current = controller
 
+    const requestBody = {
+      pr_url: prUrl,
+      github_token: githubToken,
+      review_type: reviewType ?? 'all',
+      perspective: options?.perspective ?? 'default',
+      options: {
+        include_style: options?.includeStyle ?? false,
+        context_lines: options?.contextLines ?? 3,
+      },
+    }
+
     try {
       const response = await fetch('/api/review/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pr_url: prUrl, github_token: githubToken }),
+        body: JSON.stringify(requestBody),
         signal: controller.signal,
       })
 
@@ -114,6 +133,7 @@ export function useReviewStream(): UseReviewStreamReturn {
       const decoder = new TextDecoder()
       let buffer = ''
       let accumulated = ''
+
       let hasFirstChunk = false
 
       while (true) {
@@ -130,7 +150,10 @@ export function useReviewStream(): UseReviewStreamReturn {
 
           const payload = trimmed.slice(6)
           if (payload === '[DONE]') {
-            const cleaned = accumulated.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim()
+            const cleaned = accumulated
+              .replace(/```json\s*/g, '')
+              .replace(/```\s*/g, '')
+              .trim()
             try {
               const parsed = JSON.parse(cleaned)
               const issues: ReviewIssue[] = parsed.issues ?? []
@@ -164,6 +187,7 @@ export function useReviewStream(): UseReviewStreamReturn {
             if (parsed.type === 'diff' && Array.isArray(parsed.lines)) {
               setDiffLines(parsed.lines)
               setDiffTitle(parsed.title ?? '')
+              if (parsed.meta) setPrMeta(parsed.meta as PRMeta)
               setIsPending(false)
               continue
             }
@@ -179,12 +203,11 @@ export function useReviewStream(): UseReviewStreamReturn {
                 setIsPending(false)
                 setIsStreaming(true)
               }
-              // 增量解析：每隔若干 delta 尝试提取已完整字段
               const p = extractPartial(accumulated)
               if (p) setPartial(p)
             }
           } catch {
-            // skip malformed chunks
+            // skip malformed JSON chunks
           }
         }
       }
@@ -197,5 +220,5 @@ export function useReviewStream(): UseReviewStreamReturn {
     }
   }, [reset])
 
-  return { streamText, partial, result, isStreaming, isPending, error, diffLines, diffTitle, cursorPath, startStream, reset }
+  return { streamText, partial, result, isStreaming, isPending, error, diffLines, diffTitle, cursorPath, prMeta, startStream, reset }
 }

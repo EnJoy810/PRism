@@ -1,5 +1,20 @@
 export type Severity = 'ERROR' | 'WARNING' | 'INFO'
 
+export type ReviewType = 'all' | 'security' | 'performance' | 'bugs'
+
+export interface PRMeta {
+  author_name: string
+  author_avatar: string
+  updated_at: string
+  commits: number
+  base_branch: string
+  head_branch: string
+  additions: number
+  deletions: number
+  files_changed: number
+  files: { filename: string; additions: number; deletions: number }[]
+}
+
 export interface ReviewIssue {
   severity: Severity
   file: string
@@ -8,6 +23,7 @@ export interface ReviewIssue {
   title: string
   description: string
   suggestion?: string
+  diff_snippet?: string
 }
 
 export interface WalkthroughEntry {
