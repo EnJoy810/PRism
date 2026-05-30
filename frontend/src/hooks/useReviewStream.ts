@@ -1,8 +1,57 @@
 import { useState, useRef, useCallback } from 'react'
-import type { ReviewResult } from '../types/review'
+import type { ReviewResult, ReviewIssue, WalkthroughEntry } from '../types/review'
+
+interface PartialResult {
+  summary?: string
+  risk_level?: 'HIGH' | 'MEDIUM' | 'LOW'
+  walkthrough?: WalkthroughEntry[]
+  issues?: ReviewIssue[]
+}
+
+// 从流式累积文本中增量提取已完整输出的字段
+function extractPartial(text: string): PartialResult | null {
+  const partial: PartialResult = {}
+
+  const summaryMatch = text.match(/"summary"\s*:\s*"((?:[^"\\]|\\.)*)"/)
+  if (summaryMatch) partial.summary = summaryMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"')
+
+  const riskMatch = text.match(/"risk_level"\s*:\s*"(HIGH|MEDIUM|LOW)"/)
+  if (riskMatch) partial.risk_level = riskMatch[1] as 'HIGH' | 'MEDIUM' | 'LOW'
+
+  // 提取已完整出现的 walkthrough 数组
+  const wtSection = text.match(/"walkthrough"\s*:\s*\[([^\]]*)\]/)
+  if (wtSection) {
+    try { partial.walkthrough = JSON.parse(`[${wtSection[1]}]`) } catch { /* 尚不完整 */ }
+  }
+
+  // 逐个提取已完整出现的 issue 对象（花括号配对）
+  const issuesStart = text.indexOf('"issues"')
+  if (issuesStart !== -1) {
+    const arrStart = text.indexOf('[', issuesStart)
+    if (arrStart !== -1) {
+      const issues: ReviewIssue[] = []
+      let depth = 0, objStart = -1
+      for (let i = arrStart + 1; i < text.length; i++) {
+        const c = text[i]
+        if (c === '{') { if (depth === 0) objStart = i; depth++ }
+        else if (c === '}') {
+          depth--
+          if (depth === 0 && objStart !== -1) {
+            try { issues.push(JSON.parse(text.slice(objStart, i + 1))) } catch { /* skip */ }
+            objStart = -1
+          }
+        }
+      }
+      if (issues.length > 0) partial.issues = issues
+    }
+  }
+
+  return Object.keys(partial).length > 0 ? partial : null
+}
 
 interface UseReviewStreamReturn {
   streamText: string
+  partial: PartialResult | null
   result: ReviewResult | null
   isStreaming: boolean
   isPending: boolean
@@ -16,6 +65,7 @@ interface UseReviewStreamReturn {
 
 export function useReviewStream(): UseReviewStreamReturn {
   const [streamText, setStreamText] = useState('')
+  const [partial, setPartial] = useState<PartialResult | null>(null)
   const [result, setResult] = useState<ReviewResult | null>(null)
   const [isStreaming, setIsStreaming] = useState(false)
   const [isPending, setIsPending] = useState(false)
@@ -28,6 +78,7 @@ export function useReviewStream(): UseReviewStreamReturn {
   const reset = useCallback(() => {
     abortRef.current?.abort()
     setStreamText('')
+    setPartial(null)
     setResult(null)
     setIsStreaming(false)
     setIsPending(false)
@@ -44,16 +95,11 @@ export function useReviewStream(): UseReviewStreamReturn {
     const controller = new AbortController()
     abortRef.current = controller
 
-    const body = {
-      pr_url: prUrl,
-      github_token: githubToken,
-    }
-
     try {
       const response = await fetch('/api/review/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ pr_url: prUrl, github_token: githubToken }),
         signal: controller.signal,
       })
 
@@ -68,7 +114,6 @@ export function useReviewStream(): UseReviewStreamReturn {
       const decoder = new TextDecoder()
       let buffer = ''
       let accumulated = ''
-
       let hasFirstChunk = false
 
       while (true) {
@@ -85,29 +130,27 @@ export function useReviewStream(): UseReviewStreamReturn {
 
           const payload = trimmed.slice(6)
           if (payload === '[DONE]') {
-            const cleaned = accumulated
-              .replace(/```json\s*/g, '')
-              .replace(/```\s*/g, '')
-              .trim()
+            const cleaned = accumulated.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim()
             try {
               const parsed = JSON.parse(cleaned)
-              const issues = parsed.issues ?? []
+              const issues: ReviewIssue[] = parsed.issues ?? []
               setResult({
                 pr_url: '',
                 summary: parsed.summary ?? '',
                 risk_level: parsed.risk_level ?? 'LOW',
+                walkthrough: parsed.walkthrough ?? [],
                 issues,
                 stats: {
                   files_changed: 0,
                   additions: 0,
                   deletions: 0,
                   issues_by_severity: {
-                    ERROR: issues.filter((i: { severity: string }) => i.severity === 'ERROR').length,
-                    WARNING: issues.filter((i: { severity: string }) => i.severity === 'WARNING').length,
-                    INFO: issues.filter((i: { severity: string }) => i.severity === 'INFO').length,
+                    ERROR: issues.filter(i => i.severity === 'ERROR').length,
+                    WARNING: issues.filter(i => i.severity === 'WARNING').length,
+                    INFO: issues.filter(i => i.severity === 'INFO').length,
                   },
                 },
-              } as ReviewResult)
+              })
             } catch {
               setResult(null)
             }
@@ -136,9 +179,12 @@ export function useReviewStream(): UseReviewStreamReturn {
                 setIsPending(false)
                 setIsStreaming(true)
               }
+              // 增量解析：每隔若干 delta 尝试提取已完整字段
+              const p = extractPartial(accumulated)
+              if (p) setPartial(p)
             }
           } catch {
-            // skip malformed JSON chunks
+            // skip malformed chunks
           }
         }
       }
@@ -151,5 +197,5 @@ export function useReviewStream(): UseReviewStreamReturn {
     }
   }, [reset])
 
-  return { streamText, result, isStreaming, isPending, error, diffLines, diffTitle, cursorPath, startStream, reset }
+  return { streamText, partial, result, isStreaming, isPending, error, diffLines, diffTitle, cursorPath, startStream, reset }
 }

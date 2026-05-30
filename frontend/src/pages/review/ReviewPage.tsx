@@ -3,19 +3,24 @@ import { useReviewStream } from '../../hooks/useReviewStream'
 import ReviewForm from '../../components/common/ReviewForm'
 import ReviewResults from '../../components/common/ReviewResults'
 import DiffScannerPanel from '../../components/common/DiffScannerPanel'
+import StreamingResults from '../../components/common/StreamingResults'
 import { Alert, Button, Spin, Typography } from 'antd'
 import { GithubOutlined } from '@ant-design/icons'
 
 const { Text } = Typography
 
 export default function ReviewPage() {
-  const { streamText, result, isStreaming, isPending, error, diffLines, diffTitle, cursorPath, startStream, reset } = useReviewStream()
+  const { streamText, partial, result, isStreaming, isPending, error, diffLines, diffTitle, cursorPath, startStream, reset } = useReviewStream()
   const lastRef = useRef<{ prUrl: string; token?: string } | null>(null)
 
   const handleSubmit = (prUrl: string, githubToken?: string) => {
     lastRef.current = { prUrl, token: githubToken }
     startStream(prUrl, githubToken)
   }
+
+  // summary 一出现就切换到渐现模式，不再等 [DONE]
+  const hasPartial = !!(partial?.summary)
+  const showDiffPanel = diffLines.length > 0 && !hasPartial && !result
 
   return (
     <div className="min-h-screen flex flex-col items-center p-4 sm:p-8" style={{ background: 'var(--canvas)' }}>
@@ -25,7 +30,7 @@ export default function ReviewPage() {
           loading={isPending || isStreaming}
         />
 
-        {/* Empty state */}
+        {/* Empty state — 提交后立即消失 */}
         {!streamText && !result && !isPending && !isStreaming && !error && diffLines.length === 0 && (
           <div className="flex flex-col items-center mt-20 text-center">
             <GithubOutlined className="text-6xl text-gray-700 mb-6" />
@@ -38,34 +43,41 @@ export default function ReviewPage() {
           </div>
         )}
 
-        {/* Connecting state — spinner before diff arrives */}
+        {/* 获取 PR 数据中 */}
         {isPending && !isStreaming && diffLines.length === 0 && (
           <div className="flex flex-col items-center mt-16">
             <Spin size="large" />
-            <p className="text-gray-500 mt-4">正在获取 PR 数据并分析...</p>
+            <p className="text-gray-500 mt-4">正在获取 PR 数据...</p>
           </div>
         )}
 
-        {/* Diff Scanner Panel — shows from diff arrival until result is ready */}
-        {diffLines.length > 0 && !result && (
-          <DiffScannerPanel lines={diffLines} title={diffTitle} cursorPath={cursorPath} active analyzing={isStreaming} />
+        {/* DiffScannerPanel — summary 出现前显示 */}
+        {showDiffPanel && (
+          <DiffScannerPanel
+            lines={diffLines}
+            title={diffTitle}
+            cursorPath={cursorPath}
+            active
+            analyzing={isStreaming}
+          />
         )}
 
-        {/* Streaming state — only show raw text when no diff panel */}
-        {isStreaming && streamText && diffLines.length === 0 && (
-          <div className="w-full max-w-2xl mt-8">
-            <div
-              className="rounded-lg p-4 font-mono text-sm leading-relaxed whitespace-pre-wrap"
-              style={{ background: '#1e293b', border: '1px solid #334155', color: '#e2e8f0' }}
-            >
-              {streamText}
-              <span className="animate-pulse ml-0.5" style={{ color: '#6366f1' }}>▊</span>
-            </div>
-          </div>
+        {/* 流式渐现结果 — summary 一到就渲染，issues 逐条填充，直到 result 完整到达 */}
+        {hasPartial && !result && (
+          <StreamingResults partial={partial!} isStreaming={isStreaming} />
         )}
 
-        {/* Streaming complete, show raw text if JSON parse failed */}
-        {!isPending && !isStreaming && streamText && !result && !error && (
+        {/* 最终完整结果 */}
+        {result && (
+          <ReviewResults
+            result={result}
+            prUrl={lastRef.current?.prUrl}
+            githubToken={lastRef.current?.token}
+          />
+        )}
+
+        {/* JSON 解析失败降级 */}
+        {!isPending && !isStreaming && streamText && !result && !hasPartial && !error && (
           <div className="w-full max-w-2xl mt-8">
             <Text className="text-gray-400 text-sm block mb-2">分析完成（原始输出）：</Text>
             <div
@@ -77,10 +89,6 @@ export default function ReviewPage() {
           </div>
         )}
 
-        {/* Structured result */}
-        {result && <ReviewResults result={result} prUrl={lastRef.current?.prUrl} githubToken={lastRef.current?.token} />}
-
-        {/* Error state */}
         {error && (
           <div className="mt-6 w-full max-w-2xl">
             <Alert
