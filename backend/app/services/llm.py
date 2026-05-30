@@ -65,6 +65,15 @@ PERSPECTIVE_MAP = {
     "maintainability": MAINTAINABILITY_PROMPT,
 }
 
+JUDGE_SYSTEM_PROMPT = """你是一个挑剔的代码审查质量控制员。
+你的职责是反驳那些可能是误报的问题，只保留真正有价值的发现。
+
+对每个问题，你要判断：
+- CONFIRM：问题确实存在，有充分的 diff 证据支持，影响功能/安全/性能
+- REJECT：问题是臆测的、diff 中找不到直接证据、或者是正常写法被误判
+
+宁可漏报，不可误报。"""
+
 REVIEW_PROMPT_TEMPLATE = """PR 标题: {title}
 PR 描述: {description}
 基准分支: {base_branch} → {head_branch}
@@ -137,6 +146,64 @@ def _build_prompt(pr_context: dict) -> str:
     )
 
 
+async def judge_issues(
+    diff: str,
+    issues: list[ReviewIssue],
+) -> list[ReviewIssue]:
+    """用 Judge 模型对 issues 做二次验证，过滤误报。issues 为空时直接返回。"""
+    if not issues:
+        return issues
+
+    client = _make_client()
+
+    issues_text = "\n".join(
+        f"{i+1}. [{issue.severity}] {issue.file}:{issue.line or '?'} — {issue.title}: {issue.description}"
+        for i, issue in enumerate(issues)
+    )
+
+    prompt = f"""以下是对一个 PR 的代码审查发现的问题列表，基于下面的 diff。
+请逐一判断每个问题是 CONFIRM 还是 REJECT。
+
+Diff（前 40000 字符）:
+{diff[:40000]}
+
+待验证问题：
+{issues_text}
+
+返回 JSON 数组，每项包含序号和判断：
+[
+  {{"index": 1, "verdict": "CONFIRM"}},
+  {{"index": 2, "verdict": "REJECT"}},
+  ...
+]
+
+只返回 JSON 数组，不要其他内容。"""
+
+    try:
+        response = await client.chat.completions.create(
+            model=MODEL,
+            max_tokens=512,
+            temperature=0.2,
+            messages=[
+                {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+        )
+        raw = _extract_json(response.choices[0].message.content or "[]")
+        verdicts = json.loads(raw)
+        confirmed_indices = {
+            v["index"] for v in verdicts
+            if isinstance(v, dict) and v.get("verdict") == "CONFIRM"
+        }
+        # 如果 judge 返回结果异常（全部 REJECT 或解析失败），降级保留原始 issues
+        if not confirmed_indices:
+            return issues
+        return [issue for i, issue in enumerate(issues, 1) if i in confirmed_indices]
+    except Exception:
+        # judge 失败时降级：直接返回原始 issues，不中断主流程
+        return issues
+
+
 async def analyze_pr(pr_context: dict, include_style: bool = False, perspective: str = "default") -> ReviewResult:
     client = _make_client()
     prompt = _build_prompt(pr_context)
@@ -159,6 +226,9 @@ async def analyze_pr(pr_context: dict, include_style: bool = False, perspective:
 
     if not include_style:
         issues = [i for i in issues if i.severity != Severity.INFO]
+
+    # Judge 二次验证，过滤误报
+    issues = await judge_issues(pr_context["diff"], issues)
 
     walkthrough = [WalkthroughEntry(**w) for w in data.get("walkthrough", [])]
 
