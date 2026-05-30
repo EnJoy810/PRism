@@ -42,13 +42,26 @@ export default function IssueCard({ issue }: IssueCardProps) {
               {issue.title}
             </Text>
             {(issue.file || issue.line != null) && (
-              <code style={{
-                fontSize: 11, color: 'var(--ink-mute)',
-                background: 'var(--surface)', borderRadius: 4,
-                padding: '1px 5px', border: '1px solid var(--hairline)',
-              }}>
-                {issue.file}{issue.line != null ? `:${issue.line}` : ''}
-              </code>
+              <div className="flex items-center gap-1">
+                <code style={{
+                  fontSize: 11, color: 'var(--ink-mute)',
+                  background: 'var(--surface)', borderRadius: 4,
+                  padding: '1px 5px', border: '1px solid var(--hairline)',
+                }}>
+                  {issue.file}{issue.line != null ? `:${issue.line}` : ''}
+                </code>
+                {issue.position != null && (
+                  <span
+                    title="可发布为 GitHub inline comment"
+                    style={{
+                      width: 5, height: 5, borderRadius: '50%',
+                      background: 'var(--accent-green)',
+                      display: 'inline-block',
+                      flexShrink: 0,
+                    }}
+                  />
+                )}
+              </div>
             )}
           </div>
           <Paragraph style={{ color: 'var(--ink-body)', fontSize: 13, marginBottom: 6 }}>

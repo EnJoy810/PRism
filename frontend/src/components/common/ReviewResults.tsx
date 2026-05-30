@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Button, Segmented, Typography, message } from 'antd'
 import { SendOutlined } from '@ant-design/icons'
-import type { ReviewResult, Severity } from '../../types/review'
+import type { ReviewResult, Severity, WalkthroughEntry } from '../../types/review'
 import IssueCard from './IssueCard'
 
 const { Text, Title } = Typography
@@ -34,7 +34,12 @@ export default function ReviewResults({ result, prUrl, githubToken }: ReviewResu
       })
       const data = await resp.json()
       if (data.code === '0') {
-        message.success('Review 已提交到 GitHub！')
+        const inlineCount = data.data?.inline_count ?? 0
+        message.success(
+          inlineCount > 0
+            ? `已发布 ${inlineCount} 条 inline comment 到 GitHub`
+            : 'Review 已提交到 GitHub'
+        )
       } else {
         message.error(data.detail || '提交失败')
       }
@@ -114,6 +119,35 @@ export default function ReviewResults({ result, prUrl, githubToken }: ReviewResu
           <Text style={{ color: 'var(--ink-body)', lineHeight: 1.7, fontSize: 13 }}>
             {result.summary}
           </Text>
+
+          {result.walkthrough && result.walkthrough.length > 0 && (
+            <div
+              className="mt-3 pt-3"
+              style={{ borderTop: '1px solid var(--hairline)' }}
+            >
+              <Text style={{ color: 'var(--ink-ash)', fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', display: 'block', marginBottom: 6 }}>
+                文件变更速览
+              </Text>
+              <div className="flex flex-col gap-1">
+                {result.walkthrough.map((entry: WalkthroughEntry, i: number) => (
+                  <div key={i} className="flex items-baseline gap-2 min-w-0">
+                    <code style={{
+                      fontSize: 11, color: 'var(--ink-mute)',
+                      background: 'var(--surface)', borderRadius: 3,
+                      padding: '1px 4px', border: '1px solid var(--hairline)',
+                      flexShrink: 0, maxWidth: '45%',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                      {entry.file.split('/').pop()}
+                    </code>
+                    <Text style={{ color: 'var(--ink-body)', fontSize: 12, lineHeight: 1.5 }}>
+                      {entry.summary}
+                    </Text>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
