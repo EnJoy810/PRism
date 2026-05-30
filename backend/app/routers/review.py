@@ -70,21 +70,53 @@ async def post_review(request: PostReviewRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
     from app.models.review import ReviewResult, ReviewStats, ReviewIssue
+    from app.services.diff import build_position_map
     import httpx
+
+    # 重新拉取 diff 以计算 position_map（inline comment 依赖 diff 内偏移量）
+    try:
+        pr_context = await fetch_pr_context(owner, repo, pr_number, request.github_token)
+        position_map = build_position_map(pr_context.get("diff", ""))
+    except Exception:
+        # diff 获取失败时降级：所有问题走 fallback（整体 review body），不报错中断
+        position_map = {}
 
     stats = ReviewStats(**request.result.get("stats", {}))
     issues = [ReviewIssue(**i) for i in request.result.get("issues", [])]
-    result = ReviewResult(
-        pr_url=request.pr_url,
-        summary=request.result.get("summary", ""),
-        risk_level=request.result.get("risk_level", "LOW"),
-        issues=issues,
-        stats=stats,
-    )
+
+    # 兼容 walkthrough 字段（另一 agent 可能已加入该字段）
+    walkthrough_raw = request.result.get("walkthrough", [])
+    try:
+        result = ReviewResult(
+            pr_url=request.pr_url,
+            summary=request.result.get("summary", ""),
+            risk_level=request.result.get("risk_level", "LOW"),
+            issues=issues,
+            stats=stats,
+            walkthrough=walkthrough_raw,
+        )
+    except Exception:
+        # walkthrough 字段尚未在模型中定义时，兜底不带该字段
+        result = ReviewResult(
+            pr_url=request.pr_url,
+            summary=request.result.get("summary", ""),
+            risk_level=request.result.get("risk_level", "LOW"),
+            issues=issues,
+            stats=stats,
+        )
 
     try:
-        data = await post_review_to_github(owner, repo, pr_number, request.github_token, result)
-        return {"code": "0", "message": "ok", "data": {"html_url": data.get("html_url", "")}}
+        data = await post_review_to_github(
+            owner, repo, pr_number, request.github_token, result, position_map
+        )
+        return {
+            "code": "0",
+            "message": "ok",
+            "data": {
+                "html_url": data.get("html_url", ""),
+                "inline_count": data.get("inline_count", 0),
+            },
+        }
     except httpx.HTTPStatusError as e:
         raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
     except Exception as e:
