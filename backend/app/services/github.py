@@ -92,6 +92,7 @@ async def fetch_pr_context(
         "author_name": pr_data["user"]["login"],
         "author_avatar": pr_data["user"]["avatar_url"],
         "updated_at": pr_data["updated_at"],
+        "created_at": pr_data.get("created_at", ""),
         "commits": pr_data.get("commits", 0),
         "files_detail": [
             {"filename": f["filename"], "additions": f["additions"], "deletions": f["deletions"]}

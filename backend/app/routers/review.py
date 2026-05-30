@@ -1,5 +1,6 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from typing import Optional
 import json
 
 from app.models.review import PostReviewRequest, ReviewRequest
@@ -8,6 +9,40 @@ from app.services.github_review import post_review_to_github
 from app.services.llm import analyze_pr, generate_cursor_path, stream_analyze_pr
 
 router = APIRouter()
+
+
+@router.get("/pr/meta")
+async def get_pr_meta(
+    pr_url: str = Query(...),
+    github_token: Optional[str] = Query(None),
+):
+    try:
+        owner, repo, pr_number = parse_pr_url(pr_url)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    try:
+        ctx = await fetch_pr_context(owner, repo, pr_number, github_token)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"GitHub API error: {str(e)}")
+
+    return {
+        "code": "0",
+        "data": {
+            "pr_title": ctx["title"],
+            "author_name": ctx["author_name"],
+            "author_avatar": ctx["author_avatar"],
+            "updated_at": ctx["updated_at"],
+            "created_at": ctx.get("created_at", ""),
+            "commits": ctx["commits"],
+            "base_branch": ctx["base_branch"],
+            "head_branch": ctx["head_branch"],
+            "additions": ctx["stats"].additions,
+            "deletions": ctx["stats"].deletions,
+            "files_changed": ctx["stats"].files_changed,
+            "files": ctx.get("files_detail", []),
+        },
+    }
 
 
 @router.post("/review")
@@ -48,9 +83,11 @@ async def create_review_stream(request: ReviewRequest):
     async def event_stream():
         diff_lines = pr_context["diff"].split("\n")[:80]
         meta = {
+            "pr_title": pr_context.get("title", ""),
             "author_name": pr_context.get("author_name", ""),
             "author_avatar": pr_context.get("author_avatar", ""),
             "updated_at": pr_context.get("updated_at", ""),
+            "created_at": pr_context.get("created_at", ""),
             "commits": pr_context.get("commits", 0),
             "base_branch": pr_context.get("base_branch", ""),
             "head_branch": pr_context.get("head_branch", ""),
