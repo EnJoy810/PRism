@@ -1,14 +1,15 @@
 import { useState } from 'react'
-import { Button, Card, Tag, Typography, Segmented, message } from 'antd'
-import { GithubOutlined, SendOutlined } from '@ant-design/icons'
+import { Button, Segmented, Typography, message } from 'antd'
+import { SendOutlined } from '@ant-design/icons'
 import type { ReviewResult, Severity } from '../../types/review'
+import IssueCard from './IssueCard'
 
 const { Text, Title } = Typography
 
 const riskConfig = {
-  HIGH: { color: '#ef4444', label: 'HIGH' },
-  MEDIUM: { color: '#f59e0b', label: 'MEDIUM' },
-  LOW: { color: '#22c55e', label: 'LOW' },
+  HIGH:   { color: 'var(--accent-red)',    bg: 'var(--accent-red-bg)',    label: 'HIGH'   },
+  MEDIUM: { color: 'var(--accent-yellow)', bg: 'var(--accent-yel-bg)',    label: 'MEDIUM' },
+  LOW:    { color: 'var(--accent-green)',  bg: 'var(--accent-grn-bg)',    label: 'LOW'    },
 }
 
 interface ReviewResultsProps {
@@ -23,15 +24,13 @@ export default function ReviewResults({ result, prUrl, githubToken }: ReviewResu
   const [posting, setPosting] = useState(false)
 
   const handlePostToGithub = async () => {
-    if (!prUrl || !githubToken) {
-      return
-    }
+    if (!prUrl || !githubToken) return
     setPosting(true)
     try {
       const resp = await fetch('/api/review/post', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pr_url: prUrl, github_token: githubToken, result: { ...result, issues: result.issues.map((i) => ({ ...i })) } }),
+        body: JSON.stringify({ pr_url: prUrl, github_token: githubToken, result }),
       })
       const data = await resp.json()
       if (data.code === '0') {
@@ -59,70 +58,74 @@ export default function ReviewResults({ result, prUrl, githubToken }: ReviewResu
   ]
 
   return (
-    <div className="w-full max-w-2xl mt-10">
-      {/* Summary Card */}
-      <Card
-        className="mb-6"
-        style={{ background: '#1e293b', borderColor: '#334155' }}
+    <div className="w-full max-w-2xl mt-8 animate-fade-up">
+      {/* Summary card */}
+      <div
+        className="rounded-xl mb-5 overflow-hidden"
+        style={{ background: 'var(--surface-card)', border: '1px solid var(--hairline)' }}
       >
-        <div className="flex items-start justify-between mb-4 flex-wrap gap-2">
-          <Title level={4} className="text-gray-100 mb-0">
-            Review Summary
-          </Title>
+        {/* Risk strip */}
+        <div
+          className="flex items-center justify-between px-4 py-2.5"
+          style={{ background: risk.bg, borderBottom: '1px solid var(--hairline)' }}
+        >
           <div className="flex items-center gap-2">
+            <span
+              style={{
+                width: 8, height: 8, borderRadius: '50%',
+                background: risk.color, display: 'inline-block',
+                boxShadow: `0 0 6px ${risk.color}`,
+              }}
+            />
+            <Text style={{ color: risk.color, fontWeight: 600, fontSize: 12, letterSpacing: '0.06em' }}>
+              {risk.label} RISK
+            </Text>
+          </div>
+          <div className="flex items-center gap-3">
+            <Text style={{ color: 'var(--ink-ash)', fontSize: 12 }}>
+              {result.stats.files_changed} 文件
+              &nbsp;·&nbsp;
+              <span style={{ color: 'var(--accent-green)' }}>+{result.stats.additions}</span>
+              &nbsp;
+              <span style={{ color: 'var(--accent-red)' }}>-{result.stats.deletions}</span>
+            </Text>
             {prUrl && githubToken && (
               <Button
                 size="small"
                 icon={<SendOutlined />}
                 loading={posting}
                 onClick={handlePostToGithub}
-                style={{ borderColor: '#2d8a4e', color: '#4ade80' }}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid var(--hairline-str)',
+                  color: 'var(--ink-mute)',
+                  fontSize: 11,
+                  height: 24,
+                }}
               >
                 提交到 GitHub
               </Button>
             )}
-            <Tag color={risk.color} className="text-sm font-semibold px-3 py-0.5">
-              {risk.label}
-            </Tag>
           </div>
         </div>
-        <Text className="text-gray-300 block mb-5 leading-relaxed">
-          {result.summary}
-        </Text>
 
-        {/* Stats grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="rounded-lg p-3 text-center" style={{ background: '#0f172a' }}>
-            <Text className="text-gray-500 text-xs block">修改文件</Text>
-            <Text className="text-gray-100 text-lg font-semibold">{result.stats.files_changed}</Text>
-          </div>
-          <div className="rounded-lg p-3 text-center" style={{ background: '#0f172a' }}>
-            <Text className="text-gray-500 text-xs block">新增行</Text>
-            <Text className="text-green-400 text-lg font-semibold">+{result.stats.additions}</Text>
-          </div>
-          <div className="rounded-lg p-3 text-center" style={{ background: '#0f172a' }}>
-            <Text className="text-gray-500 text-xs block">删除行</Text>
-            <Text className="text-red-400 text-lg font-semibold">-{result.stats.deletions}</Text>
-          </div>
-          <div className="rounded-lg p-3 text-center" style={{ background: '#0f172a' }}>
-            <Text className="text-gray-500 text-xs block">发现问题</Text>
-            <Text className="text-gray-100 text-lg font-semibold">
-              {Object.values(result.stats.issues_by_severity).reduce((a, b) => a + b, 0)}
-            </Text>
-          </div>
+        {/* Summary text */}
+        <div className="px-4 py-4">
+          <Text style={{ color: 'var(--ink-body)', lineHeight: 1.7, fontSize: 13 }}>
+            {result.summary}
+          </Text>
         </div>
-      </Card>
+      </div>
 
       {/* Issues section */}
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-        <Title level={5} className="text-gray-100 mb-0">
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-3">
+        <Title level={5} style={{ color: 'var(--ink)', marginBottom: 0, fontSize: 13, fontWeight: 600, letterSpacing: '0.03em' }}>
           问题列表
         </Title>
         <Segmented
           value={filter}
           onChange={(val) => setFilter(val as Severity | 'ALL')}
           options={filterOptions}
-          style={{ background: '#1e293b' }}
           className="text-xs"
         />
       </div>
@@ -130,9 +133,10 @@ export default function ReviewResults({ result, prUrl, githubToken }: ReviewResu
       {filteredIssues.map((issue, index) => (
         <IssueCard key={index} issue={issue} />
       ))}
+
       {filteredIssues.length === 0 && (
         <div className="text-center py-10">
-          <Text className="text-gray-600">没有匹配的问题</Text>
+          <Text style={{ color: 'var(--ink-stone)' }}>没有匹配的问题</Text>
         </div>
       )}
     </div>

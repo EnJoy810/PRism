@@ -32,7 +32,7 @@ export default function ReviewPage() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-bg flex flex-col items-center p-4 sm:p-8">
+    <div className="min-h-screen flex flex-col items-center p-4 sm:p-8" style={{ background: 'var(--canvas)' }}>
       <div className="flex flex-col items-center w-full max-w-2xl">
         <ReviewForm
           onSubmit={handleSubmit}
@@ -66,8 +66,8 @@ export default function ReviewPage() {
           <DiffScannerPanel lines={diffLines} title={diffTitle} cursorPath={cursorPath} active />
         )}
 
-        {/* Streaming state */}
-        {isStreaming && streamText && (
+        {/* Streaming state — only show raw text when no diff panel */}
+        {isStreaming && streamText && diffLines.length === 0 && (
           <div className="w-full max-w-2xl mt-8">
             <div
               className="rounded-lg p-4 font-mono text-sm leading-relaxed whitespace-pre-wrap"

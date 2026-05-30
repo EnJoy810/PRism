@@ -81,6 +81,7 @@ export default function DiffScannerPanel({ lines, title, cursorPath, active }: D
     }, SCAN_INTERVAL_MS)
 
     return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, lines.length, path])
 
   useEffect(() => {
