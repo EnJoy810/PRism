@@ -1,27 +1,39 @@
 import { useState } from 'react'
-import { Button, Segmented, Typography, message } from 'antd'
-import { SendOutlined } from '@ant-design/icons'
-import type { ReviewResult, Severity, WalkthroughEntry } from '../../types/review'
+import { Button, Typography, message } from 'antd'
+import { SyncOutlined, SendOutlined } from '@ant-design/icons'
+import type { ReviewResult, Severity } from '../../types/review'
 import IssueCard from './IssueCard'
 
-const { Text, Title } = Typography
-
-const riskConfig = {
-  HIGH:   { color: 'var(--accent-red)',    bg: 'var(--accent-red-bg)',    label: 'HIGH'   },
-  MEDIUM: { color: 'var(--accent-yellow)', bg: 'var(--accent-yel-bg)',    label: 'MEDIUM' },
-  LOW:    { color: 'var(--accent-green)',  bg: 'var(--accent-grn-bg)',    label: 'LOW'    },
-}
+const { Text } = Typography
 
 interface ReviewResultsProps {
   result: ReviewResult
   prUrl?: string
   githubToken?: string
+  onRerun?: () => void
 }
 
-export default function ReviewResults({ result, prUrl, githubToken }: ReviewResultsProps) {
-  const risk = riskConfig[result.risk_level]
+const severityFilters: { label: string; value: Severity | 'ALL' }[] = [
+  { label: 'All', value: 'ALL' },
+  { label: 'Critical', value: 'ERROR' },
+  { label: 'Warning', value: 'WARNING' },
+  { label: 'Info', value: 'INFO' },
+]
+
+export default function ReviewResults({ result, prUrl, githubToken, onRerun }: ReviewResultsProps) {
   const [filter, setFilter] = useState<Severity | 'ALL'>('ALL')
   const [posting, setPosting] = useState(false)
+
+  const counts = {
+    ALL: result.issues.length,
+    ERROR: result.stats.issues_by_severity['ERROR'] ?? 0,
+    WARNING: result.stats.issues_by_severity['WARNING'] ?? 0,
+    INFO: result.stats.issues_by_severity['INFO'] ?? 0,
+  }
+
+  const filteredIssues = filter === 'ALL'
+    ? result.issues
+    : result.issues.filter(i => i.severity === filter)
 
   const handlePostToGithub = async () => {
     if (!prUrl || !githubToken) return
@@ -35,11 +47,7 @@ export default function ReviewResults({ result, prUrl, githubToken }: ReviewResu
       const data = await resp.json()
       if (data.code === '0') {
         const inlineCount = data.data?.inline_count ?? 0
-        message.success(
-          inlineCount > 0
-            ? `已发布 ${inlineCount} 条 inline comment 到 GitHub`
-            : 'Review 已提交到 GitHub'
-        )
+        message.success(inlineCount > 0 ? `已发布 ${inlineCount} 条 inline comment` : '已提交到 GitHub')
       } else {
         message.error(data.detail || '提交失败')
       }
@@ -50,50 +58,80 @@ export default function ReviewResults({ result, prUrl, githubToken }: ReviewResu
     }
   }
 
-  const filteredIssues = filter === 'ALL'
-    ? result.issues
-    : result.issues.filter((i) => i.severity === filter)
-
-  const filterOptions = [
-    { label: `全部 (${result.issues.length})`, value: 'ALL' as const },
-    ...(['ERROR', 'WARNING', 'INFO'] as Severity[]).map((s) => ({
-      label: `${s} (${result.stats.issues_by_severity[s]})`,
-      value: s as Severity | 'ALL',
-    })),
-  ]
-
   return (
-    <div className="w-full max-w-2xl mt-8 animate-fade-up">
-      {/* Summary card */}
-      <div
-        className="rounded-xl mb-5 overflow-hidden"
-        style={{ background: 'var(--surface-card)', border: '1px solid var(--hairline)' }}
-      >
-        {/* Risk strip */}
+    <div className="w-full animate-fade-up">
+      {/* Header — filter tabs + sync button */}
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div className="flex items-center gap-1">
+          {severityFilters.map(({ label, value }) => {
+            const count = counts[value]
+            const active = filter === value
+            const dotColors: Record<string, string> = {
+              ALL: 'var(--ink-mute)', ERROR: '#ef4444',
+              WARNING: '#f59e0b', INFO: '#3b82f6',
+            }
+            return (
+              <button
+                key={value}
+                onClick={() => setFilter(value)}
+                style={{
+                  padding: '4px 10px', borderRadius: 6, fontSize: 12,
+                  border: `1px solid ${active ? 'var(--hairline-str)' : 'transparent'}`,
+                  background: active ? 'var(--surface-el)' : 'transparent',
+                  color: active ? 'var(--ink)' : 'var(--ink-ash)',
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5,
+                  fontWeight: active ? 600 : 400,
+                }}
+              >
+                {label}
+                <span style={{
+                  background: active ? dotColors[value] : 'var(--surface-el)',
+                  color: active ? '#000' : 'var(--ink-stone)',
+                  borderRadius: 10, padding: '1px 6px', fontSize: 11, fontWeight: 700,
+                }}>
+                  {count}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+
+        {onRerun && (
+          <button
+            onClick={onRerun}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              padding: '4px 10px', borderRadius: 6, fontSize: 12,
+              border: '1px solid var(--hairline)', background: 'transparent',
+              color: 'var(--ink-ash)', cursor: 'pointer',
+            }}
+          >
+            <SyncOutlined style={{ fontSize: 11 }} /> Sync with PR
+          </button>
+        )}
+      </div>
+
+      {/* Issues list */}
+      {filteredIssues.map((issue, i) => (
+        <IssueCard key={i} issue={issue} prUrl={prUrl} />
+      ))}
+
+      {filteredIssues.length === 0 && (
+        <div className="text-center py-12">
+          <Text style={{ color: 'var(--ink-stone)' }}>没有匹配的问题</Text>
+        </div>
+      )}
+
+      {/* Bottom action bar */}
+      {result.issues.length > 0 && (
         <div
-          className="flex items-center justify-between px-4 py-2.5"
-          style={{ background: risk.bg, borderBottom: '1px solid var(--hairline)' }}
+          className="flex items-center justify-between mt-4 pt-4 flex-wrap gap-2"
+          style={{ borderTop: '1px solid var(--hairline)' }}
         >
-          <div className="flex items-center gap-2">
-            <span
-              style={{
-                width: 8, height: 8, borderRadius: '50%',
-                background: risk.color, display: 'inline-block',
-                boxShadow: `0 0 6px ${risk.color}`,
-              }}
-            />
-            <Text style={{ color: risk.color, fontWeight: 600, fontSize: 12, letterSpacing: '0.06em' }}>
-              {risk.label} RISK
-            </Text>
-          </div>
-          <div className="flex items-center gap-3">
-            <Text style={{ color: 'var(--ink-ash)', fontSize: 12 }}>
-              {result.stats.files_changed} 文件
-              &nbsp;·&nbsp;
-              <span style={{ color: 'var(--accent-green)' }}>+{result.stats.additions}</span>
-              &nbsp;
-              <span style={{ color: 'var(--accent-red)' }}>-{result.stats.deletions}</span>
-            </Text>
+          <Text style={{ color: 'var(--ink-stone)', fontSize: 12 }}>
+            共发现 {result.issues.length} 个问题
+          </Text>
+          <div className="flex gap-2">
             {prUrl && githubToken && (
               <Button
                 size="small"
@@ -101,76 +139,14 @@ export default function ReviewResults({ result, prUrl, githubToken }: ReviewResu
                 loading={posting}
                 onClick={handlePostToGithub}
                 style={{
-                  background: 'transparent',
-                  border: '1px solid var(--hairline-str)',
-                  color: 'var(--ink-mute)',
-                  fontSize: 11,
-                  height: 24,
+                  background: 'var(--ink)', color: '#000',
+                  border: 'none', fontWeight: 500, fontSize: 12,
                 }}
               >
-                提交到 GitHub
+                Generate PR Review Comment
               </Button>
             )}
           </div>
-        </div>
-
-        {/* Summary text */}
-        <div className="px-4 py-4">
-          <Text style={{ color: 'var(--ink-body)', lineHeight: 1.7, fontSize: 13 }}>
-            {result.summary}
-          </Text>
-
-          {result.walkthrough && result.walkthrough.length > 0 && (
-            <div
-              className="mt-3 pt-3"
-              style={{ borderTop: '1px solid var(--hairline)' }}
-            >
-              <Text style={{ color: 'var(--ink-ash)', fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', display: 'block', marginBottom: 6 }}>
-                文件变更速览
-              </Text>
-              <div className="flex flex-col gap-1">
-                {result.walkthrough.map((entry: WalkthroughEntry, i: number) => (
-                  <div key={i} className="flex items-baseline gap-2 min-w-0">
-                    <code style={{
-                      fontSize: 11, color: 'var(--ink-mute)',
-                      background: 'var(--surface)', borderRadius: 3,
-                      padding: '1px 4px', border: '1px solid var(--hairline)',
-                      flexShrink: 0, maxWidth: '45%',
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>
-                      {entry.file.split('/').pop()}
-                    </code>
-                    <Text style={{ color: 'var(--ink-body)', fontSize: 12, lineHeight: 1.5 }}>
-                      {entry.summary}
-                    </Text>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Issues section */}
-      <div className="flex items-center justify-between mb-3 flex-wrap gap-3">
-        <Title level={5} style={{ color: 'var(--ink)', marginBottom: 0, fontSize: 13, fontWeight: 600, letterSpacing: '0.03em' }}>
-          问题列表
-        </Title>
-        <Segmented
-          value={filter}
-          onChange={(val) => setFilter(val as Severity | 'ALL')}
-          options={filterOptions}
-          className="text-xs"
-        />
-      </div>
-
-      {filteredIssues.map((issue, index) => (
-        <IssueCard key={index} issue={issue} />
-      ))}
-
-      {filteredIssues.length === 0 && (
-        <div className="text-center py-10">
-          <Text style={{ color: 'var(--ink-stone)' }}>没有匹配的问题</Text>
         </div>
       )}
     </div>
