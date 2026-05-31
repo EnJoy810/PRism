@@ -62,7 +62,7 @@ async def create_review(request: ReviewRequest):
     perspective = request.perspective or "default"
 
     try:
-        result = await analyze_pr(pr_context, include_style=include_style, perspective=perspective, review_type=request.review_type, model=request.model or "deepseek-v4-flash")
+        result = await analyze_pr(pr_context, include_style=include_style, perspective=perspective, review_type=request.review_type, model=request.model or "deepseek-v4-flash", api_key=request.api_key, base_url=request.base_url)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"LLM analysis error: {str(e)}")
 
@@ -98,7 +98,7 @@ async def create_review_stream(request: ReviewRequest):
         }
         yield f"data: {json.dumps({'type': 'diff', 'lines': diff_lines, 'title': pr_context['title'], 'meta': meta})}\n\n"
 
-        async for event_json in stream_analyze_pr(pr_context, perspective=request.perspective, model=request.model or "deepseek-v4-flash"):
+        async for event_json in stream_analyze_pr(pr_context, perspective=request.perspective, model=request.model or "deepseek-v4-flash", api_key=request.api_key, base_url=request.base_url):
             yield f"data: {event_json}\n\n"
         yield "data: [DONE]\n\n"
 

@@ -584,7 +584,7 @@ function buildMarkdown(result: ReviewResult, prUrl: string, meta: PRMeta | null)
 }
 
 export default function ReviewResultsPanel({ prUrl, meta, githubToken, onDiffLoaded }: Props) {
-  const { model } = useSettings()
+  const { model, apiKey, baseUrl } = useSettings()
   const [result, setResult] = useState<ReviewResult | null>(null)
   const [streaming, setStreaming] = useState(false)
   const [thinkText, setThinkText] = useState('')
@@ -661,7 +661,12 @@ export default function ReviewResultsPanel({ prUrl, meta, githubToken, onDiffLoa
       const res = await fetch('/api/review/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pr_url: prUrl, model: model || 'deepseek-v4-flash' }),
+        body: JSON.stringify({
+          pr_url: prUrl,
+          model: model || 'deepseek-v4-flash',
+          api_key: apiKey || undefined,
+          base_url: baseUrl || undefined,
+        }),
         signal: ctrl.signal,
       })
       if (!res.ok) throw new Error(`请求失败: ${res.status}`)
