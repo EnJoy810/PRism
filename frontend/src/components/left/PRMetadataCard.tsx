@@ -32,11 +32,11 @@ function StepBadge({ n }: { n: number }) {
 export default function PRMetadataCard({ meta, prUrl }: Props) {
   return (
     <div
-      className="rounded-xl overflow-hidden"
       style={{
         background: '#ffffff',
-        border: '1px solid var(--hairline)',
-        boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+        border: '1px solid #E5E7EB',
+        borderRadius: 12,
+        boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
       }}
     >
       {/* Header */}
@@ -46,7 +46,7 @@ export default function PRMetadataCard({ meta, prUrl }: Props) {
       >
         <div className="flex items-center gap-2.5">
           <StepBadge n={2} />
-          <span style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>PR Information</span>
+          <span style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>PR 信息</span>
         </div>
         <span
           style={{
@@ -55,7 +55,7 @@ export default function PRMetadataCard({ meta, prUrl }: Props) {
             padding: '2px 9px', borderRadius: 20,
           }}
         >
-          Ready
+          就绪
         </span>
       </div>
 
@@ -138,10 +138,10 @@ export default function PRMetadataCard({ meta, prUrl }: Props) {
         {/* Stats */}
         <div className="grid grid-cols-4 gap-2">
           {[
-            { icon: '↔', label: 'Commits',       value: String(meta.commits),        color: '#0f172a' },
-            { icon: '□', label: 'Changed Files',  value: String(meta.files_changed),  color: '#0f172a' },
-            { icon: '+', label: 'Additions',      value: `+${meta.additions}`,        color: '#059669' },
-            { icon: '−', label: 'Deletions',      value: `−${meta.deletions}`,        color: '#dc2626' },
+            { icon: '↔', label: '提交数',   value: String(meta.commits),        color: '#0f172a' },
+            { icon: '□', label: '变更文件', value: String(meta.files_changed),  color: '#0f172a' },
+            { icon: '+', label: '新增行',   value: `+${meta.additions}`,        color: '#059669' },
+            { icon: '−', label: '删除行',   value: `−${meta.deletions}`,        color: '#dc2626' },
           ].map(({ icon, label, value, color }) => (
             <div
               key={label}
