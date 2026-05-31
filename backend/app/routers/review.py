@@ -6,7 +6,7 @@ import json
 from app.models.review import PostReviewRequest, ReviewRequest
 from app.services.github import fetch_pr_context, parse_pr_url
 from app.services.github_review import post_review_to_github
-from app.services.llm import analyze_pr, generate_cursor_path, stream_analyze_pr
+from app.services.llm import analyze_pr, stream_analyze_pr
 
 router = APIRouter()
 
@@ -62,7 +62,7 @@ async def create_review(request: ReviewRequest):
     perspective = request.perspective or "default"
 
     try:
-        result = await analyze_pr(pr_context, include_style=include_style, perspective=perspective, review_type=request.review_type)
+        result = await analyze_pr(pr_context, include_style=include_style, perspective=perspective, review_type=request.review_type, model=request.model or "deepseek-v4-flash")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"LLM analysis error: {str(e)}")
 
@@ -98,14 +98,8 @@ async def create_review_stream(request: ReviewRequest):
         }
         yield f"data: {json.dumps({'type': 'diff', 'lines': diff_lines, 'title': pr_context['title'], 'meta': meta})}\n\n"
 
-        try:
-            path = await generate_cursor_path(diff_lines)
-        except Exception:
-            path = list(range(1, min(len(diff_lines) + 1, 16)))
-        yield f"data: {json.dumps({'type': 'cursor_path', 'cursor_path': path})}\n\n"
-
-        async for delta in stream_analyze_pr(pr_context, perspective=request.perspective):
-            yield f"data: {json.dumps({'delta': delta})}\n\n"
+        async for event_json in stream_analyze_pr(pr_context, perspective=request.perspective, model=request.model or "deepseek-v4-flash"):
+            yield f"data: {event_json}\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
