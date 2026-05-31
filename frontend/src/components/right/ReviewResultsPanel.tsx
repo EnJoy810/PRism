@@ -1,7 +1,13 @@
 import { useState, useRef } from 'react'
-import type { PRMeta, ReviewResult, ReviewIssue, Severity, RiskArea, MergeRecommendation } from '../../types/review'
+import type { PRMeta, ReviewResult, Severity } from '../../types/review'
 import { useSettings } from '../../stores/reviewOptions'
 import SettingsDrawer from '../common/SettingsDrawer'
+import ThinkingPanel from './ThinkingPanel'
+import AISummaryCard from './AISummaryCard'
+import RiskAnalysisCard from './RiskAnalysisCard'
+import ReviewFindingsCard from './ReviewFindingsCard'
+import MergeRecommendationCard from './MergeRecommendationCard'
+import { parseDiffToMap, buildMarkdown } from './utils'
 
 interface Props {
   prUrl: string | null
@@ -12,575 +18,11 @@ interface Props {
 
 type FilterTab = 'all' | Severity
 
-// ─── Style constants ───────────────────────────────────────────────────────────
-
-const CARD_STYLE: React.CSSProperties = {
-  background: '#fff',
-  border: '1px solid #E5E7EB',
-  borderRadius: 10,
-  overflow: 'hidden',
-  flexShrink: 0,
-}
-
-const CARD_HEADER_STYLE: React.CSSProperties = {
-  padding: '10px 16px',
-  borderBottom: '1px solid #F1F5F9',
-  fontWeight: 700,
-  fontSize: 13,
-  color: '#0F172A',
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-}
-
-const CARD_BODY_STYLE: React.CSSProperties = {
-  padding: '12px 16px',
-}
-
-const SEV_LABEL: Record<Severity, string> = { ERROR: 'Critical', WARNING: 'Warning', INFO: 'Suggestion' }
-const SEV_COLOR: Record<Severity, { bg: string; text: string }> = {
-  ERROR:   { bg: '#EF4444', text: '#fff' },
-  WARNING: { bg: '#F59E0B', text: '#fff' },
-  INFO:    { bg: '#3B82F6', text: '#fff' },
-}
-
-const RISK_CONFIG: Record<string, { bg: string; text: string; border: string; label: string }> = {
-  HIGH:   { bg: '#FEF2F2', text: '#DC2626', border: '#FECACA', label: '高风险' },
-  MEDIUM: { bg: '#FFFBEB', text: '#D97706', border: '#FDE68A', label: '中等风险' },
-  LOW:    { bg: '#ECFDF5', text: '#059669', border: '#A7F3D0', label: '低风险' },
-}
-
-const DECISION_CONFIG: Record<string, { bg: string; text: string; border: string; label: string }> = {
-  APPROVE:         { bg: '#ECFDF5', text: '#059669', border: '#A7F3D0', label: 'APPROVE' },
-  REQUEST_CHANGES: { bg: '#FEF2F2', text: '#DC2626', border: '#FECACA', label: 'REQUEST CHANGES' },
-  COMMENT:         { bg: '#FFFBEB', text: '#D97706', border: '#FDE68A', label: 'COMMENT' },
-}
-
 const btnStyle: React.CSSProperties = {
-  height: 30,
-  padding: '0 12px',
-  borderRadius: 6,
-  border: '1px solid #E5E7EB',
-  background: '#fff',
-  color: '#374151',
-  fontSize: 12,
-  fontWeight: 500,
-  cursor: 'pointer',
-  display: 'flex',
-  alignItems: 'center',
-  gap: 5,
-}
-
-// ─── Sub-components ────────────────────────────────────────────────────────────
-
-function DiffBlock({ snippet }: { snippet: string }) {
-  return (
-    <div
-      style={{
-        background: '#0D1117',
-        borderRadius: 6,
-        overflow: 'hidden',
-        fontSize: 12,
-        fontFamily: "'JetBrains Mono', Consolas, monospace",
-        marginBottom: 10,
-      }}
-    >
-      {snippet.split('\n').map((line, i) => {
-        const isAdd = line.startsWith('+')
-        const isDel = line.startsWith('-')
-        return (
-          <div
-            key={i}
-            style={{
-              display: 'flex',
-              background: isAdd ? 'rgba(46,160,67,0.15)' : isDel ? 'rgba(248,81,73,0.15)' : 'transparent',
-              padding: '1px 12px',
-            }}
-          >
-            <span style={{ color: isAdd ? '#3FB950' : isDel ? '#F85149' : '#8B949E', minWidth: 14 }}>
-              {isAdd ? '+' : isDel ? '-' : ' '}
-            </span>
-            <span style={{ color: '#E6EDF3', paddingLeft: 8 }}>{line.slice(isAdd || isDel ? 1 : 0)}</span>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-function IssueRow({
-  issue,
-  expanded,
-  onToggle,
-}: {
-  issue: ReviewIssue
-  expanded: boolean
-  onToggle: () => void
-}) {
-  const sev = SEV_COLOR[issue.severity]
-  return (
-    <div style={{ borderBottom: '1px solid #F1F5F9' }}>
-      <div
-        style={{
-          display: 'flex', alignItems: 'center', gap: 10,
-          padding: '10px 16px',
-          background: expanded ? '#F8FAFF' : 'transparent',
-          cursor: 'pointer',
-          transition: 'background 0.1s',
-        }}
-        onClick={onToggle}
-        onMouseEnter={e => { if (!expanded) (e.currentTarget as HTMLDivElement).style.background = '#F8FAFC' }}
-        onMouseLeave={e => { if (!expanded) (e.currentTarget as HTMLDivElement).style.background = 'transparent' }}
-      >
-        <span
-          style={{
-            background: sev.bg, color: sev.text,
-            fontSize: 10, fontWeight: 700,
-            padding: '2px 7px', borderRadius: 4,
-            letterSpacing: '0.04em', flexShrink: 0,
-          }}
-        >
-          {SEV_LABEL[issue.severity]}
-        </span>
-        <span
-          style={{
-            fontSize: 11, color: '#64748B',
-            fontFamily: "'JetBrains Mono', Consolas, monospace",
-            flexShrink: 0, maxWidth: 200,
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          }}
-        >
-          {issue.file}{issue.line ? ` · ${issue.line}L` : ''}
-        </span>
-        <span style={{ fontSize: 13, color: '#0F172A', fontWeight: 500, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {issue.title}
-        </span>
-        <button
-          onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(`${issue.file}: ${issue.title}`) }}
-          style={{ background: 'none', border: '1px solid #E5E7EB', borderRadius: 5, cursor: 'pointer', padding: '3px 8px', fontSize: 11, color: '#64748B', flexShrink: 0 }}
-        >
-          复制
-        </button>
-        <svg
-          width="14" height="14" viewBox="0 0 24 24" fill="#94A3B8"
-          style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}
-        >
-          <path d="M7 10l5 5 5-5z"/>
-        </svg>
-      </div>
-
-      {expanded && (
-        <div style={{ padding: '0 16px 16px', background: '#F8FAFF' }}>
-          {issue.diff_snippet && <DiffBlock snippet={issue.diff_snippet} />}
-          <p style={{ fontSize: 13, color: '#374151', marginBottom: 8, lineHeight: 1.6 }}>{issue.description}</p>
-          {issue.suggestion && (
-            <div
-              style={{
-                background: '#F0FDF4', border: '1px solid #BBF7D0',
-                borderRadius: 6, padding: '8px 12px', fontSize: 12,
-                color: '#166534', marginBottom: 12,
-              }}
-            >
-              <strong>建议：</strong>{issue.suggestion}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function parseDiffToMap(lines: string[]): Map<string, string[]> {
-  const map = new Map<string, string[]>()
-  let currentFile: string | null = null
-  let currentLines: string[] = []
-  for (const line of lines) {
-    const m = line.match(/^diff --git a\/.+ b\/(.+)$/)
-    if (m) {
-      if (currentFile) map.set(currentFile, currentLines)
-      currentFile = m[1]
-      currentLines = []
-    } else if (currentFile) {
-      currentLines.push(line)
-    }
-  }
-  if (currentFile) map.set(currentFile, currentLines)
-  return map
-}
-
-// ─── Card components ───────────────────────────────────────────────────────────
-
-function ThinkingPanel({
-  thinkText,
-  streaming,
-  thinkDone,
-  thinkCollapsed,
-  setThinkCollapsed,
-  thinkRef,
-}: {
-  thinkText: string
-  streaming: boolean
-  thinkDone: boolean
-  thinkCollapsed: boolean
-  setThinkCollapsed: (v: boolean | ((prev: boolean) => boolean)) => void
-  thinkRef: React.RefObject<HTMLDivElement>
-}) {
-  return (
-    <div style={{ ...CARD_STYLE }}>
-      <button
-        onClick={() => setThinkCollapsed(c => !c)}
-        style={{
-          width: '100%', display: 'flex', alignItems: 'center', gap: 8,
-          padding: '10px 16px', background: '#FAFAFA',
-          border: 'none', cursor: 'pointer', textAlign: 'left',
-          borderBottom: thinkCollapsed ? 'none' : '1px solid #F1F5F9',
-        }}
-      >
-        {streaming && !thinkDone ? (
-          <span style={{
-            width: 7, height: 7, borderRadius: '50%',
-            background: '#8B5CF6', display: 'inline-block',
-            animation: 'pulse 1.2s ease-in-out infinite', flexShrink: 0,
-          }} />
-        ) : (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="#8B5CF6"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
-        )}
-        <span style={{ fontSize: 12, fontWeight: 700, color: '#6D28D9', flex: 1 }}>
-          {streaming && !thinkDone ? 'AI 正在思考…' : '查看思考过程'}
-        </span>
-        <svg
-          width="13" height="13" viewBox="0 0 24 24" fill="#94A3B8"
-          style={{ transform: thinkCollapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}
-        >
-          <path d="M7 10l5 5 5-5z"/>
-        </svg>
-      </button>
-
-      {!thinkCollapsed && (
-        <div
-          ref={thinkRef}
-          style={{
-            maxHeight: 160, overflowY: 'auto',
-            padding: '10px 14px',
-            background: '#FAFAFA',
-            fontSize: 12, color: '#6B7280',
-            fontStyle: 'italic', lineHeight: 1.7,
-            whiteSpace: 'pre-wrap',
-          }}
-        >
-          {thinkText}
-          {streaming && !thinkDone && (
-            <span style={{
-              display: 'inline-block', width: 2, height: '1em',
-              background: '#8B5CF6', verticalAlign: 'text-bottom',
-              animation: 'pulse 0.8s ease-in-out infinite',
-            }} />
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function AISummaryCard({ result, meta }: { result: ReviewResult; meta: PRMeta | null }) {
-  const readingTime = meta ? Math.max(1, Math.round((meta.files_changed ?? 0) / 2)) : 1
-  const priorityFiles = result.priority_files ?? []
-
-  return (
-    <div style={CARD_STYLE}>
-      <div style={CARD_HEADER_STYLE}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="#2563EB"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm-1 7V3.5L18.5 9H13zM6 20V4h5v7h7v9H6z"/></svg>
-        AI 摘要
-        <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 400, color: '#94A3B8' }}>
-          预计阅读 ~{readingTime} 分钟
-        </span>
-      </div>
-      <div style={CARD_BODY_STYLE}>
-        <p style={{ fontSize: 13, color: '#374151', lineHeight: 1.7, margin: '0 0 12px' }}>
-          {result.summary}
-        </p>
-        {priorityFiles.length > 0 && (
-          <>
-            <p style={{ fontSize: 12, fontWeight: 600, color: '#6B7280', margin: '0 0 6px' }}>重点关注文件</p>
-            <ol style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {priorityFiles.map((f, i) => (
-                <li key={i} style={{ fontSize: 12, color: '#374151', fontFamily: "'JetBrains Mono', Consolas, monospace" }}>
-                  {f}
-                </li>
-              ))}
-            </ol>
-          </>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function RiskAnalysisCard({ riskAreas }: { riskAreas: RiskArea[] }) {
-  const grouped: Record<string, RiskArea[]> = { HIGH: [], MEDIUM: [], LOW: [] }
-  for (const r of riskAreas) grouped[r.level]?.push(r)
-
-  return (
-    <div style={CARD_STYLE}>
-      <div style={CARD_HEADER_STYLE}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="#F59E0B"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>
-        风险分析
-      </div>
-      <div style={{ ...CARD_BODY_STYLE, display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {(['HIGH', 'MEDIUM', 'LOW'] as const).map(level => {
-          const items = grouped[level]
-          if (!items || items.length === 0) return null
-          const cfg = RISK_CONFIG[level]
-          return (
-            <div key={level}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: cfg.text, marginBottom: 6, letterSpacing: '0.05em' }}>
-                {cfg.label} ({items.length})
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {items.map((r, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      background: cfg.bg, border: `1px solid ${cfg.border}`,
-                      borderRadius: 6, padding: '8px 12px',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-                      <span
-                        style={{
-                          fontSize: 10, fontWeight: 700,
-                          fontFamily: "'JetBrains Mono', Consolas, monospace",
-                          color: cfg.text, flexShrink: 0,
-                          maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {r.file}
-                      </span>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: '#0F172A' }}>{r.title}</span>
-                    </div>
-                    <p style={{ fontSize: 12, color: '#374151', margin: 0, lineHeight: 1.5 }}>{r.impact}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )
-        })}
-        {riskAreas.length === 0 && (
-          <p style={{ fontSize: 13, color: '#94A3B8', textAlign: 'center', margin: '8px 0' }}>无风险项</p>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function ReviewFindingsCard({
-  issues,
-  filterTab,
-  setFilterTab,
-  expandedId,
-  setExpandedId,
-}: {
-  issues: ReviewIssue[]
-  filterTab: FilterTab
-  setFilterTab: (t: FilterTab) => void
-  expandedId: string | null
-  setExpandedId: (id: string | null) => void
-}) {
-  const [groupOpen, setGroupOpen] = useState<Record<Severity, boolean>>({ ERROR: true, WARNING: false, INFO: false })
-
-  const counts = {
-    all: issues.length,
-    ERROR: issues.filter(i => i.severity === 'ERROR').length,
-    WARNING: issues.filter(i => i.severity === 'WARNING').length,
-    INFO: issues.filter(i => i.severity === 'INFO').length,
-  }
-
-  const filtered = filterTab === 'all' ? issues : issues.filter(i => i.severity === filterTab)
-  const byGroup: Record<Severity, ReviewIssue[]> = { ERROR: [], WARNING: [], INFO: [] }
-  for (const issue of filtered) byGroup[issue.severity].push(issue)
-
-  const tabConfig: [FilterTab, string][] = [
-    ['all', `全部 ${counts.all}`],
-    ['ERROR', `严重 ${counts.ERROR}`],
-    ['WARNING', `警告 ${counts.WARNING}`],
-    ['INFO', `提示 ${counts.INFO}`],
-  ]
-
-  const groupMeta: { sev: Severity; label: string }[] = [
-    { sev: 'ERROR', label: 'Critical' },
-    { sev: 'WARNING', label: 'Warning' },
-    { sev: 'INFO', label: 'Suggestion' },
-  ]
-
-  return (
-    <div style={CARD_STYLE}>
-      <div style={{ ...CARD_HEADER_STYLE, flexWrap: 'wrap', gap: 8 }}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="#EF4444"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
-        审查发现
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-          {tabConfig.map(([tab, label]) => (
-            <button
-              key={tab}
-              onClick={() => setFilterTab(tab)}
-              style={{
-                padding: '3px 10px', borderRadius: 20,
-                border: filterTab === tab ? '1px solid #BFDBFE' : '1px solid #E5E7EB',
-                background: filterTab === tab ? '#EFF6FF' : 'transparent',
-                color: filterTab === tab ? '#2563EB' : '#64748B',
-                fontSize: 11, fontWeight: filterTab === tab ? 700 : 400,
-                cursor: 'pointer',
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        {groupMeta.map(({ sev, label }) => {
-          const items = byGroup[sev]
-          if (items.length === 0) return null
-          const isOpen = groupOpen[sev]
-          const cfg = SEV_COLOR[sev]
-          return (
-            <div key={sev} style={{ borderBottom: '1px solid #F1F5F9' }}>
-              <button
-                onClick={() => setGroupOpen(g => ({ ...g, [sev]: !g[sev] }))}
-                style={{
-                  width: '100%', display: 'flex', alignItems: 'center', gap: 8,
-                  padding: '8px 16px', background: '#FAFAFA',
-                  border: 'none', cursor: 'pointer', textAlign: 'left',
-                }}
-              >
-                <span
-                  style={{
-                    background: cfg.bg, color: cfg.text,
-                    fontSize: 10, fontWeight: 700,
-                    padding: '2px 8px', borderRadius: 4,
-                  }}
-                >
-                  {label}
-                </span>
-                <span style={{ fontSize: 12, color: '#374151' }}>({items.length})</span>
-                <svg
-                  width="13" height="13" viewBox="0 0 24 24" fill="#94A3B8"
-                  style={{ marginLeft: 'auto', transform: isOpen ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s' }}
-                >
-                  <path d="M7 10l5 5 5-5z"/>
-                </svg>
-              </button>
-              {isOpen && items.map((issue, i) => {
-                const id = `${issue.file}:${issue.line}:${sev}:${i}`
-                return (
-                  <IssueRow
-                    key={id}
-                    issue={issue}
-                    expanded={expandedId === id}
-                    onToggle={() => setExpandedId(expandedId === id ? null : id)}
-                  />
-                )
-              })}
-            </div>
-          )
-        })}
-        {filtered.length === 0 && (
-          <div style={{ padding: '20px 16px', textAlign: 'center', color: '#94A3B8', fontSize: 13 }}>
-            该分类下暂无问题
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function MergeRecommendationCard({ rec }: { rec: MergeRecommendation }) {
-  const cfg = DECISION_CONFIG[rec.decision] ?? DECISION_CONFIG.COMMENT
-
-  return (
-    <div style={CARD_STYLE}>
-      <div style={CARD_HEADER_STYLE}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="#059669"><path d="M17 12h-5v5h5v-5zM16 1v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2h-1V1h-2zm3 18H5V8h14v11z"/></svg>
-        合并建议
-      </div>
-      <div style={{ ...CARD_BODY_STYLE, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span
-            style={{
-              background: cfg.bg, color: cfg.text,
-              border: `1px solid ${cfg.border}`,
-              fontSize: 12, fontWeight: 700,
-              padding: '5px 14px', borderRadius: 6,
-              letterSpacing: '0.04em',
-            }}
-          >
-            {cfg.label}
-          </span>
-          <span style={{ fontSize: 13, color: '#374151' }}>置信度</span>
-          <div style={{ flex: 1, background: '#F1F5F9', borderRadius: 99, height: 8, overflow: 'hidden' }}>
-            <div
-              style={{
-                height: '100%',
-                width: `${rec.confidence}%`,
-                background: rec.decision === 'APPROVE' ? '#059669' : rec.decision === 'REQUEST_CHANGES' ? '#EF4444' : '#F59E0B',
-                borderRadius: 99,
-                transition: 'width 0.6s ease',
-              }}
-            />
-          </div>
-          <span style={{ fontSize: 12, fontWeight: 700, color: '#374151', flexShrink: 0 }}>{rec.confidence}%</span>
-        </div>
-
-        {rec.reasons.length > 0 && (
-          <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 5 }}>
-            {rec.reasons.map((r, i) => (
-              <li key={i} style={{ fontSize: 13, color: '#374151', lineHeight: 1.5 }}>{r}</li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ─── Main component ────────────────────────────────────────────────────────────
-
-function buildMarkdown(result: ReviewResult, prUrl: string, meta: PRMeta | null): string {
-  const lines: string[] = []
-  lines.push(`# PR Review: ${meta?.pr_title ?? prUrl}`)
-  lines.push(`\n> ${prUrl}\n`)
-  lines.push(`## 摘要\n\n${result.summary}\n`)
-
-  if (result.risk_areas && result.risk_areas.length > 0) {
-    lines.push(`## 风险分析\n`)
-    for (const r of result.risk_areas) {
-      lines.push(`- **[${r.level}]** \`${r.file}\` — ${r.title}: ${r.impact}`)
-    }
-    lines.push('')
-  }
-
-  if (result.issues.length > 0) {
-    lines.push(`## 审查发现\n`)
-    for (const issue of result.issues) {
-      lines.push(`### [${issue.severity}] ${issue.title}`)
-      lines.push(`**文件**: \`${issue.file}\`${issue.line ? ` · 第 ${issue.line} 行` : ''}`)
-      lines.push(`\n${issue.description}`)
-      if (issue.suggestion) lines.push(`\n**建议**: ${issue.suggestion}`)
-      if (issue.diff_snippet) lines.push(`\n\`\`\`diff\n${issue.diff_snippet}\n\`\`\``)
-      lines.push('')
-    }
-  }
-
-  if (result.merge_recommendation) {
-    const rec = result.merge_recommendation
-    lines.push(`## 合并建议\n`)
-    lines.push(`**决策**: ${rec.decision} (置信度 ${rec.confidence}%)\n`)
-    for (const r of rec.reasons) lines.push(`- ${r}`)
-    lines.push('')
-  }
-
-  lines.push(`---\n*由 PRism AI 生成*`)
-  return lines.join('\n')
+  height: 30, padding: '0 12px', borderRadius: 6,
+  border: '1px solid #E5E7EB', background: '#fff', color: '#374151',
+  fontSize: 12, fontWeight: 500, cursor: 'pointer',
+  display: 'flex', alignItems: 'center', gap: 5,
 }
 
 export default function ReviewResultsPanel({ prUrl, meta, githubToken, onDiffLoaded }: Props) {
@@ -624,12 +66,7 @@ export default function ReviewResultsPanel({ prUrl, meta, githubToken, onDiffLoa
         body: JSON.stringify({
           pr_url: prUrl,
           github_token: githubToken,
-          result: {
-            summary: result.summary,
-            risk_level: result.risk_level,
-            issues: result.issues,
-            stats: result.stats,
-          },
+          result: { summary: result.summary, risk_level: result.risk_level, issues: result.issues, stats: result.stats },
         }),
       })
       const json = await res.json()
@@ -691,12 +128,10 @@ export default function ReviewResultsPanel({ prUrl, meta, githubToken, onDiffLoa
           if (raw === '[DONE]') {
             try {
               let jsonStr = resultAccumulated.trim()
-              // Strip markdown fences if present
               const fenceMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/)
               if (fenceMatch) {
                 jsonStr = fenceMatch[1].trim()
               } else {
-                // Fallback: extract the outermost JSON object
                 const start = jsonStr.indexOf('{')
                 const end = jsonStr.lastIndexOf('}')
                 if (start !== -1 && end > start) jsonStr = jsonStr.slice(start, end + 1)
@@ -741,30 +176,16 @@ export default function ReviewResultsPanel({ prUrl, meta, githubToken, onDiffLoa
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <div
-        style={{
-          flex: 1,
-          background: '#fff',
-          border: '1px solid #E5E7EB',
-          borderRadius: 12,
-          boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          minHeight: 0,
-        }}
-      >
+      <div style={{
+        flex: 1, background: '#fff', border: '1px solid #E5E7EB',
+        borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+        display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0,
+      }}>
         {/* Header */}
-        <div
-          style={{
-            borderBottom: '1px solid #F1F5F9',
-            padding: '12px 20px',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            flexShrink: 0,
-          }}
-        >
+        <div style={{
+          borderBottom: '1px solid #F1F5F9', padding: '12px 20px',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0,
+        }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{ fontSize: 14, fontWeight: 700, color: '#0F172A' }}>AI Code Review</span>
             <SettingsDrawer />
@@ -803,36 +224,19 @@ export default function ReviewResultsPanel({ prUrl, meta, githubToken, onDiffLoa
               onClick={startReview}
               disabled={!canStart}
               style={{
-                height: 34,
-                padding: '0 16px',
-                borderRadius: 8,
-                border: 'none',
+                height: 34, padding: '0 16px', borderRadius: 8, border: 'none',
                 cursor: canStart ? 'pointer' : 'not-allowed',
-                background: canStart
-                  ? 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)'
-                  : '#F1F5F9',
+                background: canStart ? 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)' : '#F1F5F9',
                 color: canStart ? '#fff' : '#94A3B8',
-                fontSize: 13,
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 7,
+                fontSize: 13, fontWeight: 600,
+                display: 'flex', alignItems: 'center', gap: 7,
                 boxShadow: canStart ? '0 2px 8px rgba(37,99,235,0.28)' : 'none',
                 transition: 'all 0.15s',
               }}
             >
               {streaming ? (
                 <>
-                  <span
-                    style={{
-                      width: 12, height: 12,
-                      border: '2px solid rgba(255,255,255,0.3)',
-                      borderTopColor: '#fff',
-                      borderRadius: '50%',
-                      animation: 'spin 0.7s linear infinite',
-                      display: 'inline-block',
-                    }}
-                  />
+                  <span style={{ width: 12, height: 12, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.7s linear infinite', display: 'inline-block' }} />
                   分析中…
                 </>
               ) : (
@@ -846,37 +250,22 @@ export default function ReviewResultsPanel({ prUrl, meta, githubToken, onDiffLoa
         </div>
 
         {/* Scrollable body */}
-        <div
-          style={{
-            flex: 1,
-            overflowY: 'auto',
-            padding: '16px 20px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 16,
-            minHeight: 0,
-          }}
-        >
-          {/* 连接中骨架 — streaming 已触发但 think 内容还未到达 */}
+        <div style={{
+          flex: 1, overflowY: 'auto', padding: '16px 20px',
+          display: 'flex', flexDirection: 'column', gap: 16, minHeight: 0,
+        }}>
           {streaming && !thinkText && !thinkDone && (
-            <div style={{ ...CARD_STYLE, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{
-                width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                background: '#8B5CF6', animation: 'pulse 1.2s ease-in-out infinite',
-              }} />
+            <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: '#8B5CF6', animation: 'pulse 1.2s ease-in-out infinite' }} />
               <span style={{ fontSize: 12, color: '#6D28D9', fontWeight: 600 }}>正在连接模型…</span>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6, marginLeft: 8 }}>
                 {[100, 80, 60].map((w, i) => (
-                  <div key={i} style={{
-                    height: 10, borderRadius: 4, background: '#E9D5FF',
-                    width: `${w}%`, animation: `pulse ${1.2 + i * 0.2}s ease-in-out infinite`,
-                  }} />
+                  <div key={i} style={{ height: 10, borderRadius: 4, background: '#E9D5FF', width: `${w}%`, animation: `pulse ${1.2 + i * 0.2}s ease-in-out infinite` }} />
                 ))}
               </div>
             </div>
           )}
 
-          {/* ThinkingPanel — 有内容后替换骨架 */}
           {(streaming || thinkDone) && thinkText && (
             <ThinkingPanel
               thinkText={thinkText}
@@ -888,15 +277,12 @@ export default function ReviewResultsPanel({ prUrl, meta, githubToken, onDiffLoa
             />
           )}
 
-          {/* AISummaryCard */}
           {result && <AISummaryCard result={result} meta={meta} />}
 
-          {/* RiskAnalysisCard */}
           {result && result.risk_areas && result.risk_areas.length > 0 && (
             <RiskAnalysisCard riskAreas={result.risk_areas} />
           )}
 
-          {/* ReviewFindingsCard */}
           {result && allIssues.length > 0 && (
             <ReviewFindingsCard
               issues={allIssues}
@@ -907,12 +293,10 @@ export default function ReviewResultsPanel({ prUrl, meta, githubToken, onDiffLoa
             />
           )}
 
-          {/* MergeRecommendationCard */}
           {result && result.merge_recommendation && (
             <MergeRecommendationCard rec={result.merge_recommendation} />
           )}
 
-          {/* Empty state */}
           {!streaming && !result && !streamError && (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 200 }}>
               <div style={{ textAlign: 'center' }}>
@@ -926,7 +310,6 @@ export default function ReviewResultsPanel({ prUrl, meta, githubToken, onDiffLoa
             </div>
           )}
 
-          {/* Error state */}
           {streamError && (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 200 }}>
               <div style={{ textAlign: 'center' }}>
@@ -934,10 +317,7 @@ export default function ReviewResultsPanel({ prUrl, meta, githubToken, onDiffLoa
                   <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
                 </svg>
                 <p style={{ color: '#EF4444', fontSize: 13 }}>{streamError}</p>
-                <button
-                  onClick={startReview}
-                  style={{ marginTop: 10, fontSize: 12, color: '#2563EB', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
-                >
+                <button onClick={startReview} style={{ marginTop: 10, fontSize: 12, color: '#2563EB', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
                   重试
                 </button>
               </div>
