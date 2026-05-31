@@ -1,7 +1,11 @@
 import { useState } from 'react'
 
 interface FileItem { filename: string; additions: number; deletions: number }
-interface Props { files: FileItem[] }
+interface Props {
+  files: FileItem[]
+  selectedFile: string | null
+  onSelectFile: (file: string | null) => void
+}
 
 function StepBadge({ n }: { n: number }) {
   return (
@@ -18,7 +22,7 @@ function StepBadge({ n }: { n: number }) {
   )
 }
 
-export default function ChangedFilesList({ files }: Props) {
+export default function ChangedFilesList({ files, selectedFile, onSelectFile }: Props) {
   const [expanded, setExpanded] = useState(false)
   const [search, setSearch] = useState('')
 
@@ -30,11 +34,11 @@ export default function ChangedFilesList({ files }: Props) {
 
   return (
     <div
-      className="rounded-xl overflow-hidden"
       style={{
         background: '#ffffff',
-        border: '1px solid var(--hairline)',
-        boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+        border: '1px solid #E5E7EB',
+        borderRadius: 12,
+        boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
       }}
     >
       {/* Header */}
@@ -43,9 +47,9 @@ export default function ChangedFilesList({ files }: Props) {
         style={{ borderBottom: '1px solid #f1f5f9' }}
       >
         <div className="flex items-center gap-2.5">
-          <StepBadge n={3} />
+          <StepBadge n={2} />
           <span style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>
-            Changed Files
+            变更文件
           </span>
           <span
             style={{
@@ -70,7 +74,7 @@ export default function ChangedFilesList({ files }: Props) {
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search files"
+            placeholder="搜索文件"
             style={{
               background: 'none', border: 'none', outline: 'none',
               fontSize: 11, color: '#0f172a', width: 96,
@@ -80,13 +84,20 @@ export default function ChangedFilesList({ files }: Props) {
       </div>
 
       <div className="py-1">
-        {visible.map((f, i) => (
+        {visible.map((f, i) => {
+          const isSelected = selectedFile === f.filename
+          return (
           <div
             key={i}
             className="flex items-center gap-2.5 px-5 py-2"
-            style={{ cursor: 'default', transition: 'background 0.1s' }}
-            onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = '#f8fafc' }}
-            onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'transparent' }}
+            style={{
+              cursor: 'pointer', transition: 'background 0.1s',
+              background: isSelected ? '#EFF6FF' : 'transparent',
+              borderLeft: isSelected ? '2px solid #2563EB' : '2px solid transparent',
+            }}
+            onClick={() => onSelectFile(isSelected ? null : f.filename)}
+            onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = '#f8fafc' }}
+            onMouseLeave={e => { if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = 'transparent' }}
           >
             {/* File icon */}
             <svg width="13" height="13" viewBox="0 0 24 24" fill="#94a3b8" style={{ flexShrink: 0 }}>
@@ -109,7 +120,8 @@ export default function ChangedFilesList({ files }: Props) {
               <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>
             </svg>
           </div>
-        ))}
+          )
+        })}
 
         {!expanded && hidden > 0 && (
           <button
@@ -124,7 +136,7 @@ export default function ChangedFilesList({ files }: Props) {
             <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
               <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
             </svg>
-            {hidden} more files
+            还有 {hidden} 个文件
             <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
               <path d="M7 10l5 5 5-5z"/>
             </svg>
@@ -139,7 +151,7 @@ export default function ChangedFilesList({ files }: Props) {
               border: 'none', cursor: 'pointer', color: '#64748b', fontSize: 12,
             }}
           >
-            Show less ▲
+            收起 ▲
           </button>
         )}
       </div>
