@@ -215,8 +215,11 @@ PR意图说明：统一A3Three与A4/A3的定位逻辑，page_idx直接为栏序�
 - issues[].confidence < 0.75 的问题不要输出"""
 
 
-def _make_client() -> AsyncOpenAI:
-    return AsyncOpenAI(api_key=os.environ["DEEPSEEK_API_KEY"], base_url=BASE_URL)
+def _make_client(api_key: str | None = None, base_url: str | None = None) -> AsyncOpenAI:
+    return AsyncOpenAI(
+        api_key=api_key or os.environ["DEEPSEEK_API_KEY"],
+        base_url=base_url or BASE_URL,
+    )
 
 
 def _extract_json(text: str) -> str:
@@ -338,11 +341,11 @@ Diff（前 40000 字符）:
         return issues
 
 
-async def analyze_pr(pr_context: dict, include_style: bool = False, perspective: str = "default", review_type: str = "all", model: str = MODEL) -> ReviewResult:
+async def analyze_pr(pr_context: dict, include_style: bool = False, perspective: str = "default", review_type: str = "all", model: str = MODEL, api_key: str | None = None, base_url: str | None = None) -> ReviewResult:
     type_to_perspective = {"all": "default", "bugs": "default", "security": "security", "performance": "performance"}
     effective_perspective = type_to_perspective.get(review_type, perspective)
 
-    client = _make_client()
+    client = _make_client(api_key, base_url)
     prompt = _build_prompt(pr_context)
 
     response = await client.chat.completions.create(
@@ -453,8 +456,8 @@ async def generate_cursor_path(diff_lines: list[str]) -> list[int]:
     return _fallback_cursor_path(diff_lines)
 
 
-async def stream_analyze_pr(pr_context: dict, perspective: str = "default", model: str = MODEL):
-    client = _make_client()
+async def stream_analyze_pr(pr_context: dict, perspective: str = "default", model: str = MODEL, api_key: str | None = None, base_url: str | None = None):
+    client = _make_client(api_key, base_url)
     prompt = _build_prompt(pr_context)
 
     stream = await client.chat.completions.create(

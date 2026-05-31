@@ -64,6 +64,8 @@ class ReviewRequest(BaseModel):
     options: dict | None = None
     review_type: str = "all"
     model: str | None = None
+    api_key: str | None = None
+    base_url: str | None = None
 
 
 class PostReviewRequest(BaseModel):
