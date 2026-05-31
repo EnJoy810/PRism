@@ -41,7 +41,7 @@ export default function ReviewPage() {
         }}
       >
         {/* Left column — scrollable */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto', paddingBottom: 28 }}>
           <PRUrlInput
             onMetaLoaded={handleMetaLoaded}
             onTokenChange={setGithubToken}
