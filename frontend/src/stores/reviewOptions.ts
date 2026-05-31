@@ -1,15 +1,17 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 
-export interface ReviewOptions {
-  // 已简化，所有选项已移除
+interface SettingsStore {
+  model: string
+  setModel: (model: string) => void
 }
 
-interface ReviewOptionsStore {
-  options: ReviewOptions
-  reset: () => void
-}
-
-export const useReviewOptions = create<ReviewOptionsStore>((set) => ({
-  options: {},
-  reset: () => set({ options: {} }),
-}))
+export const useSettings = create<SettingsStore>()(
+  persist(
+    (set) => ({
+      model: 'deepseek-v4-flash',
+      setModel: (model) => set({ model }),
+    }),
+    { name: 'prism-settings' }
+  )
+)

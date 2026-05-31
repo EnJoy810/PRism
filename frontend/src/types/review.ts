@@ -26,6 +26,7 @@ export interface ReviewIssue {
   description: string
   suggestion?: string
   diff_snippet?: string
+  confidence?: number
 }
 
 export interface WalkthroughEntry {
@@ -45,6 +46,22 @@ export interface ReviewResult {
     deletions: number
     issues_by_severity: Record<Severity, number>
   }
+  priority_files?: string[]
+  risk_areas?: RiskArea[]
+  merge_recommendation?: MergeRecommendation
+}
+
+export interface RiskArea {
+  level: 'HIGH' | 'MEDIUM' | 'LOW'
+  file: string
+  title: string
+  impact: string
+}
+
+export interface MergeRecommendation {
+  decision: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT'
+  confidence: number
+  reasons: string[]
 }
 
 export interface ReviewRequest {
