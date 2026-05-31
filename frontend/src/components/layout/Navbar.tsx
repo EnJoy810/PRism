@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useSettings } from '../../stores/reviewOptions'
+import SettingsDrawer from '../common/SettingsDrawer'
 
 const NAV_ITEMS = [
   { label: 'Dashboard', active: false },
@@ -7,119 +7,6 @@ const NAV_ITEMS = [
   { label: 'AI Review', active: true },
   { label: 'Repositories', active: false },
 ]
-
-const PRESET_MODELS = [
-  { label: 'DeepSeek V4 Flash', desc: '响应快，适合日常 Review', value: 'deepseek-v4-flash' },
-  { label: 'DeepSeek V4 Pro', desc: '推理深，适合复杂变更', value: 'deepseek-v4-pro' },
-]
-
-function SettingsDrawer({ onClose }: { onClose: () => void }) {
-  const { model, setModel } = useSettings()
-  const [custom, setCustom] = useState(
-    PRESET_MODELS.find(m => m.value === model) ? '' : model
-  )
-  const isPreset = PRESET_MODELS.some(m => m.value === model)
-
-  function applyCustom(val: string) {
-    setCustom(val)
-    if (val.trim()) setModel(val.trim())
-  }
-
-  return (
-    <>
-      {/* Backdrop */}
-      <div
-        onClick={onClose}
-        style={{
-          position: 'fixed', inset: 0, zIndex: 200,
-          background: 'rgba(0,0,0,0.25)',
-        }}
-      />
-      {/* Drawer */}
-      <div
-        style={{
-          position: 'fixed', top: 0, right: 0, bottom: 0,
-          width: 340, zIndex: 201,
-          background: '#fff',
-          borderLeft: '1px solid #E5E7EB',
-          boxShadow: '-4px 0 24px rgba(0,0,0,0.10)',
-          display: 'flex', flexDirection: 'column',
-        }}
-      >
-        {/* Header */}
-        <div style={{
-          padding: '18px 20px 16px',
-          borderBottom: '1px solid #F1F5F9',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        }}>
-          <span style={{ fontSize: 15, fontWeight: 700, color: '#0F172A' }}>设置</span>
-          <button
-            onClick={onClose}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: '#94A3B8', borderRadius: 6 }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-          </button>
-        </div>
-
-        {/* Body */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
-          <p style={{ fontSize: 11, fontWeight: 600, color: '#94A3B8', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 12 }}>
-            模型
-          </p>
-
-          {/* Preset options */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
-            {PRESET_MODELS.map(m => (
-              <button
-                key={m.value}
-                onClick={() => { setModel(m.value); setCustom('') }}
-                style={{
-                  textAlign: 'left', padding: '10px 14px', borderRadius: 8, cursor: 'pointer',
-                  border: model === m.value && isPreset ? '1.5px solid #2563EB' : '1px solid #E5E7EB',
-                  background: model === m.value && isPreset ? '#EFF6FF' : '#F8FAFC',
-                  transition: 'all 0.1s',
-                }}
-              >
-                <div style={{ fontSize: 13, fontWeight: 600, color: model === m.value && isPreset ? '#2563EB' : '#0F172A', marginBottom: 2 }}>
-                  {m.label}
-                </div>
-                <div style={{ fontSize: 11, color: '#94A3B8' }}>{m.desc}</div>
-              </button>
-            ))}
-          </div>
-
-          {/* Custom model input */}
-          <div>
-            <p style={{ fontSize: 12, color: '#64748B', marginBottom: 6 }}>自定义模型 ID</p>
-            <input
-              value={custom}
-              onChange={e => applyCustom(e.target.value)}
-              placeholder="如 gpt-4o、claude-opus-4-8"
-              style={{
-                width: '100%', height: 36, padding: '0 12px', borderRadius: 7,
-                border: !isPreset && model ? '1.5px solid #2563EB' : '1px solid #E5E7EB',
-                background: '#F8FAFC', fontSize: 12, color: '#0F172A',
-                fontFamily: "'JetBrains Mono', Consolas, monospace",
-                outline: 'none', boxSizing: 'border-box',
-              }}
-            />
-            <p style={{ fontSize: 11, color: '#94A3B8', marginTop: 5 }}>
-              支持任意 OpenAI 兼容接口的模型 ID
-            </p>
-          </div>
-
-          {/* Current model indicator */}
-          <div style={{ marginTop: 20, padding: '10px 14px', background: '#F8FAFC', borderRadius: 8, border: '1px solid #F1F5F9' }}>
-            <p style={{ fontSize: 11, color: '#94A3B8', marginBottom: 3 }}>当前使用</p>
-            <p style={{ fontSize: 12, fontWeight: 600, color: '#0F172A', fontFamily: "'JetBrains Mono', monospace" }}>
-              {model}
-            </p>
-          </div>
-        </div>
-      </div>
-    </>
-  )
-}
 
 export default function Navbar() {
   const [settingsOpen, setSettingsOpen] = useState(false)

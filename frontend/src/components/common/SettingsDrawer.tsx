@@ -136,8 +136,14 @@ function Drawer({ onClose }: { onClose: () => void }) {
   )
 }
 
-export default function SettingsDrawer() {
+// 受控模式：传入 onClose 时直接渲染 Drawer（由父级控制 open 状态）
+// 非受控模式：不传 onClose 时内置触发按钮
+export default function SettingsDrawer({ onClose }: { onClose?: () => void } = {}) {
   const [open, setOpen] = useState(false)
+
+  if (onClose) {
+    return <Drawer onClose={onClose} />
+  }
 
   return (
     <>
