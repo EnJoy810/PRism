@@ -50,7 +50,9 @@ export default function PRUrlInput({ onMetaLoaded, onTokenChange, meta, prUrl }:
     setLoading(true)
     setError('')
     try {
-      const res = await fetch(`/api/pr/meta?pr_url=${encodeURIComponent(url.trim())}`)
+      const params = new URLSearchParams({ pr_url: url.trim() })
+      if (token) params.set('github_token', token)
+      const res = await fetch(`/api/pr/meta?${params}`)
       const json = await res.json()
       if (!res.ok || json.code !== '0') throw new Error(json.detail || '获取失败')
       onMetaLoaded(json.data, url.trim())

@@ -6,7 +6,7 @@ from app.models.review import ReviewStats
 
 
 def parse_pr_url(pr_url: str) -> tuple[str, str, int]:
-    pattern = r"github\.com/([^/]+)/([^/]+)/pull/(\d+)"
+    pattern = r"github\.com/([^/]+)/([^/]+)/pulls?/(\d+)"
     match = re.search(pattern, pr_url)
     if not match:
         raise ValueError(f"Invalid GitHub PR URL: {pr_url}")

@@ -82,6 +82,14 @@ export default function ReviewResultsPanel({ prUrl, meta, githubToken, onDiffLoa
 
   async function startReview() {
     if (!prUrl || !meta || streaming) return
+    if (!apiKey) {
+      setStreamError('请在设置中配置 API Key')
+      return
+    }
+    if (!githubToken) {
+      setStreamError('请填写 GitHub Token')
+      return
+    }
     abortRef.current?.abort()
     const ctrl = new AbortController()
     abortRef.current = ctrl
@@ -102,7 +110,7 @@ export default function ReviewResultsPanel({ prUrl, meta, githubToken, onDiffLoa
           pr_url: prUrl,
           model: model || 'deepseek-v4-flash',
           api_key: apiKey || undefined,
-          base_url: baseUrl || undefined,
+          github_token: githubToken || undefined,
         }),
         signal: ctrl.signal,
       })
@@ -171,7 +179,7 @@ export default function ReviewResultsPanel({ prUrl, meta, githubToken, onDiffLoa
     }
   }
 
-  const canStart = !!prUrl && !!meta && !streaming
+  const canStart = !!prUrl && !!meta && !streaming && !!apiKey && !!githubToken
   const allIssues = result?.issues ?? []
 
   return (
@@ -223,6 +231,7 @@ export default function ReviewResultsPanel({ prUrl, meta, githubToken, onDiffLoa
             <button
               onClick={startReview}
               disabled={!canStart}
+              title={!prUrl || !meta ? '请先填写 PR 链接' : !apiKey ? '请在设置中配置 API Key' : !githubToken ? '请填写 GitHub Token' : ''}
               style={{
                 height: 34, padding: '0 16px', borderRadius: 8, border: 'none',
                 cursor: canStart ? 'pointer' : 'not-allowed',
