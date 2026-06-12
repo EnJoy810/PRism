@@ -1,11 +1,177 @@
+import asyncio
 import json
+import logging
 import os
+import random
 import re
-from openai import AsyncOpenAI
-from app.models.review import MergeRecommendation, ReviewIssue, ReviewResult, RiskArea, Severity, WalkthroughEntry
+
+from openai import APIError, APITimeoutError, AsyncOpenAI, AuthenticationError, RateLimitError
+
+from app.config import load_config
+from app.models.review import (
+    MergeRecommendation,
+    ReviewIssue,
+    ReviewResult,
+    RiskArea,
+    Severity,
+    WalkthroughEntry,
+)
+
+logger = logging.getLogger(__name__)
+
+_UNSET = object()
 
 MODEL = "deepseek-v4-flash"
 BASE_URL = "https://api.deepseek.com/v1"
+
+RETRYABLE_STATUSES = {429, 500, 502, 503}
+MAX_RETRIES = 3
+BASE_DELAY = 1.0
+
+
+class BudgetExceededError(Exception):
+    pass
+
+
+class TokenBudget:
+    def __init__(self, max_tokens_per_call: int = 4096):
+        self.max_tokens_per_call = max_tokens_per_call
+        self.total_tokens = 0
+        self.call_count = 0
+
+    @property
+    def exceeded(self) -> bool:
+        return self.total_tokens >= self.max_tokens_per_call
+
+    def record(self, tokens: int) -> None:
+        self.total_tokens += tokens
+        self.call_count += 1
+
+    def reset(self) -> None:
+        self.total_tokens = 0
+        self.call_count = 0
+
+
+class LLMClient:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model: str = MODEL,
+        base_url: str = BASE_URL,
+        budget: TokenBudget | None | object = _UNSET,
+    ):
+        cfg = load_config()
+        self.client = AsyncOpenAI(
+            api_key=api_key or cfg.deepseek_api_key or os.environ.get("DEEPSEEK_API_KEY", ""),
+            base_url=base_url or BASE_URL,
+        )
+        self.model = model
+        if budget is _UNSET:
+            self.budget = TokenBudget()
+        else:
+            self.budget = budget
+        self.total_tokens = 0
+
+    async def chat(
+        self,
+        messages: list[dict],
+        max_tokens: int = 4096,
+        temperature: float = 1.0,
+        top_p: float = 1.0,
+        stream: bool = False,
+        estimated_tokens: int | None = None,
+    ) -> str:
+        if self.budget is not None:
+            if estimated_tokens is None:
+                raise ValueError(
+                    "estimated_tokens is required when budget is configured"
+                )
+            if self.budget.exceeded:
+                raise BudgetExceededError(
+                    f"Budget exceeded: {self.budget.total_tokens} >= "
+                    f"{self.budget.max_tokens_per_call}"
+                )
+            if self.budget.total_tokens + estimated_tokens > self.budget.max_tokens_per_call:
+                raise BudgetExceededError(
+                    f"Estimated {estimated_tokens} tokens would exceed budget "
+                    f"({self.budget.total_tokens} + {estimated_tokens} > "
+                    f"{self.budget.max_tokens_per_call})"
+                )
+
+        last_error: Exception | None = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                response = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    top_p=top_p,
+                    stream=stream,
+                )
+
+                if stream:
+                    full = await self._handle_stream(response)
+                    return full
+                else:
+                    content = response.choices[0].message.content or ""
+                    self._track_usage(response)
+                    return content
+
+            except AuthenticationError:
+                raise
+            except RateLimitError as e:
+                last_error = e
+                if attempt < MAX_RETRIES - 1:
+                    delay = BASE_DELAY * (2**attempt) + random.uniform(0, 0.5)
+                    logger.warning(
+                        "Rate limited, retrying in %.1fs (attempt %d/3)",
+                        delay, attempt + 1,
+                    )
+                    await asyncio.sleep(delay)
+            except APITimeoutError as e:
+                last_error = e
+                if attempt < MAX_RETRIES - 1:
+                    delay = BASE_DELAY * (2**attempt) + random.uniform(0, 0.5)
+                    logger.warning(
+                        "Timeout, retrying in %.1fs (attempt %d/3)",
+                        delay, attempt + 1,
+                    )
+                    await asyncio.sleep(delay)
+            except APIError as e:
+                status = getattr(e, "status_code", None)
+                if status in RETRYABLE_STATUSES and attempt < MAX_RETRIES - 1:
+                    last_error = e
+                    delay = BASE_DELAY * (2**attempt) + random.uniform(0, 0.5)
+                    logger.warning(
+                        "API error %s, retrying in %.1fs (attempt %d/3)",
+                        status, delay, attempt + 1,
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    raise
+
+        raise last_error  # type: ignore[misc]
+
+    def _track_usage(self, response) -> None:
+        if usage := getattr(response, "usage", None):
+            tokens = (usage.prompt_tokens or 0) + (usage.completion_tokens or 0)
+            self.total_tokens += tokens
+            if self.budget is not None:
+                self.budget.record(tokens)
+
+    async def _handle_stream(self, response) -> str:
+        full = ""
+        async for chunk in response:
+            delta = chunk.choices[0].delta.content or ""
+            if delta:
+                full += delta
+            if usage := getattr(chunk, "usage", None):
+                tokens = (usage.prompt_tokens or 0) + (usage.completion_tokens or 0)
+                self.total_tokens += tokens
+                if self.budget is not None:
+                    self.budget.record(tokens)
+        return full
 
 SYSTEM_PROMPT = """你是一位资深软件工程师，正在做代码审查。找出真正的缺陷，而不是风格问题。
 用中文回答。
@@ -216,8 +382,9 @@ PR意图说明：统一A3Three与A4/A3的定位逻辑，page_idx直接为栏序�
 
 
 def _make_client(api_key: str | None = None, base_url: str | None = None) -> AsyncOpenAI:
+    cfg = load_config()
     return AsyncOpenAI(
-        api_key=api_key or os.environ["DEEPSEEK_API_KEY"],
+        api_key=api_key or cfg.deepseek_api_key or os.environ.get("DEEPSEEK_API_KEY", ""),
         base_url=base_url or BASE_URL,
     )
 
@@ -298,11 +465,16 @@ def extract_diff_snippet(diff: str, file_path: str, line_num: int | None, contex
     return '\n'.join(raw for (_, raw) in hunk_lines[start:end])
 
 
-async def judge_issues(diff: str, issues: list[ReviewIssue], pr_description: str = "") -> list[ReviewIssue]:
+async def judge_issues(
+    diff: str,
+    issues: list[ReviewIssue],
+    pr_description: str = "",
+    client: LLMClient | None = None,
+) -> list[ReviewIssue]:
     if not issues:
         return issues
 
-    client = _make_client()
+    llm = client or LLMClient()
     issues_text = "\n".join(
         f"{i+1}. [{issue.severity}] {issue.file}:{issue.line or '?'} — {issue.title}: {issue.description}"
         for i, issue in enumerate(issues)
@@ -324,14 +496,14 @@ Diff（前 40000 字符）:
 只返回 JSON 数组，不要其他内容。"""
 
     try:
-        response = await client.chat.completions.create(
-            model=MODEL, max_tokens=512, temperature=0.2,
+        content = await llm.chat(
+            model=llm.model, max_tokens=512, temperature=0.2,
             messages=[
                 {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ],
         )
-        raw = _extract_json(response.choices[0].message.content or "[]")
+        raw = _extract_json(content)
         verdicts = json.loads(raw)
         confirmed = {v["index"] for v in verdicts if isinstance(v, dict) and v.get("verdict") == "CONFIRM"}
         if not confirmed:
@@ -345,10 +517,10 @@ async def analyze_pr(pr_context: dict, include_style: bool = False, perspective:
     type_to_perspective = {"all": "default", "bugs": "default", "security": "security", "performance": "performance"}
     effective_perspective = type_to_perspective.get(review_type, perspective)
 
-    client = _make_client(api_key, base_url)
+    client = LLMClient(api_key=api_key, model=model, base_url=base_url)
     prompt = _build_prompt(pr_context)
 
-    response = await client.chat.completions.create(
+    content = await client.chat(
         model=model, max_tokens=4096, temperature=1.0, top_p=1.0,
         messages=[
             {"role": "system", "content": _get_system_prompt(effective_perspective)},
@@ -356,7 +528,7 @@ async def analyze_pr(pr_context: dict, include_style: bool = False, perspective:
         ],
     )
 
-    raw = _extract_json(response.choices[0].message.content or "{}")
+    raw = _extract_json(content)
     data = json.loads(raw)
 
     issues = [ReviewIssue(**issue) for issue in data.get("issues", [])]
@@ -432,19 +604,19 @@ def _fallback_cursor_path(diff_lines: list[str]) -> list[int]:
 
 
 async def generate_cursor_path(diff_lines: list[str]) -> list[int]:
-    client = _make_client()
+    llm = LLMClient()
     numbered = "\n".join(f"{i+1}: {line}" for i, line in enumerate(diff_lines))
     prompt = f"Diff lines:\n{numbered}\n\nReturn only a JSON array of the most interesting line numbers in reading order."
 
     try:
-        response = await client.chat.completions.create(
-            model=MODEL, max_tokens=150, temperature=0.3,
+        content = await llm.chat(
+            model=llm.model, max_tokens=150, temperature=0.3,
             messages=[
                 {"role": "system", "content": CURSOR_PATH_SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ],
         )
-        raw = _extract_json(response.choices[0].message.content or "[]")
+        raw = _extract_json(content)
         path = json.loads(raw)
         if isinstance(path, list) and len(path) > 0 and all(isinstance(i, int) for i in path):
             valid = [i for i in path if 1 <= i <= len(diff_lines)]
@@ -457,10 +629,10 @@ async def generate_cursor_path(diff_lines: list[str]) -> list[int]:
 
 
 async def stream_analyze_pr(pr_context: dict, perspective: str = "default", model: str = MODEL, api_key: str | None = None, base_url: str | None = None):
-    client = _make_client(api_key, base_url)
+    llm = LLMClient(api_key=api_key, model=model, base_url=base_url)
     prompt = _build_prompt(pr_context)
 
-    stream = await client.chat.completions.create(
+    stream = await llm.client.chat.completions.create(
         model=model, max_tokens=4096, temperature=1.0, top_p=1.0, stream=True,
         messages=[
             {"role": "system", "content": _get_system_prompt(perspective)},

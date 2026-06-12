@@ -1,8 +1,10 @@
 from pathlib import Path
+
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import review
+
+from app.routers import review, webhook
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
@@ -17,6 +19,7 @@ app.add_middleware(
 )
 
 app.include_router(review.router, prefix="/api")
+app.include_router(webhook.router, prefix="/api")
 
 
 @app.get("/health")

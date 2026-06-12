@@ -1,0 +1,17 @@
+review:
+  budget:
+    max_per_review_usd: 0.50
+    max_tokens_per_call: 4096
+  agents:
+    expert_model: deepseek-v4-flash
+    judge_model: deepseek-v4-pro
+  filters:
+    min_confidence: 0.6
+    severity_threshold: WARNING
+  skip:
+    - "*.lock"
+    - "*.snap"
+    - "*.min.js"
+
+github:
+  webhook_secret: ""

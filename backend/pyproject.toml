@@ -2,7 +2,7 @@
 name = "prism-backend"
 version = "0.1.0"
 description = "PRism AI PR Review Backend"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
@@ -11,6 +11,8 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "pydantic>=2.10.0",
     "pydantic-settings>=2.7.0",
+    "pyyaml>=6.0.0",
+    "arq[redis]>=0.26.0",
 ]
 
 [project.optional-dependencies]
