@@ -1,0 +1,26 @@
+from enum import StrEnum
+
+from pydantic import BaseModel
+
+
+class AgentStatus(StrEnum):
+    SUCCESS = "success"
+    TIMEOUT = "timeout"
+    FORMAT_ERROR = "format_error"
+
+
+class FindingSchema(BaseModel):
+    file: str
+    line: int | None = None
+    title: str
+    description: str
+    severity: str  # "ERROR" | "WARNING" | "INFO"
+    confidence: float
+    category: str  # "security" | "performance" | "quality"
+    diff_snippet: str | None = None
+
+
+class AgentResult(BaseModel):
+    status: AgentStatus
+    findings: list[FindingSchema]
+    error_message: str | None = None
