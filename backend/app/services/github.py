@@ -1,7 +1,9 @@
 import base64
 import os
 import re
+
 import httpx
+
 from app.models.review import ReviewStats
 
 
@@ -56,13 +58,27 @@ async def fetch_pr_context(
             headers={**headers, "Accept": "application/vnd.github.v3.diff"},
         )
         diff_resp.raise_for_status()
+        diff_text = diff_resp.text
+        diff_truncated = False
+        if len(diff_text) > 100_000:
+            diff_text = diff_text[:100_000]
+            diff_truncated = True
 
-        files_resp = await client.get(
-            f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/files",
-            headers=headers,
-        )
-        files_resp.raise_for_status()
-        files_data = files_resp.json()
+        # Paginate through all files
+        files_data: list[dict] = []
+        page = 1
+        while True:
+            files_resp = await client.get(
+                f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/files",
+                headers=headers,
+                params={"per_page": 100, "page": page},
+            )
+            files_resp.raise_for_status()
+            page_data = files_resp.json()
+            if not page_data:
+                break
+            files_data.extend(page_data)
+            page += 1
 
         # 取变更最多的前 3 个文件内容
         top_files = sorted(files_data, key=lambda f: f.get("additions", 0), reverse=True)[:3]
@@ -83,7 +99,8 @@ async def fetch_pr_context(
     return {
         "title": pr_data["title"],
         "description": pr_data.get("body") or "",
-        "diff": diff_resp.text,
+        "diff": diff_text,
+        "diff_truncated": diff_truncated,
         "files": [f["filename"] for f in files_data],
         "stats": stats,
         "base_branch": pr_data["base"]["ref"],

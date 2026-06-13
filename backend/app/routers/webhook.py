@@ -1,5 +1,7 @@
 import hashlib
 import hmac
+import json
+import logging
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -7,7 +9,12 @@ from fastapi.responses import JSONResponse
 from app.config import load_config
 from app.services.queue import ReviewJob, enqueue_review
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+SUPPORTED_PR_ACTIONS = {"opened", "synchronize"}
+BOT_TRIGGER = "@prism-bot"
 
 
 def verify_hmac_signature(
@@ -18,7 +25,7 @@ def verify_hmac_signature(
     expected_prefix = "sha256="
     if not signature_header.startswith(expected_prefix):
         return False
-    sig = signature_header[len(expected_prefix):]
+    sig = signature_header[len(expected_prefix) :]
     expected_sig = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(sig, expected_sig)
 
@@ -35,22 +42,47 @@ async def handle_webhook(request: Request):
                 status_code=401, content={"error": "Invalid signature"}
             )
 
-    import json
-
     payload = json.loads(body)
     event = request.headers.get("X-GitHub-Event", "unknown")
-    pull_request = payload.get("pull_request", {})
 
-    job = ReviewJob(
-        pr_url=pull_request.get("html_url", ""),
-        event=event,
-        installation_id=payload.get("installation", {}).get("id"),
-    )
+    if event == "pull_request":
+        action = payload.get("action", "")
+        if action not in SUPPORTED_PR_ACTIONS:
+            logger.info("Ignoring unsupported PR action: %s", action)
+            return JSONResponse(status_code=200, content={"status": "ignored"})
+
+        pull_request = payload.get("pull_request", {})
+        job = ReviewJob(
+            pr_url=pull_request.get("html_url", ""),
+            event=f"pull_request.{action}",
+            installation_id=payload.get("installation", {}).get("id"),
+        )
+
+    elif event == "issue_comment":
+        action = payload.get("action", "")
+        if action != "created":
+            return JSONResponse(status_code=200, content={"status": "ignored"})
+
+        comment_body = payload.get("comment", {}).get("body", "")
+        if BOT_TRIGGER not in comment_body:
+            return JSONResponse(status_code=200, content={"status": "ignored"})
+
+        issue = payload.get("issue", {})
+        pr_url = issue.get("pull_request", {}).get("html_url", "") or issue.get("html_url", "")
+        job = ReviewJob(
+            pr_url=pr_url,
+            event="issue_comment.created",
+            installation_id=payload.get("installation", {}).get("id"),
+        )
+
+    else:
+        logger.info("Ignoring unsupported event: %s", event)
+        return JSONResponse(status_code=200, content={"status": "ignored"})
 
     if not job.pr_url:
         return JSONResponse(
             status_code=400, content={"error": "No pull_request URL in payload"}
         )
 
-    await enqueue_review(job, config.redis_url)
+    await enqueue_review(job, request.app.state.redis)
     return JSONResponse(status_code=202, content={"status": "accepted"})

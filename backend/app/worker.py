@@ -1,8 +1,12 @@
 """ARQ background worker for consuming review_queue."""
 
 import asyncio
+import logging
 
 from app.config import load_config
+from app.graph import ReviewGraph
+
+logger = logging.getLogger(__name__)
 
 
 async def startup(ctx):
@@ -15,15 +19,46 @@ async def shutdown(ctx):
 
 
 async def review_job(ctx, pr_url: str, event: str, installation_id: int | None = None):
-    _ = ctx["config"]
-    print(f"Processing review: {pr_url} (event={event})")
+    config = ctx["config"]
+    logger.info("Processing review: %s (event=%s)", pr_url, event)
+
+    github_token = config.github_token
+    if installation_id and not github_token:
+        logger.warning(
+            "Installation ID %s provided but no github_token configured; "
+            "falling back to anonymous review (no comment posted)",
+            installation_id,
+        )
+
+    try:
+        graph = ReviewGraph()
+        result = await graph.run(pr_url=pr_url)
+
+        if github_token:
+            try:
+                await graph.post_comment(result, pr_url, github_token)
+                logger.info("Review comment posted for %s", pr_url)
+            except Exception as e:
+                logger.error("Failed to post review comment: %s", e)
+        else:
+            logger.info("No github_token — review result available in logs only")
+
+        logger.info(
+            "Review complete: %s — %d issues, risk=%s, decision=%s",
+            pr_url,
+            len(result.get("issues", [])),
+            result.get("risk_level", "N/A"),
+            result.get("merge_recommendation", "N/A"),
+        )
+    except Exception as e:
+        logger.error("Review failed for %s: %s", pr_url, e)
 
 
 class WorkerSettings:
     functions = [review_job]
     on_startup = startup
     on_shutdown = shutdown
-    redis_settings = None  # set in main()
+    redis_settings = None
 
     @classmethod
     def from_url(cls, redis_url: str):

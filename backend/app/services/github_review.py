@@ -1,5 +1,14 @@
+import asyncio
+import logging
+
 import httpx
-from app.models.review import ReviewResult, ReviewIssue
+
+from app.models.review import ReviewIssue, ReviewResult
+
+logger = logging.getLogger(__name__)
+
+_MAX_RETRIES = 3
+_BASE_DELAY = 1.0
 
 
 def _format_inline_body(issue: ReviewIssue) -> str:
@@ -93,22 +102,36 @@ async def post_review_to_github(
 
     body = _build_review_body(result, fallback_issues)
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
-            f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/reviews",
-            headers={
-                "Authorization": f"token {github_token}",
-                "Accept": "application/vnd.github.v3+json",
-            },
-            json={
-                "body": body,
-                "event": "COMMENT",
-                "comments": inline_comments,
-            },
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        return {
-            "html_url": data.get("html_url", ""),
-            "inline_count": len(inline_comments),
-        }
+    last_exc: Exception | None = None
+    for attempt in range(_MAX_RETRIES):
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(
+                    f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/reviews",
+                    headers={
+                        "Authorization": f"token {github_token}",
+                        "Accept": "application/vnd.github.v3+json",
+                    },
+                    json={
+                        "body": body,
+                        "event": "COMMENT",
+                        "comments": inline_comments,
+                    },
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                return {
+                    "html_url": data.get("html_url", ""),
+                    "inline_count": len(inline_comments),
+                }
+        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+            last_exc = exc
+            if attempt < _MAX_RETRIES - 1:
+                delay = _BASE_DELAY * (2 ** attempt)
+                logger.warning(
+                    "GitHub API attempt %d failed: %s — retrying in %.1fs",
+                    attempt + 1, exc, delay,
+                )
+                await asyncio.sleep(delay)
+
+    raise last_exc  # type: ignore[misc]
