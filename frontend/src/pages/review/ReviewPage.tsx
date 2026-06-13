@@ -66,7 +66,6 @@ export default function ReviewPage() {
             prUrl={prUrl}
             meta={meta}
             githubToken={githubToken}
-            onDiffLoaded={() => {}}
           />
         </div>
       </div>

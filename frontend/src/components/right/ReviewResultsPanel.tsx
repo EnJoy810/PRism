@@ -7,13 +7,12 @@ import AISummaryCard from './AISummaryCard'
 import RiskAnalysisCard from './RiskAnalysisCard'
 import ReviewFindingsCard from './ReviewFindingsCard'
 import MergeRecommendationCard from './MergeRecommendationCard'
-import { parseDiffToMap, buildMarkdown } from './utils'
+import { buildMarkdown } from './utils'
 
 interface Props {
   prUrl: string | null
   meta: PRMeta | null
   githubToken?: string
-  onDiffLoaded?: (diffMap: Map<string, string[]>) => void
 }
 
 type FilterTab = 'all' | Severity
@@ -25,7 +24,7 @@ const btnStyle: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 5,
 }
 
-export default function ReviewResultsPanel({ prUrl, meta, githubToken, onDiffLoaded }: Props) {
+export default function ReviewResultsPanel({ prUrl, meta, githubToken }: Props) {
   const { model, apiKey, baseUrl } = useSettings()
   const [result, setResult] = useState<ReviewResult | null>(null)
   const [streaming, setStreaming] = useState(false)
@@ -119,54 +118,40 @@ export default function ReviewResultsPanel({ prUrl, meta, githubToken, onDiffLoa
       const reader = res.body!.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
-      let resultAccumulated = ''
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
         buffer += decoder.decode(value, { stream: true })
-        const parts = buffer.split('\n\n')
-        buffer = parts.pop() ?? ''
 
-        for (const part of parts) {
-          const line = part.trim()
-          if (!line.startsWith('data:')) continue
-          const raw = line.slice(5).trim()
+        // 按行处理，提取以 "data:" 开头的完整行
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''
+
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (!trimmed.startsWith('data:')) continue
+          const raw = trimmed.slice(5).trim()
 
           if (raw === '[DONE]') {
-            try {
-              let jsonStr = resultAccumulated.trim()
-              const fenceMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/)
-              if (fenceMatch) {
-                jsonStr = fenceMatch[1].trim()
-              } else {
-                const start = jsonStr.indexOf('{')
-                const end = jsonStr.lastIndexOf('}')
-                if (start !== -1 && end > start) jsonStr = jsonStr.slice(start, end + 1)
-              }
-              const parsed = JSON.parse(jsonStr) as ReviewResult
-              setResult(parsed)
-              setThinkDone(true)
-              setTimeout(() => setThinkCollapsed(true), 600)
-            } catch {
-              setStreamError('结果解析失败，请重试')
-            }
             setStreaming(false)
             return
           }
 
           try {
             const evt = JSON.parse(raw)
-            if (evt.type === 'diff' && evt.lines && onDiffLoaded) {
-              onDiffLoaded(parseDiffToMap(evt.lines as string[]))
-            } else if (evt.type === 'thinking') {
+            if (evt.type === 'thinking') {
               setThinkText(t => t + evt.delta)
               setTimeout(() => {
                 if (thinkRef.current) thinkRef.current.scrollTop = thinkRef.current.scrollHeight
               }, 0)
             } else if (evt.type === 'result') {
-              resultAccumulated += evt.delta
               setThinkDone(true)
+            } else if (evt.type === 'done') {
+              const parsed = JSON.parse(evt.result) as ReviewResult
+              setResult(parsed)
+              setThinkDone(true)
+              setTimeout(() => setThinkCollapsed(true), 600)
             }
           } catch { /* skip */ }
         }

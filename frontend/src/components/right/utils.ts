@@ -1,23 +1,5 @@
 import type { ReviewResult, PRMeta } from '../../types/review'
 
-export function parseDiffToMap(lines: string[]): Map<string, string[]> {
-  const map = new Map<string, string[]>()
-  let currentFile: string | null = null
-  let currentLines: string[] = []
-  for (const line of lines) {
-    const m = line.match(/^diff --git a\/.+ b\/(.+)$/)
-    if (m) {
-      if (currentFile) map.set(currentFile, currentLines)
-      currentFile = m[1]
-      currentLines = []
-    } else if (currentFile) {
-      currentLines.push(line)
-    }
-  }
-  if (currentFile) map.set(currentFile, currentLines)
-  return map
-}
-
 export function buildMarkdown(result: ReviewResult, prUrl: string, meta: PRMeta | null): string {
   const lines: string[] = []
   lines.push(`# PR Review: ${meta?.pr_title ?? prUrl}`)
