@@ -21,3 +21,6 @@ dist/
 
 # Build
 frontend/dist/
+
+# AI agent worktrees
+.claude/
