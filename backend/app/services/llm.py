@@ -17,6 +17,11 @@ from app.models.review import (
     WalkthroughEntry,
 )
 
+try:
+    from langsmith.wrappers import wrap_openai
+except ImportError:
+    wrap_openai = None
+
 logger = logging.getLogger(__name__)
 
 _UNSET = object()
@@ -61,10 +66,15 @@ class LLMClient:
         budget: TokenBudget | None | object = _UNSET,
     ):
         cfg = load_config()
-        self.client = AsyncOpenAI(
-            api_key=api_key or cfg.deepseek_api_key or os.environ.get("DEEPSEEK_API_KEY", ""),
+        resolved_key = api_key or cfg.deepseek_api_key or os.environ.get("DEEPSEEK_API_KEY") or "sk-placeholder"
+        raw_client = AsyncOpenAI(
+            api_key=resolved_key,
             base_url=base_url or BASE_URL,
         )
+        if wrap_openai is not None:
+            self.client = wrap_openai(raw_client)
+        else:
+            self.client = raw_client
         self.model = model
         if budget is _UNSET:
             self.budget = TokenBudget()
@@ -383,10 +393,14 @@ PR意图说明：统一A3Three与A4/A3的定位逻辑，page_idx直接为栏序�
 
 def _make_client(api_key: str | None = None, base_url: str | None = None) -> AsyncOpenAI:
     cfg = load_config()
-    return AsyncOpenAI(
-        api_key=api_key or cfg.deepseek_api_key or os.environ.get("DEEPSEEK_API_KEY", ""),
+    resolved_key = api_key or cfg.deepseek_api_key or os.environ.get("DEEPSEEK_API_KEY") or "sk-placeholder"
+    raw = AsyncOpenAI(
+        api_key=resolved_key,
         base_url=base_url or BASE_URL,
     )
+    if wrap_openai is not None:
+        return wrap_openai(raw)
+    return raw
 
 
 def _extract_json(text: str) -> str:

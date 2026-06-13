@@ -10,8 +10,14 @@
 ## 启动命令
 
 ```bash
-# 后端
+# 后端（API 服务）
 cd backend && uvicorn app.main:app --reload --port 8000
+
+# 后端（Worker — 消费 Webhook 审查队列）
+cd backend && python -m app.worker
+
+# Docker 一键启动（API + Worker + Redis）
+docker compose up --build
 
 # 前端
 cd frontend && pnpm dev
@@ -21,8 +27,10 @@ cd frontend && pnpm dev
 
 ### 后端
 - 所有 LLM 调用走 `app/services/llm.py`，不在 router 层直接调用 openai SDK
-- Severity Gating 在 `analyze_pr()` 内执行，INFO 级别默认过滤
+- Severity Gating 在 `JudgeAgent` 内执行，INFO 级别默认过滤
 - GitHub 数据获取走 `app/services/github.py`，router 层不直接调用 httpx
+- 编排走 `app/graph.py`（ReviewGraph），不直接在 router 层编排 Agent
+- Webhook 队列消费走 `app/worker.py`（ARQ），不直接用 BackgroundTasks
 
 ### 前端
 - 请求层统一走 `src/utils/request.ts`
@@ -116,3 +124,5 @@ PLAN.md 的 6 个 PR 已按此拆分，每 PR 符合：
 - **上下文策略**：PR diff + metadata + 文件列表（Level 2），后续扩展调用链分析（Level 3）
 - **误报控制**：Severity Gating — INFO 默认不报，规则驱动而非 LLM 判断严重程度
 - **流式输出**：`/api/review/stream` 走 SSE，`/api/review` 走标准 JSON
+- **编排**：asyncio.gather 并行执行（短期），后续评估 LangGraph
+- **可观测性**：LangSmith tracing + 结构化日志（graph.py 各阶段计时）

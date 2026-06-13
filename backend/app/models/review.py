@@ -1,8 +1,9 @@
-from enum import Enum
+from enum import StrEnum
+
 from pydantic import BaseModel
 
 
-class Severity(str, Enum):
+class Severity(StrEnum):
     ERROR = "ERROR"
     WARNING = "WARNING"
     INFO = "INFO"
@@ -29,7 +30,7 @@ class ReviewStats(BaseModel):
     files_changed: int
     additions: int
     deletions: int
-    issues_by_severity: dict[str, int]
+    issues_by_severity: dict[str, int] = {}
 
 
 class RiskArea(BaseModel):

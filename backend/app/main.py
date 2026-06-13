@@ -1,14 +1,27 @@
+from contextlib import asynccontextmanager
 from pathlib import Path
 
+import redis.asyncio as aioredis
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.config import load_config
 from app.routers import review, webhook
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
-app = FastAPI(title="PRism API", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    config = load_config()
+    redis = aioredis.from_url(config.redis_url)
+    app.state.redis = redis
+    yield
+    await redis.aclose()
+
+
+app = FastAPI(title="PRism API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

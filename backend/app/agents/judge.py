@@ -1,7 +1,25 @@
-from app.models.agent import AgentResult, AgentStatus, FindingSchema
-from app.services.llm import LLMClient
+from app.models.agent import AgentResult, AgentStatus, FindingSchema, JudgeVerdict
 
 SEVERITY_ORDER = {"ERROR": 0, "WARNING": 1, "INFO": 2}
+
+# Heuristics for detecting misclassified findings
+_CATEGORY_KEYWORDS: dict[str, set[str]] = {
+    "security": {"password", "credential", "injection", "xss", "csrf", "auth",
+                  "permission", "encrypt", "secret", "token", "sql"},
+    "performance": {"slow", "latency", "memory", "cache", "timeout", "n+1",
+                    "query", "loop", "redundant", "bottleneck", "async"},
+    "quality": {"lint", "style", "naming", "format", "duplicate", "dead code",
+                "import", "type", "null", "error handling"},
+}
+
+
+def _guess_category(title: str, description: str, current_category: str) -> str | None:
+    text = (title + " " + description).lower()
+    scores = {cat: sum(1 for kw in kws if kw in text) for cat, kws in _CATEGORY_KEYWORDS.items()}
+    best = max(scores, key=scores.get)
+    if scores[best] > 0 and best != current_category:
+        return best
+    return None
 
 
 class JudgeAgent:
@@ -11,7 +29,7 @@ class JudgeAgent:
         model: str = "deepseek-v4-flash",
         base_url: str | None = None,
     ):
-        self.client = LLMClient(api_key=api_key, model=model, base_url=base_url)
+        pass
 
     def dedup(self, findings: list[FindingSchema]) -> list[FindingSchema]:
         seen: dict[tuple[str, int | None, str], FindingSchema] = {}
@@ -69,11 +87,22 @@ class JudgeAgent:
             all_findings.extend(r.findings)
 
         deduped = self.dedup(all_findings)
-        filtered = self.reduce_noise(deduped, min_confidence)
+        reclassified = self._reclassify(deduped)
+        filtered = self.reduce_noise(reclassified, min_confidence)
         decision = self.decide_merge(filtered)
 
-        return {
-            "findings": filtered,
-            "merge_recommendation": decision,
-            "skipped_agents": [],
-        }
+        return JudgeVerdict(
+            findings=filtered,
+            merge_recommendation=decision,
+            skipped_agents=skipped_agents,
+        ).model_dump()
+
+    def _reclassify(self, findings: list[FindingSchema]) -> list[FindingSchema]:
+        result = []
+        for f in findings:
+            guessed = _guess_category(f.title, f.description, f.category)
+            if guessed:
+                result.append(f.model_copy(update={"category": guessed}))
+            else:
+                result.append(f)
+        return result

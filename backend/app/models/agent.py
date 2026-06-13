@@ -24,3 +24,9 @@ class AgentResult(BaseModel):
     status: AgentStatus
     findings: list[FindingSchema]
     error_message: str | None = None
+
+
+class JudgeVerdict(BaseModel):
+    findings: list[FindingSchema]
+    merge_recommendation: str
+    skipped_agents: list[str]

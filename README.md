@@ -18,7 +18,7 @@
 
 PRism 是一款 AI 辅助代码审查工具，基于 DeepSeek V4 分析 GitHub Pull Request。用户只需粘贴 PR 链接，即可获得严重程度分级的 Review 反馈、PR 级别风险评估和可操作修改建议。
 
-> 参赛作品：七牛云 × XEngineer 暑期实训营 2026。
+> 多 Agent 架构：3 个专家 Agent（安全/性能/代码规范）并行审查，裁判 Agent 汇总去重降噪。
 
 ---
 
@@ -105,6 +105,38 @@ pnpm dev
 API Key 和 GitHub Token 也可在页面右上角 Settings 面板中配置，优先级高于环境变量。
 
 打开 [http://localhost:5173](http://localhost:5173) 使用。
+
+### Docker 一键启动
+
+```bash
+docker compose up --build
+```
+
+启动 API（8000）+ Worker + Redis 三服务。需在 `backend/.env` 中配置 `DEEPSEEK_API_KEY`。
+
+### GitHub App 自动审查（Webhook 模式）
+
+1. 在 GitHub 上创建 GitHub App：Settings → Developer settings → GitHub Apps → New GitHub App
+2. 设置 Webhook URL：`https://your-domain.com/api/webhook`
+3. 订阅事件：`Pull requests`、`Issue comments`
+4. 生成私钥，在 GitHub App 设置页面安装到目标仓库
+5. 配置环境变量：
+   ```
+   GITHUB_WEBHOOK_SECRET=your_webhook_secret
+   GITHUB_TOKEN=ghp_your_pat
+   ```
+6. 启动 Worker：`python -m app.worker`
+
+Webhook 自动处理 `pull_request.opened/synchronize` 和 `issue_comment`（含 `@prism-bot`）事件。
+
+### LangSmith 可观测性
+
+```bash
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=lsv2_your_key
+```
+
+如已安装 `langsmith` SDK，OpenAI 调用自动追踪。graph.py 各阶段耗时日志在 Worker 日志中可见。
 
 ---
 

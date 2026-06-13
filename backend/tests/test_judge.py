@@ -1,5 +1,5 @@
-from app.agents.judge import JudgeAgent
-from app.models.agent import FindingSchema
+from app.agents.judge import JudgeAgent, _guess_category
+from app.models.agent import AgentResult, AgentStatus, FindingSchema, JudgeVerdict
 
 
 def _finding(
@@ -135,3 +135,67 @@ class TestMergeRecommendation:
         judge = JudgeAgent(api_key="sk-test")
         decision = judge.decide_merge([f1, f2])
         assert decision == "REQUEST_CHANGES"
+
+
+class TestReclassification:
+    def test_performance_keyword_reclassifies(self):
+        f = _finding("a.ts", 10, "Slow query detected", severity="WARNING", category="security")
+        judge = JudgeAgent(api_key="sk-test")
+        result = judge._reclassify([f])
+        assert result[0].category == "performance"
+
+    def test_security_keyword_reclassifies(self):
+        f = _finding("a.ts", 10, "SQL injection risk", severity="ERROR", category="quality")
+        judge = JudgeAgent(api_key="sk-test")
+        result = judge._reclassify([f])
+        assert result[0].category == "security"
+
+    def test_no_reclassify_if_no_keyword_match(self):
+        f = _finding("a.ts", 10, "Generic issue", severity="INFO", category="quality")
+        judge = JudgeAgent(api_key="sk-test")
+        result = judge._reclassify([f])
+        assert result[0].category == "quality"
+
+    def test_no_keyword_no_match(self):
+        guessed = _guess_category("random", "no keywords here", "security")
+        assert guessed is None
+
+    def test_guess_category_returns_none_on_same_category(self):
+        guessed = _guess_category("memory leak in loop", "slow performance", "performance")
+        assert guessed is None  # already in performance, no change
+
+
+class TestSkippedAgents:
+    async def test_all_success_no_skipped(self):
+        r = AgentResult(status=AgentStatus.SUCCESS, findings=[_finding("a.ts", 1, "X")])
+        judge = JudgeAgent(api_key="sk-test")
+        result = await judge.run([r])
+        assert result["skipped_agents"] == []
+
+    async def test_failed_agent_is_skipped(self):
+        r1 = AgentResult(status=AgentStatus.SUCCESS, findings=[_finding("a.ts", 1, "X")])
+        r2 = AgentResult(status=AgentStatus.TIMEOUT, findings=[])
+        judge = JudgeAgent(api_key="sk-test")
+        result = await judge.run([r1, r2])
+        assert "agent_1" in result["skipped_agents"]
+
+    async def test_all_failed_all_skipped(self):
+        r1 = AgentResult(status=AgentStatus.FORMAT_ERROR, findings=[])
+        r2 = AgentResult(status=AgentStatus.TIMEOUT, findings=[])
+        judge = JudgeAgent(api_key="sk-test")
+        result = await judge.run([r1, r2])
+        assert len(result["skipped_agents"]) == 2
+
+    async def test_skipped_findings_not_in_result(self):
+        r = AgentResult(status=AgentStatus.FORMAT_ERROR, findings=[_finding("a.ts", 1, "Should not appear")])
+        judge = JudgeAgent(api_key="sk-test")
+        result = await judge.run([r])
+        assert len(result["findings"]) == 0
+
+    async def test_returns_judge_verdict_dump(self):
+        r = AgentResult(status=AgentStatus.SUCCESS, findings=[_finding("a.ts", 1, "X")])
+        judge = JudgeAgent(api_key="sk-test")
+        result = await judge.run([r])
+        assert "findings" in result
+        assert "merge_recommendation" in result
+        assert "skipped_agents" in result
