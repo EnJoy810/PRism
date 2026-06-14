@@ -19,6 +19,7 @@ class FindingSchema(BaseModel):
     category: str  # "security" | "performance" | "quality"
     diff_snippet: str | None = None
     evidence: list[str] | None = None  # 引用的代码行号/片段，为空则丢弃
+    token_cost: float = 0.0  # estimated LLM token cost attributed to this finding
 
 
 class AgentResult(BaseModel):

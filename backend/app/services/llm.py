@@ -77,7 +77,7 @@ class LLMClient:
             self.client = raw_client
         self.model = model
         if budget is _UNSET:
-            self.budget = TokenBudget()
+            self.budget = TokenBudget(max_tokens_per_call=cfg.review.budget.max_tokens_per_call)
         else:
             self.budget = budget
         self.total_tokens = 0
@@ -85,40 +85,32 @@ class LLMClient:
     async def chat(
         self,
         messages: list[dict],
-        max_tokens: int = 4096,
+        max_tokens: int | None = None,
         temperature: float = 1.0,
         top_p: float = 1.0,
         stream: bool = False,
         estimated_tokens: int | None = None,
     ) -> str:
         if self.budget is not None:
-            if estimated_tokens is None:
-                raise ValueError(
-                    "estimated_tokens is required when budget is configured"
-                )
             if self.budget.exceeded:
                 raise BudgetExceededError(
                     f"Budget exceeded: {self.budget.total_tokens} >= "
                     f"{self.budget.max_tokens_per_call}"
                 )
-            if self.budget.total_tokens + estimated_tokens > self.budget.max_tokens_per_call:
-                raise BudgetExceededError(
-                    f"Estimated {estimated_tokens} tokens would exceed budget "
-                    f"({self.budget.total_tokens} + {estimated_tokens} > "
-                    f"{self.budget.max_tokens_per_call})"
-                )
 
         last_error: Exception | None = None
         for attempt in range(MAX_RETRIES):
             try:
-                response = await self.client.chat.completions.create(
+                create_kwargs: dict = dict(
                     model=self.model,
                     messages=messages,
-                    max_tokens=max_tokens,
                     temperature=temperature,
                     top_p=top_p,
                     stream=stream,
                 )
+                if max_tokens is not None:
+                    create_kwargs["max_tokens"] = max_tokens
+                response = await self.client.chat.completions.create(**create_kwargs)
 
                 if stream:
                     full = await self._handle_stream(response)
@@ -167,7 +159,7 @@ class LLMClient:
         if usage := getattr(response, "usage", None):
             tokens = (usage.prompt_tokens or 0) + (usage.completion_tokens or 0)
             self.total_tokens += tokens
-            if self.budget is not None:
+            if self.budget is not None and cfg.review.budget.max_per_review_usd > 0:
                 self.budget.record(tokens)
 
     async def _handle_stream(self, response) -> str:

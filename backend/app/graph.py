@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import time
 from collections.abc import Sequence
 
@@ -65,8 +66,17 @@ class ReviewGraph:
             context = await self.fetch_pr_context(pr_url)
         logger.info("fetch_context done: %s — %.2fs", pr_url, time.monotonic() - t0)
 
-        symbol_defs = await self._fetch_symbol_context(context, pr_url)
-        context["symbol_definitions"] = symbol_defs
+        symbol_task = asyncio.create_task(self._fetch_symbol_context(context, pr_url))
+        blast_task = asyncio.create_task(self._fetch_blast_radius(context, pr_url))
+        sast_task = asyncio.create_task(self._fetch_sast_findings(context, pr_url))
+
+        symbol_defs, blast_radius, sast_findings = await asyncio.gather(
+            symbol_task, blast_task, sast_task, return_exceptions=True
+        )
+
+        context["symbol_definitions"] = symbol_defs if isinstance(symbol_defs, dict) else {}
+        context["blast_radius"] = blast_radius if isinstance(blast_radius, list) else []
+        context["sast_findings"] = sast_findings if isinstance(sast_findings, dict) else {}
 
         needs_batching = (
             context.get("diff_truncated", False)
@@ -90,6 +100,91 @@ class ReviewGraph:
         except Exception as e:
             logger.warning("Symbol context fetch failed: %s", e)
             return {}
+
+    async def _fetch_blast_radius(self, context: dict, pr_url: str) -> list:
+        try:
+            from app.config import load_config
+            from app.services.blast_radius import compute_blast_radius
+            from app.services.github import parse_pr_url
+            from app.services.indexer import build_index
+            from app.services.repo import ensure_repo
+
+            owner, repo, pr_number = parse_pr_url(pr_url)
+
+            head_sha = context.get("head_sha", "")
+            if not head_sha:
+                logger.debug("no head_sha in context, skip blast radius")
+                return []
+
+            cfg = load_config()
+            token = cfg.github_token or os.environ.get("GITHUB_TOKEN", "")
+            if not token:
+                logger.debug("no github token, skip blast radius")
+                return []
+
+            repo_path = await ensure_repo(owner, repo, head_sha, token)
+            if repo_path is None:
+                return []
+
+            db_path = repo_path.parent / f"{repo_path.name}.db"
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, build_index, repo_path, db_path)
+
+            changed_fns = _extract_changed_functions(context.get("diff", ""))
+            if not changed_fns:
+                return []
+
+            diff_tokens = len(context.get("diff", "")) // 4
+            result = compute_blast_radius(db_path, changed_fns, diff_tokens)
+            logger.info(
+                "blast radius: %d changed fns, %d caller groups found",
+                len(changed_fns), len(result),
+            )
+            return result
+
+        except Exception as e:
+            logger.warning("blast radius fetch failed: %s", e)
+            return []
+
+    async def _fetch_sast_findings(self, context: dict, pr_url: str) -> dict[str, list[dict]]:
+        try:
+            from app.config import load_config
+            from app.services.github import parse_pr_url
+            from app.services.repo import ensure_repo
+            from app.services.sast import run_sast
+
+            owner, repo, _ = parse_pr_url(pr_url)
+            head_sha = context.get("head_sha", "")
+            if not head_sha:
+                return {"security": [], "quality": []}
+
+            cfg = load_config()
+            token = cfg.github_token or os.environ.get("GITHUB_TOKEN", "")
+            if not token:
+                return {"security": [], "quality": []}
+
+            repo_path = await ensure_repo(owner, repo, head_sha, token)
+            if repo_path is None:
+                return {"security": [], "quality": []}
+
+            files = context.get("files", [])
+            if not files:
+                return {"security": [], "quality": []}
+
+            sec, qual = await asyncio.gather(
+                run_sast(files, "security", repo_path),
+                run_sast(files, "quality", repo_path),
+                return_exceptions=True,
+            )
+
+            return {
+                "security": sec if isinstance(sec, list) else [],
+                "quality": qual if isinstance(qual, list) else [],
+            }
+
+        except Exception as e:
+            logger.debug("sast fetch failed: %s", e)
+            return {"security": [], "quality": []}
 
     async def _run_single(self, context: dict, pr_url: str, t0: float) -> dict:
         diff = context.get("diff", "")
@@ -120,11 +215,18 @@ class ReviewGraph:
         )
 
     async def _run_agents(self, diff: str, context: dict) -> list[AgentResult]:
+        blast_radius = context.get("blast_radius", [])
+        blast_section = _format_blast_radius(blast_radius)
+        sast_findings = context.get("sast_findings", {})
+
         agent_context = {
             "pr_title": context.get("title", ""),
             "pr_description": context.get("description", ""),
             "files": context.get("files", []),
             "symbol_definitions": context.get("symbol_definitions", {}),
+            "blast_radius": blast_radius,
+            "blast_radius_section": blast_section,
+            "sast_findings": sast_findings,
         }
 
         ta = time.monotonic()
@@ -262,6 +364,7 @@ def _finding_to_dict(f: FindingSchema) -> dict:
         "category": f.category,
         "diff_snippet": f.diff_snippet,
         "evidence": f.evidence,
+        "token_cost": f.token_cost,
     }
 
 
@@ -303,3 +406,27 @@ def _split_into_batches(context: dict, batch_size: int) -> list[dict]:
         batches.append(batch)
 
     return batches
+
+
+def _extract_changed_functions(diff: str) -> set[str]:
+    import re
+    fn_pattern = re.compile(r"^\+\s*(?:async\s+)?def\s+(\w+)\s*\(", re.MULTILINE)
+    js_pattern = re.compile(r"^\+\s*(?:async\s+)?function\s+(\w+)\s*\(", re.MULTILINE)
+    arrow_pattern = re.compile(r"^\+\s*(?:const|let)\s+(\w+)\s*=\s*(?:async\s+)?\(", re.MULTILINE)
+
+    names: set[str] = set()
+    for pat in (fn_pattern, js_pattern, arrow_pattern):
+        names.update(m.group(1) for m in pat.finditer(diff))
+    return names
+
+
+def _format_blast_radius(blast_radius: list[dict]) -> str:
+    if not blast_radius:
+        return ""
+    lines = ["## [CROSS-FILE CONTEXT] 调用了被改函数的地方\n"]
+    for item in blast_radius:
+        lines.append(f"### 被改函数：`{item['changed_fn']}`\n")
+        for caller in item["callers"]:
+            lines.append(f"**{caller['file']}:{caller['start_line']}** `{caller['fn']}`")
+            lines.append(f"```\n{caller['code']}\n```\n")
+    return "\n".join(lines)
