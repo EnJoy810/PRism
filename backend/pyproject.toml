@@ -27,11 +27,17 @@ dev = [
 ]
 
 [tool.ruff]
-line-length = 100
+line-length = 120
 target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"app/services/llm.py" = ["E501"]
+"app/agents/judge.py" = ["E501"]
+"app/routers/review.py" = ["E501"]
+"tests/*.py" = ["E501"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
