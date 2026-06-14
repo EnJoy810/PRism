@@ -63,6 +63,33 @@ cd backend && python -m app.cli review https://github.com/owner/repo/pull/42
 - **符号级一跳检索**（非文件级、非多跳）：确定性检索控制深度边界，GA 论文"When More Retrieval Hurts"支撑
 - **文件级内容废弃**：`fetch_pr_context` 不再拉 `file_contents`，SWE-PRBench 证实加文件上下文降低所有模型表现
 
+### 跨文件分析（2026-06 敲定，待实现）
+
+**方案**：tree-sitter + SQLite 调用图 + BFS blast radius
+
+**为什么不用向量 RAG**：向量是语义相似，代码调用关系是精确匹配。"谁调用了这个函数"用向量找会返回语义相近但没有调用关系的代码，精度不够。调用图直接查，没有噪声。
+
+**为什么不用 LSP**：LSP 启动慢（需要热身）、有状态（难并发）、多语言要启多个进程。工程成本远超收益，当前场景不值得。
+
+**为什么不用向量做动态调用兜底（短期）**：动态调用是行业未解问题，CodeRabbit/Greptile/Qodo 都追不到，接受这个边界比假装能解决更诚实。向量留作后续迭代。
+
+**实现模块**：
+- `app/services/repo.py` — shallow clone（`head.sha` 而非默认分支）+ LRU 缓存管理
+- `app/services/indexer.py` — tree-sitter 解析 → SQLite（nodes + edges），增量更新（file_hash 比对）
+- `app/services/blast_radius.py` — BFS depth=2，visited set 防死循环，50% diff token 上限剪枝
+- `app/services/context.py` — 修改：优先走本地调用图，fallback GitHub Search API
+
+**工程约束**：
+- clone 用 `head.sha`，不用默认分支（老 PR 用最新代码是错的）
+- clone 与 review 并行，clone 失败自动退化成 diff-only，主链路不依赖 clone 成功
+- installation token 不出现在日志（clone URL 含 token，clone 完立刻抹掉）
+- 跳过 `node_modules/`、`vendor/`、`dist/`、`test_*.py`、`*.test.ts`
+- 单文件解析失败跳过，不中断整体
+- 按 `repo@sha` 隔离 SQLite 文件，防并发写冲突
+- Prompt 明确标注 `[DIFF]` vs `[CONTEXT]`，只对 DIFF 部分报问题
+
+**动态调用边界声明**：静态分析的天然盲区，不做 false claim，PR 评论中标注"动态调用未覆盖"。
+
 ### 幻觉控制
 - **程序验证 evidence 有效性**（非 LLM 自评）：要求 LLM 输出引用具体行号，程序验证行号是否存在、变量是否真实出现过
 - **Evidence 字段**：`FindingSchema.evidence` 存储引用的代码行号/片段，空 evidence 直接丢弃
@@ -85,29 +112,98 @@ cd backend && python -m app.cli review https://github.com/owner/repo/pull/42
 - **Judge Agent**：deepseek-v4-pro（需要更可靠的判断）
 - Token 预算硬上限，总上下文不超过 16K
 
+## 产品定位（2026-06 确定）
+
+**一句话**：PR-Agent 报太多太吵，CodeRabbit 误报率高还要收费。PRism 开源自部署，报得少，每条有据可查。
+
+**核心差异化**：
+- PR-Agent 最高频投诉是重复评论（GitHub issue #2037、#1833、#2402）→ PRism 两遍去重解决
+- CodeRabbit 被横评点名"最高误报率"，且 credits 耗尽会阻塞 merge → PRism evidence 验证 + 开源自部署解决
+- 所有 diff-only 工具看不到跨文件影响 → PRism 调用图解决
+
+**不做的事**：向量 RAG、LSP、多平台（GitLab/Bitbucket）、历史 PR 记忆——等有用户反馈再说
+
+---
+
+## 完整功能规划
+
+### 已完成
+- GitHub App 全链路（webhook → ARQ 队列 → Worker → PR 评论）
+- 三 Agent 并行（Security/Quality/Performance）+ Judge 两遍去重
+- Evidence 程序验证（行号必须真实存在于 diff 新增行）
+- Severity 过滤（INFO 默认不报）
+
+### 第一阶段：调用图跨文件分析（进行中）
+见 PLAN_CALLGRAPH.md，5 个 PR。
+解决"改了 A，B 跟着挂，工具看不到"的结构性缺陷。
+
+### 第二阶段：BlockDiff — 改给 AI 看的 diff 格式
+把 unified diff（加减号行）改成函数级新旧对比：
+```
+函数 process_order 改动了：
+旧版本：接收一个参数，返回 tax
+新版本：接收两个参数，新增调用 apply_discount
+```
+tree-sitter 已装（调用图用），共用解析结果，工程量中等。
+没有任何竞品在做，有 arxiv 2604.27296 论文支撑。
+
+### 第三阶段：Linter + LLM 并行
+和 CodeRabbit 同一架构判断：
+- Bandit（Python 安全）/ Semgrep 先扫，确定性问题直接进 findings，不过 LLM
+- LLM 负责找规则扫不到的逻辑漏洞
+- 两路合并进 Judge 统一去重
+纯 LLM 精确率 65%，混合方案接近 90%，arxiv 2411.03079 数据支撑。
+
+### 开源发布时机
+调用图做完后发布 Show HN。那时能说：
+1. 开源自部署，不被商业配额绑架
+2. 每条问题有行号证据，程序验证
+3. 能看到跨文件影响
+4. 报得少，不会两周后被开发者无视
+
+---
+
+## 面试技术亮点叙事
+
+```
+发现 diff-only 的缺陷（跨文件看不到）
+    → 调研四个竞品，选调用图不选向量（"When More Retrieval Hurts"论文）
+        → 幻觉控制：evidence 程序验证，不让 LLM 自评
+            → 信噪比优先：CR-Bench 数据，追召回率会毁掉 SNR
+                → Linter 并行：和 CodeRabbit 同判断，各干各擅长的
+```
+
+每个决策都有依据：论文数据 / 竞品 issue 数据 / 横评数据。不是"我觉得这样好"。
+
+---
+
 ## 关于竞品的面试要点
 
 ### 竞品技术方案速查
 
 CodeRabbit:
-- 方案：diff + 40+ linter + 代码图实验
-- 缺点：不做全量索引，系统级感知弱
-- 面试可讲：CodeRabbit $84M 融资但技术深度远不如 Greptile，证明市场覆盖比技术深度重要
+- 方案：diff + 40+ linter + LanceDB 向量 RAG + 轻量代码图
+- 动态调用处理：向量语义兜底（不追调用链，用语义相似性覆盖）
+- 缺点：向量对代码精度不够，动态调用是兜底不是真正解决
+- 面试可讲：$84M 融资证明市场存在；混合向量+图是合理工程选择，PRism 选纯图是精度优先
 
 GitHub Copilot Code Review:
-- 方案：diff + agentic 架构全仓上下文检索（semantic search + grep + usage tracing）
-- 缺点：GitHub only，定价不可预测
-- 面试可讲：大型平台做 PR review 的"静默优先"策略（suppress 低置信度评论）
+- 方案：diff + agentic 架构（agent 自主决定用 semantic search / grep / usage tracing）
+- 动态调用处理：agent 主动 grep 搜索用法，最接近真正解决，但慢且贵
+- 缺点：GitHub only，定价不可预测，agentic 方案 token 消耗大
+- 面试可讲：agentic 探索 vs 预建索引的 trade-off；"静默优先"策略（suppress 低置信度评论）
 
 Greptile:
-- 方案：Graph 全量索引 + Agent Swarm，$29M 融资
-- 缺点：慢，贵，需 clone 全仓库
-- 面试可讲：monorepo 场景的 cross-file bug 检测是独家卖点
+- 方案：全量 clone + Neo4j 图数据库 + 语义搜索混合，$29M 融资，声称 82% bug catch rate
+- 动态调用处理：静态图，追不到动态调用，但支持多跳图遍历（A→B→C），链路比 PRism 深
+- 缺点：慢，贵，需 clone 全仓库，Neo4j 运维成本高
+- 面试可讲：PRism 与 Greptile 同一技术判断（图 > 向量），但更轻量（SQLite vs Neo4j）
 
 Qodo:
-- 方案：多 agent 并行（bug/security/quality/coverage）+ Context Engine 多仓索引
-- 缺点：设置复杂
-- 面试可讲：多 Agent 编排的架构选择
+- 方案：多 agent 并行（bug/security/quality/coverage）+ Context Engine 多仓索引（向量）
+- 动态调用处理：向量语义兜底，同 CodeRabbit
+- 缺点：设置复杂，Context Engine 实现细节未公开
+- 面试可讲：多 Agent 编排架构；向量对代码场景的精度局限
 
 Merlin:
 - 方案：Rust + ReAct loop + RAG pipeline + 19 tool 调度
@@ -118,6 +214,33 @@ AgnusAi:
 - 方案：Tree-sitter 符号图（Postgres 后端）+ blast radius 三级深度
 - 缺点：solo dev，仅 3★
 - 面试可讲：不 clone 全仓库做 cross-file 分析的轻量方案可比
+
+### 真实用户痛点数据（2026-06 调研）
+
+PR-Agent GitHub Issues 高频投诉（按评论数排序）：
+- #2037 重复 inline comment（每次 push 重新报同样问题）
+- #1833 同一 code block 重复 improve 建议
+- #2402 GitLab 上 persistent suggestions 被重复创建
+- #2042 大 PR 处理失败（不是降级，是直接报错）
+- 大量配置项不生效（ignore 规则、环境变量被忽略）
+
+CodeRabbit 用户痛点（无公开 issue tracker，来自横评和社区）：
+- 被横评点名"highest false-positive rate"
+- credits 耗尽后 PR status check 变红，阻塞 merge queue
+- 闭源，问题修没修用户不知道
+
+行业数据：
+- 工具上线两周后开发者开始无视 AI 评论（DevOpsDigest）
+- Greptile 上线初期只有 19% 评论被处理，加过滤后到 55%
+- CR-Bench：最好单次调用 SNR=5.1，召回率 27%；激进方案召回率 33% 但 SNR 崩到 1.9
+- 纯 LLM 精确率 65.5%，SAST+LLM 混合接近 90%（arxiv 2411.03079）
+
+### 动态调用行业现状（2026-06）
+没有任何竞品真正解决了动态调用问题：
+- 向量兜底（CodeRabbit、Qodo）：语义相似，不是精确追踪
+- 静态图多跳（Greptile）：链路深，但动态调用同样追不到
+- agentic grep（Copilot）：最接近解决，但慢且贵，不适合批量 PR
+- PRism 选择：接受静态分析边界，专注把精确调用图做好，不做 false claim
 
 ### 面试词库
 
