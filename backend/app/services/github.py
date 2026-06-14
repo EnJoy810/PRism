@@ -83,3 +83,8 @@ async def fetch_pr_context(
             for f in files_data
         ],
     }
+
+
+# TODO: remove after webhook test
+def _test_placeholder():
+    pass
