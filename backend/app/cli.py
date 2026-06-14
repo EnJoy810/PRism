@@ -51,7 +51,7 @@ async def review(pr_url: str, token: str | None = None):
 
     skipped = result.get("skipped_agents", [])
     if skipped:
-        print(f"\n**跳过的 Agent**: {', '.join(skipped)}")
+        print(f"\n⚠️  **部分 Agent 失败，结果可能不完整**: {', '.join(skipped)}")
 
     print("\n---")
     print("Review complete.")

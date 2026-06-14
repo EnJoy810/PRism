@@ -1,7 +1,7 @@
 review:
   budget:
     max_per_review_usd: 0.50
-    max_tokens_per_call: 4096
+    max_tokens_per_call: 16384
   agents:
     expert_model: deepseek-v4-flash
     judge_model: deepseek-v4-pro

@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 class BudgetConfig(BaseModel):
     max_per_review_usd: float = 0.50
-    max_tokens_per_call: int = 4096
+    max_tokens_per_call: int = 16384
 
 
 class AgentConfig(BaseModel):

@@ -71,6 +71,7 @@ async def fetch_pr_context(
         "diff_truncated": diff_truncated,
         "files": [f["filename"] for f in files_data],
         "stats": stats,
+        "head_sha": pr_data["head"]["sha"],
         "base_branch": pr_data["base"]["ref"],
         "head_branch": pr_data["head"]["ref"],
         "author_name": pr_data["user"]["login"],

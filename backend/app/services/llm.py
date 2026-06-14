@@ -159,7 +159,7 @@ class LLMClient:
         if usage := getattr(response, "usage", None):
             tokens = (usage.prompt_tokens or 0) + (usage.completion_tokens or 0)
             self.total_tokens += tokens
-            if self.budget is not None and cfg.review.budget.max_per_review_usd > 0:
+            if self.budget is not None:
                 self.budget.record(tokens)
 
     async def _handle_stream(self, response) -> str:
