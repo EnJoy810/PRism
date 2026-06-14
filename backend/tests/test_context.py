@@ -7,10 +7,12 @@ from app.services.context import _extract_symbols_from_diff, fetch_symbol_contex
 
 class TestExtractSymbolsFromDiff:
     def test_python_import(self):
-        diff = "+import os\n+from pathlib import Path\n-import old"
+        # os/Path 是标准库，过滤掉是正确行为；测用项目自定义模块
+        diff = "+import os\n+from pathlib import Path\n+from app.services.github import ReviewGraph\n-import old"
         symbols = _extract_symbols_from_diff(diff)
-        assert "os" in symbols
-        assert "Path" in symbols
+        assert "os" not in symbols   # 标准库，应被过滤
+        assert "Path" not in symbols  # 标准库，应被过滤
+        assert "ReviewGraph" in symbols  # 项目符号，应被保留
 
     def test_js_import(self):
         diff = '+import { useState } from "react"\n+import axios from "axios"'
