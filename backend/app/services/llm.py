@@ -258,7 +258,6 @@ REVIEW_PROMPT_TEMPLATE = """基准分支: {base_branch} → {head_branch}
 === 代码变更（Diff）===
 规则：只审查以 + 开头的新增行。以 - 开头的删除行仅作上下文，不要对删除的代码报问题。
 {diff}
-{file_contents_section}
 === PR 意图说明（交叉验证用，不能作为放过问题的理由，也不能反过来用它制造不存在的问题）===
 标题: {title}
 描述: {description}
@@ -416,15 +415,6 @@ def _get_system_prompt(perspective: str = "default") -> str:
 
 
 def _build_prompt(pr_context: dict) -> str:
-    file_contents = pr_context.get("file_contents", {})
-    if file_contents:
-        sections = ["\n### 文件内容（供参考）\n"]
-        for fname, content in file_contents.items():
-            sections.append(f"**{fname}**:\n```\n{content}\n```\n")
-        file_contents_section = "\n".join(sections)
-    else:
-        file_contents_section = ""
-
     return REVIEW_PROMPT_TEMPLATE.format(
         title=pr_context["title"],
         description=pr_context["description"][:500],
@@ -432,7 +422,7 @@ def _build_prompt(pr_context: dict) -> str:
         head_branch=pr_context["head_branch"],
         files=", ".join(pr_context["files"][:20]),
         diff=pr_context["diff"][:60000],
-        file_contents_section=file_contents_section,
+        file_contents_section="",
     )
 
 
@@ -550,7 +540,8 @@ async def analyze_pr(pr_context: dict, include_style: bool = False, perspective:
         issues = [i for i in issues if i.severity != Severity.INFO]
 
     # confidence 过滤：低置信度问题直接丢弃
-    issues = [i for i in issues if i.confidence >= 0.75]
+    min_conf = load_config().review.filters.min_confidence
+    issues = [i for i in issues if i.confidence >= min_conf]
 
     # Judge 二次验证（传入 PR 描述供判断有意变更）
     issues = await judge_issues(pr_context["diff"], issues, pr_context.get("description", ""))

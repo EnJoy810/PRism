@@ -1,11 +1,29 @@
 # PRism — CLAUDE.md
 
-> AI-powered PR Review Assistant. Backend: FastAPI + Python 3.12. Frontend: React 18 + Vite + TypeScript.
+> AI-powered PR Review Assistant. Backend: FastAPI + Python 3.12. GitHub App deployment.
+
+## 产品形态（2026-06 确定）
+
+- **交互**：GitHub App 安装 → PR 打开/同步自动审查 → 结果写在 PR 评论区（inline comment + summary comment）→ @mention 对话
+- **前端**：无。`frontend/` deprecated，审查结果 UI = GitHub PR 页面本身
+- **本地测试**：CLI entry point（`python -m app.cli`），输出 markdown 到终端
+- **部署**：Docker 镜像到服务器，收 webhook、跑 review、写 PR 评论
+- **认证**：GitHub App（私钥 + installation_id 换 token），替代 personal token
 
 ## 项目结构
 
-- `frontend/` — React SPA，负责 PR URL 输入、Review 结果展示
-- `backend/` — FastAPI，负责 GitHub 数据获取 + DeepSeek LLM 分析
+- `backend/` — FastAPI，全部 Python，无前端依赖
+  - `app/main.py` — API 服务（health check + webhook 入口）
+  - `app/worker.py` — ARQ worker，消费审查队列
+  - `app/graph.py` — ReviewGraph，编排三 Agent + Judge
+  - `app/agents/` — Bug/Security/Quality Agent + JudgeAgent
+  - `app/services/` — github.py（GitHub API）、llm.py（LLM 调用）、context.py（符号检索）
+  - `app/models/` — Pydantic schema
+  - `app/routers/` — webhook.py + review.py（CLI 用保留）
+  - `app/auth.py` — GitHub App JWT + installation token 交换
+  - `app/cli.py` — 本地测试 CLI，`prism review <pr-url>`
+  - `app/config.py` + `prism.yaml` — 配置
+- `frontend/` — **deprecated**，仅保留作为参考不移除
 
 ## 启动命令
 
@@ -13,14 +31,14 @@
 # 后端（API 服务）
 cd backend && uvicorn app.main:app --reload --port 8000
 
-# 后端（Worker — 消费 Webhook 审查队列）
+# Worker（消费 Webhook 审查队列）
 cd backend && python -m app.worker
 
 # Docker 一键启动（API + Worker + Redis）
 docker compose up --build
 
-# 前端
-cd frontend && pnpm dev
+# CLI 本地测试
+cd backend && python -m app.cli review https://github.com/owner/repo/pull/42
 ```
 
 ## 核心约束
@@ -31,16 +49,89 @@ cd frontend && pnpm dev
 - GitHub 数据获取走 `app/services/github.py`，router 层不直接调用 httpx
 - 编排走 `app/graph.py`（ReviewGraph），不直接在 router 层编排 Agent
 - Webhook 队列消费走 `app/worker.py`（ARQ），不直接用 BackgroundTasks
-
-### 前端
-- 请求层统一走 `src/utils/request.ts`
-- 布局/间距 → Tailwind；交互组件 → Ant Design token
-- 禁止行内 style
-- 状态管理：TanStack Query 管服务端数据，Zustand 管 UI 状态
+- GitHub App 认证走 `app/auth.py`，不在其他模块直接处理 JWT
+- 配置走 `app/config.py` + `prism.yaml`，不硬编码在代码里
 
 ### 通用
 - 禁止 `--no-verify`
 - commit 格式：`<type>(<scope>): <描述>`
+
+## 架构决策
+
+### 上下文策略
+- **函数级 chunk**（非完整 diff 给 LLM）：结构化短 prompt > 长 prompt，SWE-PRBench 数据支撑
+- **符号级一跳检索**（非文件级、非多跳）：确定性检索控制深度边界，GA 论文"When More Retrieval Hurts"支撑
+- **文件级内容废弃**：`fetch_pr_context` 不再拉 `file_contents`，SWE-PRBench 证实加文件上下文降低所有模型表现
+
+### 幻觉控制
+- **程序验证 evidence 有效性**（非 LLM 自评）：要求 LLM 输出引用具体行号，程序验证行号是否存在、变量是否真实出现过
+- **Evidence 字段**：`FindingSchema.evidence` 存储引用的代码行号/片段，空 evidence 直接丢弃
+- **Confidence 过滤**：双重机制 — LLM 自评 + 程序验证交叉检查
+
+### Judge 策略
+- **两遍去重**：规则去重（80% 显式重复）→ 按文件分组 → Judge 语义分组 + 统一打分
+- **Judge 输入按文件切分**：每次调用 token 量可控，用小模型处理剩余语义重叠
+- **编排顺序**：三 Agent 并行 → 规则去重 → 按文件分组 → Judge 批量处理 → severity 过滤 → 输出
+
+### 编排
+- **asyncio.gather 并行执行三 Agent**（短期）
+- **后续评估 LangGraph**（若需要更复杂的编排控制）
+
+### 可观测性
+- **LangSmith tracing** + 结构化日志（graph.py 各阶段计时）
+
+### 模型
+- **Expert Agent**：deepseek-v4-flash（快、便宜、足够）
+- **Judge Agent**：deepseek-v4-pro（需要更可靠的判断）
+- Token 预算硬上限，总上下文不超过 16K
+
+## 关于竞品的面试要点
+
+### 竞品技术方案速查
+
+CodeRabbit:
+- 方案：diff + 40+ linter + 代码图实验
+- 缺点：不做全量索引，系统级感知弱
+- 面试可讲：CodeRabbit $84M 融资但技术深度远不如 Greptile，证明市场覆盖比技术深度重要
+
+GitHub Copilot Code Review:
+- 方案：diff + agentic 架构全仓上下文检索（semantic search + grep + usage tracing）
+- 缺点：GitHub only，定价不可预测
+- 面试可讲：大型平台做 PR review 的"静默优先"策略（suppress 低置信度评论）
+
+Greptile:
+- 方案：Graph 全量索引 + Agent Swarm，$29M 融资
+- 缺点：慢，贵，需 clone 全仓库
+- 面试可讲：monorepo 场景的 cross-file bug 检测是独家卖点
+
+Qodo:
+- 方案：多 agent 并行（bug/security/quality/coverage）+ Context Engine 多仓索引
+- 缺点：设置复杂
+- 面试可讲：多 Agent 编排的架构选择
+
+Merlin:
+- 方案：Rust + ReAct loop + RAG pipeline + 19 tool 调度
+- 缺点：极早期
+- 面试可讲：Rust 单二进制的性能优势 + ReAct loop 的 tool 冲突解决
+
+AgnusAi:
+- 方案：Tree-sitter 符号图（Postgres 后端）+ blast radius 三级深度
+- 缺点：solo dev，仅 3★
+- 面试可讲：不 clone 全仓库做 cross-file 分析的轻量方案可比
+
+### 面试词库
+
+| 黑话 | 大白话 |
+|------|--------|
+| 代码上下文 | 改一个文件，你知道它影响到哪些别的文件 |
+| Blast radius | 改了 A，B/C/D 会不会跟着挂 |
+| Signal-to-noise | 评论里有用和没用各占多少 |
+| 噪声控制 | 怎么把没用的评论过滤掉，不让开发者嫌吵 |
+| RAG pipeline | 先搜一下有没有相关的历史 review 或代码，再给 LLM 看 |
+| ReAct loop | LLM 自己决定下一步用什么工具 |
+| Agent orchestration | 多个 agent 怎么做分工，谁先跑谁后跑 |
+| Incremental 索引 | 不是全量重扫代码库，只更新改动的部分 |
+| Token budget | 每次调用给 LLM 多少上下文，超了怎么办 |
 
 ## 构建验证
 
@@ -48,8 +139,7 @@ cd frontend && pnpm dev
 # 后端
 .venv/bin/ruff check app/ tests/ && .venv/bin/python -m pytest tests/ -v
 
-# 前端（若脚本存在）
-cd frontend && pnpm lint && pnpm typecheck
+# 前端（无）
 ```
 
 ## AI 全量编码质量契约
@@ -117,12 +207,3 @@ PLAN.md 的 6 个 PR 已按此拆分，每 PR 符合：
 1. 说"规则 X 违反"
 2. 我立即停止当前操作
 3. 你给出修正方向，我照做
-
-## 架构决策
-
-- **模型**：deepseek-v4-pro（1M context，OpenAI 兼容接口）
-- **上下文策略**：PR diff + metadata + 文件列表（Level 2），后续扩展调用链分析（Level 3）
-- **误报控制**：Severity Gating — INFO 默认不报，规则驱动而非 LLM 判断严重程度
-- **流式输出**：`/api/review/stream` 走 SSE，`/api/review` 走标准 JSON
-- **编排**：asyncio.gather 并行执行（短期），后续评估 LangGraph
-- **可观测性**：LangSmith tracing + 结构化日志（graph.py 各阶段计时）

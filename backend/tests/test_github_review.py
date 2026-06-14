@@ -4,7 +4,7 @@ import httpx
 import pytest
 
 from app.models.review import ReviewIssue, ReviewResult, ReviewStats
-from app.services.github_review import post_review_to_github, _format_inline_body
+from app.services.github_review import _format_inline_body, post_review_to_github
 
 SAMPLE_RESULT = ReviewResult(
     pr_url="https://github.com/owner/repo/pull/1",

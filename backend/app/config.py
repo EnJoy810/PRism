@@ -17,7 +17,7 @@ class AgentConfig(BaseModel):
 
 
 class FilterConfig(BaseModel):
-    min_confidence: float = 0.6
+    min_confidence: float = 0.7
     severity_threshold: Literal["ERROR", "WARNING", "INFO"] = "WARNING"
 
 
@@ -30,12 +30,16 @@ class ReviewConfig(BaseModel):
 
 class GithubConfig(BaseModel):
     webhook_secret: str = ""
+    app_id: int | None = None
+    app_private_key: str = ""
 
 
 class PrismConfig(BaseModel):
     deepseek_api_key: str
     github_token: str = ""
     github_webhook_secret: str = ""
+    github_app_id: int | None = None
+    github_app_private_key: str = ""
     redis_url: str = "redis://localhost:6379/0"
     review: ReviewConfig = ReviewConfig()
     github: GithubConfig = GithubConfig()
@@ -56,12 +60,23 @@ def load_config(path: str | Path | None = None) -> PrismConfig:
     review_data = data.get("review", {})
     github_data = data.get("github", {})
 
+    github_app_id: int | None = None
+    raw_id = _env_or("GITHUB_APP_ID", github_data.get("app_id") or "")
+    if raw_id:
+        github_app_id = int(raw_id)
+
+    github_app_private_key = _env_or(
+        "GITHUB_APP_PRIVATE_KEY", github_data.get("app_private_key") or ""
+    )
+
     return PrismConfig(
         deepseek_api_key=_env_or("DEEPSEEK_API_KEY", ""),
         github_token=_env_or("GITHUB_TOKEN", ""),
         github_webhook_secret=_env_or(
             "GITHUB_WEBHOOK_SECRET", github_data.get("webhook_secret", "")
         ),
+        github_app_id=github_app_id,
+        github_app_private_key=github_app_private_key,
         redis_url=_env_or("REDIS_URL", "redis://localhost:6379/0"),
         review=ReviewConfig(
             budget=BudgetConfig(**(review_data.get("budget", {}))),

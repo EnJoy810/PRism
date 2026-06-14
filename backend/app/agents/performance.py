@@ -21,6 +21,7 @@ class PerformanceAgent(BaseAgent):
         pr_title = ctx.get("pr_title", "")
         pr_description = ctx.get("pr_description", "")
         files = ctx.get("files", [])
+        symbol_defs = ctx.get("symbol_definitions", {})
 
         parts = ["审查以下 PR 变更中的性能风险："]
         if pr_title:
@@ -29,11 +30,19 @@ class PerformanceAgent(BaseAgent):
             parts.append(f"描述：{pr_description[:500]}")
         if files:
             parts.append(f"变更文件：{', '.join(files[:20])}")
+        if symbol_defs:
+            def_lines = ["\n引用符号定义："]
+            for sym, defn in list(symbol_defs.items())[:5]:
+                def_lines.append(f"\n--- {sym} ---\n{defn}")
+            parts.append("".join(def_lines))
         parts.append(f"\n变更代码：\n{diff[:40000]}")
         parts.append(
             "\n\n请先写 <think> 分析过程，再输出 JSON：\n"
             '{"findings": [{"file": "路径", "line": 行号, "title": "标题", '
             '"description": "描述", "severity": "ERROR|WARNING|INFO", '
-            '"confidence": 0.0~1.0, "category": "performance"}]}'
+            '"confidence": 0.0~1.0, "category": "performance", '
+            '"evidence": ["引用第几行代码作为证据"]}]}\n'
+            "规则：evidence 必须引用 diff 中真实存在的行号或代码片段；"
+            "如果无法提供具体行号/片段作为证据，该问题不得上报"
         )
         return "\n".join(parts)

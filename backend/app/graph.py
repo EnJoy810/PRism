@@ -1,9 +1,7 @@
 import asyncio
 import logging
-import re
 import time
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
 
 from app.agents.judge import JudgeAgent
 from app.agents.performance import PerformanceAgent
@@ -67,6 +65,9 @@ class ReviewGraph:
             context = await self.fetch_pr_context(pr_url)
         logger.info("fetch_context done: %s — %.2fs", pr_url, time.monotonic() - t0)
 
+        symbol_defs = await self._fetch_symbol_context(context, pr_url)
+        context["symbol_definitions"] = symbol_defs
+
         needs_batching = (
             context.get("diff_truncated", False)
             or len(context.get("files", [])) > _BATCH_SIZE
@@ -76,10 +77,24 @@ class ReviewGraph:
 
         return await self._run_multi(context, pr_url, t0)
 
+    async def _fetch_symbol_context(self, context: dict, pr_url: str) -> dict[str, str]:
+        try:
+            from app.services.context import fetch_symbol_context
+            from app.services.github import parse_pr_url
+
+            owner, repo, _ = parse_pr_url(pr_url)
+            ref = context.get("head_branch", "")
+            files = context.get("files", [])
+            diff = context.get("diff", "")
+            return await fetch_symbol_context(owner, repo, ref, files, diff)
+        except Exception as e:
+            logger.warning("Symbol context fetch failed: %s", e)
+            return {}
+
     async def _run_single(self, context: dict, pr_url: str, t0: float) -> dict:
         diff = context.get("diff", "")
         agent_results = await self._run_agents(diff, context)
-        return await self._assemble_result(agent_results, context, pr_url, t0)
+        return await self._assemble_result(agent_results, context, pr_url, t0, diff)
 
     async def _run_multi(self, context: dict, pr_url: str, t0: float) -> dict:
         batches = _split_into_batches(context, _BATCH_SIZE)
@@ -91,6 +106,7 @@ class ReviewGraph:
         for i, batch in enumerate(batches):
             tb = time.monotonic()
             batch_diff = batch.get("diff", "")
+            batch["symbol_definitions"] = context.get("symbol_definitions", {})
             agent_results = await self._run_agents(batch_diff, batch)
             logger.info(
                 "batch %d/%d done: %d findings, %.2fs",
@@ -99,13 +115,16 @@ class ReviewGraph:
             )
             all_agent_results.extend(agent_results)
 
-        return await self._assemble_result(all_agent_results, context, pr_url, t0)
+        return await self._assemble_result(
+            all_agent_results, context, pr_url, t0, context.get("diff", ""),
+        )
 
     async def _run_agents(self, diff: str, context: dict) -> list[AgentResult]:
         agent_context = {
             "pr_title": context.get("title", ""),
             "pr_description": context.get("description", ""),
             "files": context.get("files", []),
+            "symbol_definitions": context.get("symbol_definitions", {}),
         }
 
         ta = time.monotonic()
@@ -135,9 +154,10 @@ class ReviewGraph:
         context: dict,
         pr_url: str,
         t0: float,
+        diff: str | None = None,
     ) -> dict:
         tj = time.monotonic()
-        judge_output = await self.judge.run(agent_results)
+        judge_output = await self.judge.run(agent_results, diff=diff)
         logger.info("judge done: %.2fs", time.monotonic() - tj)
 
         raw_findings = judge_output["findings"]
@@ -241,6 +261,7 @@ def _finding_to_dict(f: FindingSchema) -> dict:
         "confidence": f.confidence,
         "category": f.category,
         "diff_snippet": f.diff_snippet,
+        "evidence": f.evidence,
     }
 
 

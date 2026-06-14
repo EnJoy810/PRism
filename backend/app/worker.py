@@ -3,6 +3,7 @@
 import asyncio
 import logging
 
+from app.auth import get_installation_token
 from app.config import load_config
 from app.graph import ReviewGraph
 
@@ -18,30 +19,45 @@ async def shutdown(ctx):
     pass
 
 
+async def _resolve_token(config, installation_id: int | None) -> str | None:
+    if installation_id:
+        try:
+            token = await get_installation_token(installation_id)
+            logger.info("Using installation token for installation %d", installation_id)
+            return token
+        except Exception as e:
+            logger.warning(
+                "Failed to get installation token for %s: %s — falling back to config token",
+                installation_id, e,
+            )
+    token = config.github_token
+    if token:
+        return token
+    return None
+
+
 async def review_job(ctx, pr_url: str, event: str, installation_id: int | None = None):
     config = ctx["config"]
     logger.info("Processing review: %s (event=%s)", pr_url, event)
 
-    github_token = config.github_token
-    if installation_id and not github_token:
+    token = await _resolve_token(config, installation_id)
+    if not token:
         logger.warning(
-            "Installation ID %s provided but no github_token configured; "
-            "falling back to anonymous review (no comment posted)",
-            installation_id,
+            "No token available for %s — review result available in logs only", pr_url
         )
 
     try:
         graph = ReviewGraph()
         result = await graph.run(pr_url=pr_url)
 
-        if github_token:
+        if token:
             try:
-                await graph.post_comment(result, pr_url, github_token)
+                await graph.post_comment(result, pr_url, token)
                 logger.info("Review comment posted for %s", pr_url)
             except Exception as e:
-                logger.error("Failed to post review comment: %s", e)
+                logger.error("Failed to post review comment for %s: %s", pr_url, e)
         else:
-            logger.info("No github_token — review result available in logs only")
+            logger.info("No token — review result available in logs only")
 
         logger.info(
             "Review complete: %s — %d issues, risk=%s, decision=%s",

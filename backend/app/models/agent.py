@@ -18,6 +18,7 @@ class FindingSchema(BaseModel):
     confidence: float
     category: str  # "security" | "performance" | "quality"
     diff_snippet: str | None = None
+    evidence: list[str] | None = None  # 引用的代码行号/片段，为空则丢弃
 
 
 class AgentResult(BaseModel):

@@ -1,5 +1,5 @@
 from app.agents.judge import JudgeAgent, _guess_category
-from app.models.agent import AgentResult, AgentStatus, FindingSchema, JudgeVerdict
+from app.models.agent import AgentResult, AgentStatus, FindingSchema
 
 
 def _finding(
@@ -9,6 +9,7 @@ def _finding(
     severity: str = "WARNING",
     confidence: float = 0.9,
     category: str = "security",
+    evidence: list[str] | None = None,
 ) -> FindingSchema:
     return FindingSchema(
         file=file,
@@ -18,6 +19,7 @@ def _finding(
         severity=severity,
         confidence=confidence,
         category=category,
+        evidence=evidence or [f"{file}:{line}"],
     )
 
 
@@ -69,35 +71,35 @@ class TestDedup:
 
 
 class TestNoiseReduction:
-    def test_low_confidence_downgraded(self):
+    def test_low_confidence_discarded(self):
         f = _finding("a.ts", 10, "Low confidence", "ERROR", 0.3)
         judge = JudgeAgent(api_key="sk-test")
         result = judge.reduce_noise([f], min_confidence=0.6)
-        assert result[0].severity == "WARNING"  # ERROR → downgraded
+        assert result == []  # discarded
 
-    def test_high_confidence_unchanged(self):
+    def test_high_confidence_kept(self):
         f = _finding("a.ts", 10, "Good finding", "ERROR", 0.9)
         judge = JudgeAgent(api_key="sk-test")
         result = judge.reduce_noise([f], min_confidence=0.6)
         assert result[0].severity == "ERROR"
 
-    def test_very_low_confidence_downgraded_once(self):
+    def test_very_low_confidence_discarded(self):
         f = _finding("a.ts", 10, "Very low", "ERROR", 0.15)
         judge = JudgeAgent(api_key="sk-test")
         result = judge.reduce_noise([f], min_confidence=0.6)
-        assert result[0].severity == "WARNING"
+        assert result == []
 
-    def test_warning_downgraded(self):
+    def test_warning_discarded(self):
         f = _finding("a.ts", 10, "Low warning", "WARNING", 0.3)
         judge = JudgeAgent(api_key="sk-test")
         result = judge.reduce_noise([f], min_confidence=0.6)
-        assert result[0].severity == "INFO"
+        assert result == []
 
     def test_custom_threshold(self):
         f = _finding("a.ts", 10, "Borderline", "ERROR", 0.7)
         judge = JudgeAgent(api_key="sk-test")
         result = judge.reduce_noise([f], min_confidence=0.8)
-        assert result[0].severity == "WARNING"  # 0.7 < 0.8, downgraded
+        assert result == []  # 0.7 < 0.8, discarded
 
     def test_empty_findings(self):
         judge = JudgeAgent(api_key="sk-test")

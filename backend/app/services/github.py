@@ -1,4 +1,3 @@
-import base64
 import os
 import re
 
@@ -13,28 +12,6 @@ def parse_pr_url(pr_url: str) -> tuple[str, str, int]:
     if not match:
         raise ValueError(f"Invalid GitHub PR URL: {pr_url}")
     return match.group(1), match.group(2), int(match.group(3))
-
-
-async def _fetch_file_content(
-    client: httpx.AsyncClient,
-    owner: str,
-    repo: str,
-    path: str,
-    ref: str,
-    headers: dict,
-) -> str | None:
-    try:
-        resp = await client.get(
-            f"https://api.github.com/repos/{owner}/{repo}/contents/{path}",
-            params={"ref": ref},
-            headers=headers,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        content = base64.b64decode(data["content"]).decode("utf-8", errors="replace")
-        return "\n".join(content.split("\n")[:200])
-    except Exception:
-        return None
 
 
 async def fetch_pr_context(
@@ -80,15 +57,6 @@ async def fetch_pr_context(
             files_data.extend(page_data)
             page += 1
 
-        # 取变更最多的前 3 个文件内容
-        top_files = sorted(files_data, key=lambda f: f.get("additions", 0), reverse=True)[:3]
-        head_sha = pr_data["head"]["sha"]
-        file_contents: dict[str, str] = {}
-        for f in top_files:
-            content = await _fetch_file_content(client, owner, repo, f["filename"], head_sha, headers)
-            if content:
-                file_contents[f["filename"]] = content
-
     stats = ReviewStats(
         files_changed=pr_data["changed_files"],
         additions=pr_data["additions"],
@@ -105,7 +73,6 @@ async def fetch_pr_context(
         "stats": stats,
         "base_branch": pr_data["base"]["ref"],
         "head_branch": pr_data["head"]["ref"],
-        "file_contents": file_contents,
         "author_name": pr_data["user"]["login"],
         "author_avatar": pr_data["user"]["avatar_url"],
         "updated_at": pr_data["updated_at"],
