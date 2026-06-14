@@ -6,7 +6,7 @@ review:
     expert_model: deepseek-v4-flash
     judge_model: deepseek-v4-pro
   filters:
-    min_confidence: 0.6
+    min_confidence: 0.7
     severity_threshold: WARNING
   skip:
     - "*.lock"
@@ -14,6 +14,7 @@ review:
     - "*.min.js"
 
 github:
+  # Secrets go in .env: GITHUB_WEBHOOK_SECRET, GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY
   webhook_secret: ""
   app_id:
   app_private_key:

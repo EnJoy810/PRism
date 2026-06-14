@@ -1,6 +1,5 @@
 """ARQ background worker for consuming review_queue."""
 
-import asyncio
 import logging
 
 from app.auth import get_installation_token
@@ -84,10 +83,14 @@ class WorkerSettings:
 
 
 def main():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
     cfg = load_config()
     settings = WorkerSettings.from_url(cfg.redis_url)
     from arq import run_worker
-    asyncio.run(run_worker(settings))
+    run_worker(settings)
 
 
 if __name__ == "__main__":

@@ -50,7 +50,12 @@ class PrismConfig(BaseModel):
 
 
 def load_config(path: str | Path | None = None) -> PrismConfig:
-    path = Path(path) if path else Path.cwd() / "prism.yaml"
+    if path:
+        path = Path(path)
+    else:
+        cwd = Path.cwd()
+        candidate = cwd / "prism.yaml"
+        path = candidate if candidate.exists() else cwd.parent / "prism.yaml"
 
     data: dict = {}
     if path.exists():
@@ -68,6 +73,12 @@ def load_config(path: str | Path | None = None) -> PrismConfig:
     github_app_private_key = _env_or(
         "GITHUB_APP_PRIVATE_KEY", github_data.get("app_private_key") or ""
     )
+    if not github_app_private_key:
+        key_file = _env_or("GITHUB_APP_PRIVATE_KEY_FILE", "")
+        if key_file:
+            key_path = Path(key_file) if Path(key_file).is_absolute() else Path.cwd() / key_file
+            if key_path.exists():
+                github_app_private_key = key_path.read_text().strip()
 
     return PrismConfig(
         deepseek_api_key=_env_or("DEEPSEEK_API_KEY", ""),

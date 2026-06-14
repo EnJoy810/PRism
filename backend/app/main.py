@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import redis.asyncio as aioredis
+from arq.connections import ArqRedis, RedisSettings, create_pool
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,7 +15,7 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     config = load_config()
-    redis = aioredis.from_url(config.redis_url)
+    redis: ArqRedis = await create_pool(RedisSettings.from_dsn(config.redis_url))
     app.state.redis = redis
     yield
     await redis.aclose()
@@ -32,7 +32,7 @@ app.add_middleware(
 )
 
 app.include_router(review.router, prefix="/api")
-app.include_router(webhook.router, prefix="/api")
+app.include_router(webhook.router)
 
 
 @app.get("/health")

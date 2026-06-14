@@ -7,8 +7,13 @@ Usage:
 
 import argparse
 import asyncio
+from pathlib import Path
 
-from app.graph import ReviewGraph
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).parent.parent / ".env")
+
+from app.graph import ReviewGraph  # noqa: E402
 
 
 async def review(pr_url: str, token: str | None = None):

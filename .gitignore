@@ -24,3 +24,5 @@ frontend/dist/
 
 # AI agent worktrees
 .claude/
+*.pem
+prism-review-agent.*.private-key.pem
