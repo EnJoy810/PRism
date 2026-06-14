@@ -224,6 +224,10 @@ class TestSplitDiffByFile:
 class TestMultiRoundBatching:
     @pytest.mark.asyncio
     async def test_small_pr_single_round(self):
+        from unittest.mock import patch
+
+        from app.models.agent import AgentResult, AgentStatus
+
         graph = ReviewGraph()
         ctx = {
             "title": "small",
@@ -233,8 +237,20 @@ class TestMultiRoundBatching:
             "stats": None,
         }
 
-        single = await graph._run_single(ctx, "", 0.0)
-        multi = await graph._run_multi(ctx, "", 0.0)
+        async def mock_agent_run(*args, **kwargs):
+            return AgentResult(status=AgentStatus.SUCCESS, findings=[])
+
+        async def mock_judge(*args, **kwargs):
+            return {"findings": [], "merge_recommendation": "APPROVE", "skipped_agents": []}
+
+        with (
+            patch.object(graph.security_agent, "run", mock_agent_run),
+            patch.object(graph.performance_agent, "run", mock_agent_run),
+            patch.object(graph.quality_agent, "run", mock_agent_run),
+            patch.object(graph.judge, "run", mock_judge),
+        ):
+            single = await graph._run_single(ctx, "", 0.0)
+            multi = await graph._run_multi(ctx, "", 0.0)
         assert single["issues"] == multi["issues"]
 
     @pytest.mark.asyncio

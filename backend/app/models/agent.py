@@ -6,7 +6,8 @@ from pydantic import BaseModel
 class AgentStatus(StrEnum):
     SUCCESS = "success"
     TIMEOUT = "timeout"
-    FORMAT_ERROR = "format_error"
+    FORMAT_ERROR = "format_error"  # LLM 返回了无法解析的 JSON
+    RUNTIME_ERROR = "runtime_error"  # 网络、认证、NameError 等非格式问题
 
 
 class FindingSchema(BaseModel):

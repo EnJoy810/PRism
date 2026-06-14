@@ -1,4 +1,5 @@
 from app.agents.base import BaseAgent
+from app.models.agent import AgentResult
 
 SYSTEM_PROMPT = """你是一位关注代码可维护性的资深工程师。用中文回答。
 
@@ -35,14 +36,30 @@ class QualityAgent(BaseAgent):
             for sym, defn in list(symbol_defs.items())[:5]:
                 def_lines.append(f"\n--- {sym} ---\n{defn}")
             parts.append("".join(def_lines))
+        blast_section = ctx.get("blast_radius_section", "")
+        if blast_section:
+            parts.append(blast_section)
+            parts.append(
+                "\n---\n注意：[CROSS-FILE CONTEXT] 部分是调用了被改函数的其他文件代码，"
+                "仅供判断影响范围，不要对这部分代码报问题。只报 [DIFF] 里新增行（+号开头）引入的问题。\n"
+            )
         parts.append(f"\n变更代码：\n{diff[:40000]}")
         parts.append(
             "\n\n请先写 <think> 分析过程，再输出 JSON：\n"
             '{"findings": [{"file": "路径", "line": 行号, "title": "标题", '
             '"description": "描述", "severity": "ERROR|WARNING|INFO", '
             '"confidence": 0.0~1.0, "category": "quality", '
-            '"evidence": ["引用第几行代码作为证据"]}]}\n'
-            "规则：evidence 必须引用 diff 中真实存在的行号或代码片段；"
-            "如果无法提供具体行号/片段作为证据，该问题不得上报"
+            '"evidence": ["diff 中原文代码片段，直接复制 + 号开头的行内容"]}]}\n'
+            "规则：evidence 必须是 diff 新增行（+号开头）的原文内容，直接复制粘贴，不加行号前缀；"
+            "如果无法提供 diff 中真实存在的代码片段作为证据，该问题不得上报"
         )
         return "\n".join(parts)
+
+    async def run(self, diff: str, context: dict | None = None) -> AgentResult:
+        result = await super().run(diff, context)
+        sast = (context or {}).get("sast_findings", {}).get("quality", [])
+        if sast:
+            from app.models.agent import FindingSchema
+            sast_findings = [FindingSchema(**f) for f in sast]
+            result.findings.extend(sast_findings)
+        return result

@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 from abc import ABC, abstractmethod
 
@@ -6,6 +7,8 @@ from json_repair import repair_json
 
 from app.models.agent import AgentResult, AgentStatus, FindingSchema
 from app.services.llm import LLMClient
+
+logger = logging.getLogger(__name__)
 
 
 class BaseAgent(ABC):
@@ -43,8 +46,16 @@ class BaseAgent(ABC):
 
         repaired = repair_json(json_part, return_objects=False)
         data = json.loads(repaired)
-        findings_data = data.get("findings", [])
-        findings = [FindingSchema(**f) for f in findings_data]
+        if isinstance(data, list):
+            findings_data = data
+        else:
+            findings_data = data.get("findings", [])
+        findings = []
+        for f in findings_data:
+            try:
+                findings.append(FindingSchema(**f))
+            except Exception as e:
+                logger.debug("skipping malformed finding: %s — %s", f, e)
         return findings, thinking
 
     async def run(
@@ -54,7 +65,6 @@ class BaseAgent(ABC):
             messages = self._build_messages(diff, context)
             content = await self.client.chat(
                 messages=messages,
-                max_tokens=4096,
                 temperature=0.7,
                 estimated_tokens=len(diff) // 4,
             )
@@ -65,15 +75,20 @@ class BaseAgent(ABC):
                 findings=findings,
             )
 
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            logger.warning(
+                "%s: failed to parse JSON from LLM response: %s\nraw content (first 200): %s",
+                self.__class__.__name__, e, content[:200],
+            )
             return AgentResult(
                 status=AgentStatus.FORMAT_ERROR,
                 findings=[],
                 error_message="Failed to parse JSON from LLM response",
             )
         except Exception as e:
+            logger.warning("%s: agent failed: %s", self.__class__.__name__, e)
             return AgentResult(
-                status=AgentStatus.FORMAT_ERROR,
+                status=AgentStatus.RUNTIME_ERROR,
                 findings=[],
                 error_message=str(e),
             )

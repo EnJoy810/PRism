@@ -240,6 +240,7 @@ class ReviewGraph:
         )
         logger.info("agents done: %.2fs", time.monotonic() - ta)
 
+        agent_names = ["security", "performance", "quality"]
         agent_results: list[AgentResult] = []
         for r in results:
             if isinstance(r, Exception):
@@ -248,6 +249,15 @@ class ReviewGraph:
                 )
             else:
                 agent_results.append(r)
+
+        succeeded = [r for r in agent_results if r.status == AgentStatus.SUCCESS]
+        if not succeeded:
+            failed_msgs = [
+                f"{name}({r.status}: {r.error_message})"
+                for name, r in zip(agent_names, agent_results)
+            ]
+            raise RuntimeError(f"All agents failed — review aborted: {'; '.join(failed_msgs)}")
+
         return agent_results
 
     async def _assemble_result(
@@ -268,7 +278,11 @@ class ReviewGraph:
             for f in raw_findings
         ]
         decision: str = judge_output["merge_recommendation"]
-        skipped = judge_output.get("skipped_agents", [])
+        skipped = [
+            f"agent_{i}({r.status}: {r.error_message})"
+            for i, r in enumerate(agent_results)
+            if r.status != AgentStatus.SUCCESS
+        ]
 
         severity_counts = {"ERROR": 0, "WARNING": 0, "INFO": 0}
         for f in findings:
