@@ -302,6 +302,12 @@ class ReviewGraph:
         diff: str | None = None,
     ) -> dict:
         tj = time.monotonic()
+        verifier_findings = _verification_findings(context.get("verification", {}))
+        if verifier_findings:
+            agent_results = [
+                *agent_results,
+                AgentResult(status=AgentStatus.SUCCESS, findings=verifier_findings),
+            ]
         judge_output = await self.judge.run(
             agent_results,
             diff=diff,
@@ -419,6 +425,58 @@ def _finding_to_dict(f: FindingSchema) -> dict:
         "evidence": f.evidence,
         "token_cost": f.token_cost,
     }
+
+
+def _verification_findings(verification: dict) -> list[FindingSchema]:
+    findings: list[FindingSchema] = []
+
+    imports = verification.get("imports", [])
+    if isinstance(imports, list):
+        for item in imports:
+            if isinstance(item, dict) and item.get("status") == "fail":
+                statement = item.get("statement", "")
+                module = item.get("module", "")
+                findings.append(
+                    FindingSchema(
+                        file=str(item.get("file", "")),
+                        line=item.get("line") if isinstance(item.get("line"), int) else None,
+                        title="Unresolved import",
+                        description=f"The import `{module}` cannot be resolved. {item.get('detail', '')}".strip(),
+                        severity="ERROR",
+                        confidence=1.0,
+                        category="quality",
+                        impact_type="runtime_error",
+                        impact_statement=f"Importing {module} fails at build time.",
+                        evidence=[statement] if statement else None,
+                    )
+                )
+
+    exports = verification.get("exports", [])
+    if isinstance(exports, list):
+        for item in exports:
+            if isinstance(item, dict) and item.get("status") == "fail":
+                statement = item.get("statement", "")
+                symbol = item.get("symbol", "")
+                module = item.get("module", "")
+                findings.append(
+                    FindingSchema(
+                        file=str(item.get("file", "")),
+                        line=item.get("line") if isinstance(item.get("line"), int) else None,
+                        title="Missing named export",
+                        description=(
+                            f"The symbol `{symbol}` is not exported by `{module}`. "
+                            f"{item.get('detail', '')}"
+                        ).strip(),
+                        severity="ERROR",
+                        confidence=1.0,
+                        category="quality",
+                        impact_type="runtime_error",
+                        impact_statement=f"Importing {symbol} from {module} fails at build time.",
+                        evidence=[statement] if statement else None,
+                    )
+                )
+
+    return findings
 
 
 def split_diff_by_file(diff: str) -> dict[str, str]:

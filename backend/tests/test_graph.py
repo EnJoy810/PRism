@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.graph import ReviewGraph, split_diff_by_file
+from app.graph import ReviewGraph, _verification_findings, split_diff_by_file
 
 
 @pytest.mark.asyncio
@@ -335,3 +335,125 @@ class TestVerificationIntegration:
             await graph.run(pr_url="", context=ctx)
 
         assert judge_kwargs["verification"] == verification
+
+    def test_verification_findings_include_failed_imports(self):
+        verification = {
+            "imports": [
+                {
+                    "file": "src/App.tsx",
+                    "line": 3,
+                    "module": "@/components/Missing",
+                    "statement": "import Missing from '@/components/Missing'",
+                    "status": "fail",
+                    "detail": "@/components/Missing not found from src/App.tsx",
+                }
+            ]
+        }
+
+        findings = _verification_findings(verification)
+
+        assert len(findings) == 1
+        assert findings[0].file == "src/App.tsx"
+        assert findings[0].line == 3
+        assert findings[0].title == "Unresolved import"
+        assert findings[0].severity == "ERROR"
+        assert findings[0].confidence == 1.0
+        assert findings[0].evidence == ["import Missing from '@/components/Missing'"]
+
+    def test_verification_findings_include_failed_named_exports(self):
+        verification = {
+            "exports": [
+                {
+                    "file": "src/App.tsx",
+                    "line": 1,
+                    "module": "@/components",
+                    "symbol": "MarketingNavbar",
+                    "statement": "import { MarketingNavbar } from '@/components'",
+                    "status": "fail",
+                    "detail": "MarketingNavbar is not exported by src/components/index.ts",
+                }
+            ]
+        }
+
+        findings = _verification_findings(verification)
+
+        assert len(findings) == 1
+        assert findings[0].title == "Missing named export"
+        assert findings[0].impact_statement == "Importing MarketingNavbar from @/components fails at build time."
+        assert findings[0].evidence == ["import { MarketingNavbar } from '@/components'"]
+
+    def test_verification_findings_ignore_unknown_results(self):
+        verification = {
+            "imports": [
+                {
+                    "file": "src/App.tsx",
+                    "line": 3,
+                    "module": "@/components/Button",
+                    "statement": "import Button from '@/components/Button'",
+                    "status": "unknown",
+                    "detail": "path alias is not configured",
+                }
+            ],
+            "exports": [
+                {
+                    "file": "src/App.tsx",
+                    "line": 4,
+                    "module": "./components",
+                    "symbol": "Button",
+                    "statement": "import { Button } from './components'",
+                    "status": "unknown",
+                    "detail": "export * re-export requires recursive resolution",
+                }
+            ],
+        }
+
+        assert _verification_findings(verification) == []
+
+    @pytest.mark.asyncio
+    async def test_graph_includes_verifier_findings_in_judge_input(self):
+        graph = ReviewGraph()
+        ctx = {
+            "title": "verify imports",
+            "description": "",
+            "diff": "diff --git a/src/App.tsx b/src/App.tsx\n@@ -1,0 +1,1 @@\n+import Missing from '@/components/Missing'",
+            "files": ["src/App.tsx"],
+            "stats": None,
+        }
+        verification = {
+            "imports": [
+                {
+                    "file": "src/App.tsx",
+                    "line": 1,
+                    "module": "@/components/Missing",
+                    "statement": "import Missing from '@/components/Missing'",
+                    "status": "fail",
+                    "detail": "@/components/Missing not found from src/App.tsx",
+                }
+            ]
+        }
+
+        async def mock_agent_run(*args, **kwargs):
+            from app.models.agent import AgentResult, AgentStatus
+            return AgentResult(status=AgentStatus.SUCCESS, findings=[])
+
+        captured_results = []
+
+        async def mock_judge(results, **kwargs):
+            captured_results.extend(results)
+            return {"findings": [], "merge_recommendation": "APPROVE", "skipped_agents": []}
+
+        with (
+            patch.object(graph, "_fetch_verification", AsyncMock(return_value=verification)),
+            patch.object(graph.security_agent, "run", mock_agent_run),
+            patch.object(graph.performance_agent, "run", mock_agent_run),
+            patch.object(graph.quality_agent, "run", mock_agent_run),
+            patch.object(graph.judge, "run", mock_judge),
+        ):
+            await graph.run(pr_url="", context=ctx)
+
+        verifier_results = [
+            result for result in captured_results
+            if result.findings and result.findings[0].title == "Unresolved import"
+        ]
+        assert len(verifier_results) == 1
+        assert verifier_results[0].findings[0].title == "Unresolved import"
