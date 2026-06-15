@@ -23,7 +23,6 @@ PRism 是一款自部署 AI PR Review 工具，目标是在 GitHub PR 评论区�
 |------|------|------|
 | CLI | 本地输入 PR URL，输出 Markdown 审查结果 | 已实现 |
 | GitHub App | PR 打开/同步后自动审查，写回 PR 评论区 | 已实现 |
-| 前端页面 | 旧版贴 URL 审查 UI | 已废弃，`frontend/` 仅保留参考 |
 
 ### 能力状态
 
@@ -242,9 +241,6 @@ cd backend
 | `ARCH.md` | 当前架构设计 |
 | `PLAN_CALLGRAPH.md` | 调用图跨文件分析计划 |
 | `RESEARCH_LOG.md` | 调研与决策对话原始记录 |
-| `PLAN.md` | 早期阶段计划，作为历史记录 |
-| `PRODUCT.md` | 早期 Web 产品语境，作为历史记录 |
-| `AGENT_EVOLUTION.md` | 从 Web 工具转向 GitHub App 的演进记录 |
 
 ---
 

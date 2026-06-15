@@ -5,7 +5,7 @@
 ## 产品形态（2026-06 确定）
 
 - **交互**：GitHub App 安装 → PR 打开/同步自动审查 → 结果写在 PR 评论区（inline comment + summary comment）→ @mention 对话
-- **前端**：无。`frontend/` deprecated，审查结果 UI = GitHub PR 页面本身
+- **前端**：无，审查结果 UI = GitHub PR 页面本身
 - **本地测试**：CLI entry point（`python -m app.cli`），输出 markdown 到终端
 - **部署**：Docker 镜像到服务器，收 webhook、跑 review、写 PR 评论
 - **认证**：GitHub App（私钥 + installation_id 换 token），替代 personal token
@@ -23,7 +23,6 @@
   - `app/auth.py` — GitHub App JWT + installation token 交换
   - `app/cli.py` — 本地测试 CLI，`prism review <pr-url>`
   - `app/config.py` + `prism.yaml` — 配置
-- `frontend/` — **deprecated**，仅保留作为参考不移除
 
 ## 启动命令
 
@@ -310,7 +309,7 @@ Red（写失败测试）→ 你确认测试正确 → Green（最小实现让它
 
 ### 规则 5：每 PR 是独立可验证单元
 
-PLAN.md 的 6 个 PR 已按此拆分，每 PR 符合：
+每个 PR 应保持独立可验证：
 - **改 ≤3 个核心文件**（例外：纯新增配置/测试不计入）
 - **独立可验证**：有测试或手动验证方式
 - **不改测试**：除非 PR 本身是"改测试"
