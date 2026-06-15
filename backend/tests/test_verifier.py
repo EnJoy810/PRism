@@ -88,6 +88,43 @@ diff --git a/src/App.tsx b/src/App.tsx
     assert "not found" in result.detail
 
 
+def test_import_exists_for_tsconfig_path_alias(tmp_path):
+    repo = tmp_path
+    _write(
+        repo / "tsconfig.json",
+        '{"compilerOptions":{"baseUrl":".","paths":{"@/*":["src/*"]}}}',
+    )
+    _write(repo / "src/components/Button.tsx", "export function Button() {}\n")
+    ref = extract_imports_from_diff(
+        """
+diff --git a/src/App.tsx b/src/App.tsx
+@@ -1,0 +1,1 @@
++import Button from '@/components/Button'
+"""
+    )[0]
+
+    result = import_exists(repo, ref)
+
+    assert result.status == VerificationStatus.PASS
+    assert result.detail.endswith("src/components/Button.tsx")
+
+
+def test_import_exists_for_unconfigured_alias_is_unknown(tmp_path):
+    repo = tmp_path
+    ref = extract_imports_from_diff(
+        """
+diff --git a/src/App.tsx b/src/App.tsx
+@@ -1,0 +1,1 @@
++import Button from '@/components/Button'
+"""
+    )[0]
+
+    result = import_exists(repo, ref)
+
+    assert result.status == VerificationStatus.UNKNOWN
+    assert "path alias" in result.detail
+
+
 def test_package_dependency_exists_for_declared_dependency(tmp_path):
     repo = tmp_path
     _write(
@@ -165,6 +202,18 @@ diff --git a/src/App.tsx b/src/App.tsx
         ("./components/Button", "Button"),
         ("./components/Button", "useFoo"),
     ]
+
+
+def test_extract_imported_symbols_from_diff_for_alias_named_imports():
+    diff = """
+diff --git a/src/App.tsx b/src/App.tsx
+@@ -1,0 +1,1 @@
++import { Button } from '@/components/Button'
+"""
+
+    symbols = extract_imported_symbols_from_diff(diff)
+
+    assert [(ref.module, ref.symbol) for ref in symbols] == [("@/components/Button", "Button")]
 
 
 def test_extract_imported_symbols_ignores_default_namespace_package_and_side_effect_imports():
@@ -247,6 +296,20 @@ def test_verify_imported_symbol_unknown_for_export_star(tmp_path):
 
     assert result.status == VerificationStatus.UNKNOWN
     assert "export *" in result.detail
+
+
+def test_verify_imported_symbol_passes_tsconfig_path_alias(tmp_path):
+    repo = tmp_path
+    _write(
+        repo / "tsconfig.json",
+        '{"compilerOptions":{"baseUrl":".","paths":{"@/*":["src/*"]}}}',
+    )
+    _write(repo / "src/components/Button.tsx", "export function Button() {}\n")
+    ref = ImportedSymbolRef("src/App.tsx", 1, "@/components/Button", "Button", "named", "")
+
+    result = verify_imported_symbol(repo, ref)
+
+    assert result.status == VerificationStatus.PASS
 
 
 def test_verify_diff_imports_includes_export_checks(tmp_path):

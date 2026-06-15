@@ -45,6 +45,20 @@ class DependencyIndex:
     package_json_found: bool
 
 
+@dataclass(frozen=True)
+class AliasRule:
+    prefix: str
+    suffix: str
+    targets: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class PathAliasIndex:
+    base_url: str
+    rules: tuple[AliasRule, ...]
+    config_found: bool
+
+
 _IMPORT_RE = re.compile(
     r"^\s*import\s+(?:type\s+)?(?:.+?\s+from\s+)?[\"']([^\"']+)[\"']\s*;?\s*$"
 )
@@ -61,6 +75,7 @@ _DEPENDENCY_SECTIONS = (
     "peerDependencies",
     "optionalDependencies",
 )
+_ALIAS_CONFIG_FILES = ("tsconfig.json", "jsconfig.json")
 
 
 def extract_imports_from_diff(diff: str) -> list[ImportRef]:
@@ -131,7 +146,7 @@ def extract_imported_symbols_from_diff(diff: str) -> list[ImportedSymbolRef]:
             named_import = _NAMED_IMPORT_RE.match(code)
             if named_import and current_file:
                 module = named_import.group(2)
-                if _is_relative_import(module):
+                if _is_relative_import(module) or _looks_like_path_alias(module):
                     for symbol in _extract_named_imports(named_import.group(1)):
                         symbols.append(
                             ImportedSymbolRef(
@@ -175,18 +190,56 @@ def build_dependency_index(repo_path: Path) -> DependencyIndex:
     return DependencyIndex(packages=packages, package_json_found=True)
 
 
+def build_path_alias_index(repo_path: Path) -> PathAliasIndex:
+    for config_name in _ALIAS_CONFIG_FILES:
+        config_path = repo_path / config_name
+        if not config_path.exists():
+            continue
+        try:
+            data = json.loads(config_path.read_text())
+        except (OSError, json.JSONDecodeError):
+            return PathAliasIndex(base_url=".", rules=(), config_found=True)
+
+        compiler_options = data.get("compilerOptions", {})
+        if not isinstance(compiler_options, dict):
+            return PathAliasIndex(base_url=".", rules=(), config_found=True)
+
+        base_url = compiler_options.get("baseUrl", ".")
+        if not isinstance(base_url, str):
+            base_url = "."
+
+        rules = []
+        paths = compiler_options.get("paths", {})
+        if isinstance(paths, dict):
+            for pattern, targets in paths.items():
+                if not isinstance(pattern, str) or not isinstance(targets, list):
+                    continue
+                parsed = _parse_alias_pattern(pattern)
+                if parsed is None:
+                    continue
+                valid_targets = tuple(target for target in targets if isinstance(target, str))
+                if valid_targets:
+                    rules.append(AliasRule(parsed[0], parsed[1], valid_targets))
+
+        return PathAliasIndex(base_url=base_url, rules=tuple(rules), config_found=True)
+
+    return PathAliasIndex(base_url=".", rules=(), config_found=False)
+
+
 def import_exists(repo_path: Path, import_ref: ImportRef) -> VerificationResult:
     if _is_relative_import(import_ref.module):
         return _relative_import_exists(repo_path, import_ref)
+    if _looks_like_path_alias(import_ref.module):
+        return _path_alias_import_exists(repo_path, import_ref.file_path, import_ref.module)
 
     return package_dependency_exists(repo_path, import_ref.module)
 
 
 def verify_imported_symbol(repo_path: Path, symbol_ref: ImportedSymbolRef) -> VerificationResult:
-    if not _is_relative_import(symbol_ref.module):
+    if not _is_relative_import(symbol_ref.module) and not _looks_like_path_alias(symbol_ref.module):
         return VerificationResult(VerificationStatus.UNKNOWN, "package named exports are not verified")
 
-    target = _resolve_relative_import(repo_path, symbol_ref.file_path, symbol_ref.module)
+    target = _resolve_import_path(repo_path, symbol_ref.file_path, symbol_ref.module)
     if target.status != VerificationStatus.PASS:
         return target
 
@@ -225,6 +278,12 @@ def verify_diff_imports(repo_path: Path, diff: str) -> dict:
     for import_ref in imports:
         if _is_relative_import(import_ref.module):
             verification = _relative_import_exists(repo_path, import_ref)
+        elif _looks_like_path_alias(import_ref.module):
+            verification = _path_alias_import_exists(
+                repo_path,
+                import_ref.file_path,
+                import_ref.module,
+            )
         else:
             verification = package_dependency_exists(repo_path, import_ref.module, dependency_index)
         results.append(
@@ -243,7 +302,7 @@ def verify_diff_imports(repo_path: Path, diff: str) -> dict:
         verification = verify_imported_symbol(repo_path, symbol_ref)
         target_detail = ""
         if verification.status == VerificationStatus.PASS:
-            target = _resolve_relative_import(repo_path, symbol_ref.file_path, symbol_ref.module)
+            target = _resolve_import_path(repo_path, symbol_ref.file_path, symbol_ref.module)
             target_detail = target.detail if target.status == VerificationStatus.PASS else ""
         export_results.append(
             {
@@ -274,6 +333,18 @@ def _relative_import_exists(repo_path: Path, import_ref: ImportRef) -> Verificat
     return _resolve_relative_import(repo_path, import_ref.file_path, import_ref.module)
 
 
+def _path_alias_import_exists(repo_path: Path, file_path: str, module: str) -> VerificationResult:
+    return _resolve_path_alias_import(repo_path, file_path, module)
+
+
+def _resolve_import_path(repo_path: Path, file_path: str, module: str) -> VerificationResult:
+    if _is_relative_import(module):
+        return _resolve_relative_import(repo_path, file_path, module)
+    if _looks_like_path_alias(module):
+        return _resolve_path_alias_import(repo_path, file_path, module)
+    return VerificationResult(VerificationStatus.UNKNOWN, "package import path is not resolved")
+
+
 def _resolve_relative_import(repo_path: Path, file_path: str, module: str) -> VerificationResult:
     importer = repo_path / file_path
     target_base = (importer.parent / module).resolve()
@@ -291,6 +362,35 @@ def _resolve_relative_import(repo_path: Path, file_path: str, module: str) -> Ve
     return VerificationResult(VerificationStatus.FAIL, f"{module} not found from {file_path}")
 
 
+def _resolve_path_alias_import(repo_path: Path, file_path: str, module: str) -> VerificationResult:
+    alias_index = build_path_alias_index(repo_path)
+    if not alias_index.config_found or not alias_index.rules:
+        return VerificationResult(VerificationStatus.UNKNOWN, f"path alias for {module} is not configured")
+
+    repo_root = repo_path.resolve()
+    base_dir = (repo_root / alias_index.base_url).resolve()
+    try:
+        base_dir.relative_to(repo_root)
+    except ValueError:
+        return VerificationResult(VerificationStatus.UNKNOWN, "path alias baseUrl resolves outside repository")
+
+    for rule in alias_index.rules:
+        matched = _match_alias_rule(module, rule)
+        if matched is None:
+            continue
+        for target_pattern in rule.targets:
+            target_path = _apply_alias_target(base_dir, target_pattern, matched)
+            try:
+                target_path.relative_to(repo_root)
+            except ValueError:
+                continue
+            for candidate in _relative_candidates(target_path):
+                if candidate.is_file():
+                    return VerificationResult(VerificationStatus.PASS, str(candidate.relative_to(repo_root)))
+
+    return VerificationResult(VerificationStatus.FAIL, f"{module} not found from {file_path}")
+
+
 def _relative_candidates(target_base: Path) -> list[Path]:
     candidates = [target_base]
     candidates.extend(Path(f"{target_base}{ext}") for ext in _RESOLVE_EXTENSIONS)
@@ -300,6 +400,10 @@ def _relative_candidates(target_base: Path) -> list[Path]:
 
 def _is_relative_import(module: str) -> bool:
     return module.startswith(_RELATIVE_PREFIXES)
+
+
+def _looks_like_path_alias(module: str) -> bool:
+    return module.startswith("@/") or module.startswith("~/") or module.startswith("#/")
 
 
 def _package_name(module: str) -> str:
@@ -359,3 +463,23 @@ def _exported_name_from_part(part: str) -> str | None:
     if len(pieces) == 2:
         return pieces[1].strip()
     return pieces[0].strip()
+
+
+def _parse_alias_pattern(pattern: str) -> tuple[str, str] | None:
+    if pattern.count("*") > 1:
+        return None
+    if "*" not in pattern:
+        return pattern, ""
+    prefix, suffix = pattern.split("*", 1)
+    return prefix, suffix
+
+
+def _match_alias_rule(module: str, rule: AliasRule) -> str | None:
+    if not module.startswith(rule.prefix) or not module.endswith(rule.suffix):
+        return None
+    return module[len(rule.prefix): len(module) - len(rule.suffix) if rule.suffix else len(module)]
+
+
+def _apply_alias_target(base_dir: Path, target_pattern: str, matched: str) -> Path:
+    target = target_pattern.replace("*", matched)
+    return (base_dir / target).resolve()
