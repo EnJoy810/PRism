@@ -44,6 +44,8 @@ class BaseAgent(ABC):
         else:
             json_part = content.strip()
 
+        if "{" in json_part and "}" in json_part:
+            json_part = json_part[json_part.find("{"):json_part.rfind("}") + 1]
         repaired = repair_json(json_part, return_objects=False)
         data = json.loads(repaired)
         if isinstance(data, list):
@@ -65,7 +67,7 @@ class BaseAgent(ABC):
             messages = self._build_messages(diff, context)
             content = await self.client.chat(
                 messages=messages,
-                temperature=0.7,
+                temperature=0.2,
                 estimated_tokens=len(diff) // 4,
             )
 

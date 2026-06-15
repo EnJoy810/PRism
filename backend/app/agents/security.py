@@ -49,8 +49,12 @@ class SecurityAgent(BaseAgent):
             '{"findings": [{"file": "路径", "line": 行号, "title": "标题", '
             '"description": "描述", "severity": "ERROR|WARNING|INFO", '
             '"confidence": 0.0~1.0, "category": "security", '
+            '"impact_type": "security_risk|info_only", '
+            '"impact_statement": "具体攻击路径或数据泄露后果", '
             '"evidence": ["diff 中原文代码片段，直接复制 + 号开头的行内容"]}]}\n'
             "规则：evidence 必须是 diff 新增行（+号开头）的原文内容，直接复制粘贴，不加行号前缀；"
+            "impact_type 必须描述实际后果；只有安全风险用 security_risk，"
+            "安全最佳实践建议用 info_only；impact_statement 必须是可验证后果，不能只写可能/也许；"
             "如果无法提供 diff 中真实存在的代码片段作为证据，该问题不得上报"
         )
         return "\n".join(parts)

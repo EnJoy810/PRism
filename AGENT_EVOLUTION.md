@@ -1,4 +1,6 @@
-# PRism Agent 演进规划
+# PRism Agent 演进规划（历史记录）
+
+> 状态说明：本文记录从 Web 工具演进到 GitHub App Agent 的设计过程，部分内容已被当前架构取代。当前实现不使用 BackgroundTasks 作为主队列，不把 Web Dashboard 作为核心产品，不强制使用 LangGraph checkpoint；当前事实源以 `CLAUDE.md`、`ARCH.md`、`README.md` 为准。
 
 > 沉淀自 2026-06-12 与 AI 的设计对话。  
 > 目标：把 PRism 从"Web 工具"演进成"住在 GitHub 里的 AI Review Agent"。

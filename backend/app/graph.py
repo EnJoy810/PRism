@@ -69,14 +69,16 @@ class ReviewGraph:
         symbol_task = asyncio.create_task(self._fetch_symbol_context(context, pr_url))
         blast_task = asyncio.create_task(self._fetch_blast_radius(context, pr_url))
         sast_task = asyncio.create_task(self._fetch_sast_findings(context, pr_url))
+        verification_task = asyncio.create_task(self._fetch_verification(context, pr_url))
 
-        symbol_defs, blast_radius, sast_findings = await asyncio.gather(
-            symbol_task, blast_task, sast_task, return_exceptions=True
+        symbol_defs, blast_radius, sast_findings, verification = await asyncio.gather(
+            symbol_task, blast_task, sast_task, verification_task, return_exceptions=True
         )
 
         context["symbol_definitions"] = symbol_defs if isinstance(symbol_defs, dict) else {}
         context["blast_radius"] = blast_radius if isinstance(blast_radius, list) else []
         context["sast_findings"] = sast_findings if isinstance(sast_findings, dict) else {}
+        context["verification"] = verification if isinstance(verification, dict) else {}
 
         needs_batching = (
             context.get("diff_truncated", False)
@@ -186,6 +188,37 @@ class ReviewGraph:
             logger.debug("sast fetch failed: %s", e)
             return {"security": [], "quality": []}
 
+    async def _fetch_verification(self, context: dict, pr_url: str) -> dict:
+        try:
+            from app.config import load_config
+            from app.services.github import parse_pr_url
+            from app.services.repo import ensure_repo
+            from app.services.verifier import verify_diff_imports
+
+            owner, repo, _ = parse_pr_url(pr_url)
+            head_sha = context.get("head_sha", "")
+            if not head_sha:
+                return {}
+
+            cfg = load_config()
+            token = cfg.github_token or os.environ.get("GITHUB_TOKEN", "")
+            if not token:
+                return {}
+
+            repo_path = await ensure_repo(owner, repo, head_sha, token)
+            if repo_path is None:
+                return {}
+
+            diff = context.get("diff", "")
+            if not diff:
+                return {}
+
+            return verify_diff_imports(repo_path, diff)
+
+        except Exception as e:
+            logger.debug("verification fetch failed: %s", e)
+            return {}
+
     async def _run_single(self, context: dict, pr_url: str, t0: float) -> dict:
         diff = context.get("diff", "")
         agent_results = await self._run_agents(diff, context)
@@ -269,7 +302,11 @@ class ReviewGraph:
         diff: str | None = None,
     ) -> dict:
         tj = time.monotonic()
-        judge_output = await self.judge.run(agent_results, diff=diff)
+        judge_output = await self.judge.run(
+            agent_results,
+            diff=diff,
+            verification=context.get("verification", {}),
+        )
         logger.info("judge done: %.2fs", time.monotonic() - tj)
 
         raw_findings = judge_output["findings"]
@@ -376,6 +413,8 @@ def _finding_to_dict(f: FindingSchema) -> dict:
         "severity": f.severity if isinstance(f.severity, str) else f.severity.value,
         "confidence": f.confidence,
         "category": f.category,
+        "impact_type": f.impact_type,
+        "impact_statement": f.impact_statement,
         "diff_snippet": f.diff_snippet,
         "evidence": f.evidence,
         "token_cost": f.token_cost,

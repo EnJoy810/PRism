@@ -1,4 +1,4 @@
-# PRism — CLAUDE.md
+# PRism — AGENTS.md
 
 > AI-powered PR Review Assistant. Backend: FastAPI + Python 3.12. GitHub App deployment.
 
@@ -293,7 +293,7 @@ Red（写失败测试）→ 你确认测试正确 → Green（最小实现让它
 | 3. 安全扫描 | 硬编码密钥、SQL 注入 | 无 SAST 工具时不强推 | — |
 | 4. 测试覆盖 | 新代码未覆盖、回归 | `pytest tests/ -v --cov=app/` | AI |
 | 5. 边界一致 | 跨模块接口不匹配 | 编译时由类型系统保证 | 自动 |
-| 6. 对抗 LLM 审查 | 幻觉 API、遗漏边缘情况、过度工程 | 你换一个模型（Claude 或其他）审我 diff | 你 |
+| 6. 对抗 LLM 审查 | 幻觉 API、遗漏边缘情况、过度工程 | 你换一个模型（Codex 或其他）审我 diff | 你 |
 | 7. 最终签字 | 业务逻辑正确性 | 你看 diff，确认 AI 没改测试、没偷跑 | 你 |
 
 每层只管前一层漏掉的东西。第 7 层你砍掉可以，但前 6 层我跑。
@@ -315,7 +315,7 @@ Red（写失败测试）→ 你确认测试正确 → Green（最小实现让它
 
 执行方式：
 - 我不审自己的代码
-- 每个 PR 的 diff，你换一个模型（Claude 或其他）扫一遍，专门找：幻觉 API、遗漏的边缘情况、过度工程
+- 每个 PR 的 diff，你换一个模型（Codex 或其他）扫一遍，专门找：幻觉 API、遗漏的边缘情况、过度工程
 - 审出来的问题归入 PR 的 issues，不改好不合入
 
 ### 规则 5：每 PR 是独立可验证单元

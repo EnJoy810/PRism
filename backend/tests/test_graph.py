@@ -72,6 +72,7 @@ async def test_graph_returns_expected_structure():
 
     with (
         patch.object(graph, "fetch_pr_context", mock_fetch),
+        patch.object(graph, "_fetch_verification", AsyncMock(return_value={})),
         patch.object(graph.security_agent, "run", mock_security_run),
         patch.object(graph.performance_agent, "run", mock_empty_run),
         patch.object(graph.quality_agent, "run", mock_empty_run),
@@ -125,6 +126,7 @@ async def test_graph_handles_empty_findings():
 
     with (
         patch.object(graph, "fetch_pr_context", mock_fetch),
+        patch.object(graph, "_fetch_verification", AsyncMock(return_value={})),
         patch.object(graph.security_agent, "run", mock_empty_run),
         patch.object(graph.performance_agent, "run", mock_empty_run),
         patch.object(graph.quality_agent, "run", mock_empty_run),
@@ -175,6 +177,7 @@ async def test_graph_handles_agent_failure():
 
     with (
         patch.object(graph, "fetch_pr_context", mock_fetch),
+        patch.object(graph, "_fetch_verification", AsyncMock(return_value={})),
         patch.object(graph.security_agent, "run", mock_security_fail),
         patch.object(graph.performance_agent, "run", mock_ok_run),
         patch.object(graph.quality_agent, "run", mock_ok_run),
@@ -277,6 +280,7 @@ class TestMultiRoundBatching:
             return {"findings": [], "merge_recommendation": "APPROVE", "skipped_agents": []}
 
         with (
+            patch.object(graph, "_fetch_verification", AsyncMock(return_value={})),
             patch.object(graph.security_agent, "run", counting_run),
             patch.object(graph.performance_agent, "run", counting_run),
             patch.object(graph.quality_agent, "run", counting_run),
@@ -286,3 +290,48 @@ class TestMultiRoundBatching:
 
         assert call_count == 6
         assert result["merge_recommendation"] == "APPROVE"
+
+
+class TestVerificationIntegration:
+    @pytest.mark.asyncio
+    async def test_graph_passes_verification_to_judge(self):
+        graph = ReviewGraph()
+        ctx = {
+            "title": "verify imports",
+            "description": "",
+            "diff": "+import { Search } from 'lucide-react'",
+            "files": ["src/App.tsx"],
+            "stats": None,
+        }
+        verification = {
+            "imports": [
+                {
+                    "file": "src/App.tsx",
+                    "line": 1,
+                    "module": "lucide-react",
+                    "status": "pass",
+                    "detail": "dependencies",
+                }
+            ]
+        }
+
+        async def mock_agent_run(*args, **kwargs):
+            from app.models.agent import AgentResult, AgentStatus
+            return AgentResult(status=AgentStatus.SUCCESS, findings=[])
+
+        judge_kwargs = {}
+
+        async def mock_judge(*args, **kwargs):
+            judge_kwargs.update(kwargs)
+            return {"findings": [], "merge_recommendation": "APPROVE", "skipped_agents": []}
+
+        with (
+            patch.object(graph, "_fetch_verification", AsyncMock(return_value=verification)),
+            patch.object(graph.security_agent, "run", mock_agent_run),
+            patch.object(graph.performance_agent, "run", mock_agent_run),
+            patch.object(graph.quality_agent, "run", mock_agent_run),
+            patch.object(graph.judge, "run", mock_judge),
+        ):
+            await graph.run(pr_url="", context=ctx)
+
+        assert judge_kwargs["verification"] == verification

@@ -1,5 +1,6 @@
 from arq.connections import ArqRedis
 from pydantic import BaseModel
+from redis import asyncio as aioredis  # noqa: F401
 
 
 class ReviewJob(BaseModel):
@@ -10,10 +11,14 @@ class ReviewJob(BaseModel):
 
 
 async def enqueue_review(job: ReviewJob, redis: ArqRedis) -> None:
-    await redis.enqueue_job(
-        "review_job",
-        job.pr_url,
-        job.event,
-        job.github_token,
-        job.installation_id,
-    )
+    if isinstance(redis, ArqRedis):
+        await redis.enqueue_job(
+            "review_job",
+            job.pr_url,
+            job.event,
+            job.github_token,
+            job.installation_id,
+        )
+        return
+
+    await redis.lpush("review_queue", job.model_dump_json())

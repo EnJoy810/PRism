@@ -32,7 +32,7 @@ app.add_middleware(
 )
 
 app.include_router(review.router, prefix="/api")
-app.include_router(webhook.router)
+app.include_router(webhook.router, prefix="/api")
 
 
 @app.get("/health")

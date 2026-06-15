@@ -24,6 +24,8 @@ class ReviewIssue(BaseModel):
     suggestion: str | None = None
     diff_snippet: str | None = None
     confidence: float = 1.0
+    impact_type: str | None = None
+    impact_statement: str | None = None
 
 
 class ReviewStats(BaseModel):

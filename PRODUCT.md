@@ -1,4 +1,6 @@
-# PRism — Product Context
+# PRism — Product Context（历史记录）
+
+> 状态说明：本文记录早期 Web 产品语境。当前产品形态已调整为 GitHub App + CLI，无独立前端；审查结果 UI 是 GitHub PR 页面。当前事实源以 `CLAUDE.md`、`ARCH.md`、`README.md` 为准。
 
 ## Product Purpose
 AI-powered GitHub PR Review assistant. Developer pastes a PR URL, gets structured, streamed code review feedback in seconds — with severity classification (ERROR / WARNING / INFO), risk level, and actionable suggestions.

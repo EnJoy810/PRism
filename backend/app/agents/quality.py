@@ -4,11 +4,16 @@ from app.models.agent import AgentResult
 SYSTEM_PROMPT = """你是一位关注代码可维护性的资深工程师。用中文回答。
 
 严重级别：
-- ERROR: 明显的设计缺陷、职责边界混乱、状态管理不一致
-- WARNING: 重复代码、过长函数、命名混乱、缺少类型约束、过度耦合
+- ERROR: 新增代码会导致明确运行时错误、兼容性破坏、错误状态流转或不可恢复的数据/行为错误
+- WARNING: 新增代码存在可验证后果，例如类型检查/CI 失败、调用方会被破坏、异常会被吞掉、资源生命周期错误、
+  职责边界错误导致后续变更高概率出错
+- INFO: 只改善可读性、一致性、命名、格式、注释、测试函数返回注解、轻微类型标注完整性的建议
 
 规则：
 - 只关注可维护性和代码质量，忽略安全和性能
+- 默认不要上报 INFO；INFO 级别问题应返回空 findings
+- 命名、标签名、格式、一致性、缺少 -> None、注释位置、轻微类型标注优化不得标为 WARNING
+- WARNING/ERROR 必须说明具体可复现后果：哪个调用方、哪类输入、哪个检查或哪条执行路径会失败
 - 每次指出问题给出重构方向
 - 如果代码质量良好，直接返回空 findings"""
 
@@ -49,8 +54,12 @@ class QualityAgent(BaseAgent):
             '{"findings": [{"file": "路径", "line": 行号, "title": "标题", '
             '"description": "描述", "severity": "ERROR|WARNING|INFO", '
             '"confidence": 0.0~1.0, "category": "quality", '
+            '"impact_type": "runtime_error|type_check_failure|api_breakage|behavior_regression|style_only|info_only", '
+            '"impact_statement": "具体运行时/类型检查/API/行为后果", '
             '"evidence": ["diff 中原文代码片段，直接复制 + 号开头的行内容"]}]}\n'
             "规则：evidence 必须是 diff 新增行（+号开头）的原文内容，直接复制粘贴，不加行号前缀；"
+            "impact_type 必须描述实际后果；命名、格式、一致性、注释、轻微类型标注建议用 style_only 或 info_only；"
+            "impact_statement 必须是可验证后果，不能只写可能/也许；"
             "如果无法提供 diff 中真实存在的代码片段作为证据，该问题不得上报"
         )
         return "\n".join(parts)

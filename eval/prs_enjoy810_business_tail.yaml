@@ -1,0 +1,99 @@
+- id: qingjing-grader-frontend-99
+  repo: raindrops-0199/qingjing-grader-frontend
+  url: https://github.com/raindrops-0199/qingjing-grader-frontend/pull/99
+  kind: dogfood-private-business
+  title: "fix: 创建考试跳转首页 + 移动端学生序号与导航修复"
+  changed_files: 2
+  additions: 25
+  deletions: 28
+  notes: User-authored merged PR from accessible private/business repo.
+- id: qingjing-grader-frontend-97
+  repo: raindrops-0199/qingjing-grader-frontend
+  url: https://github.com/raindrops-0199/qingjing-grader-frontend/pull/97
+  kind: dogfood-private-business
+  title: "fix: 修复 LaTeX 分隔符兼容与评分规则内容归一化"
+  changed_files: 2
+  additions: 22
+  deletions: 9
+  notes: User-authored merged PR from accessible private/business repo.
+- id: qingjing-grader-frontend-96
+  repo: raindrops-0199/qingjing-grader-frontend
+  url: https://github.com/raindrops-0199/qingjing-grader-frontend/pull/96
+  kind: dogfood-private-business
+  title: "fix(design-exam): 修复英语作文跨页裁切与选择题 bbox 硬编码补偿"
+  changed_files: 4
+  additions: 67
+  deletions: 207
+  notes: User-authored merged PR from accessible private/business repo.
+- id: qingjing-grader-frontend-95
+  repo: raindrops-0199/qingjing-grader-frontend
+  url: https://github.com/raindrops-0199/qingjing-grader-frontend/pull/95
+  kind: dogfood-private-business
+  title: "fix(trace): 恢复展示全部学生，异常学生弹窗提醒"
+  changed_files: 3
+  additions: 194
+  deletions: 122
+  notes: User-authored merged PR from accessible private/business repo.
+- id: qingjing-grader-frontend-94
+  repo: raindrops-0199/qingjing-grader-frontend
+  url: https://github.com/raindrops-0199/qingjing-grader-frontend/pull/94
+  kind: dogfood-private-business
+  title: "fix(design-exam): 修复 FusionQuestionModal Fast Refresh 失效问题"
+  changed_files: 3
+  additions: 100
+  deletions: 87
+  notes: User-authored merged PR from accessible private/business repo.
+- id: qingjing-grader-frontend-92
+  repo: raindrops-0199/qingjing-grader-frontend
+  url: https://github.com/raindrops-0199/qingjing-grader-frontend/pull/92
+  kind: dogfood-private-business
+  title: "fix: 修复人工阅卷满分显示与营销页缺失依赖"
+  changed_files: 5
+  additions: 119
+  deletions: 56
+  notes: User-authored merged PR from accessible private/business repo.
+- id: qingjing-grader-frontend-90
+  repo: raindrops-0199/qingjing-grader-frontend
+  url: https://github.com/raindrops-0199/qingjing-grader-frontend/pull/90
+  kind: dogfood-private-business
+  title: "fix(design-exam): 仅在 score_type 为 fixed 时显示固定分输入框"
+  changed_files: 1
+  additions: 36
+  deletions: 27
+  notes: User-authored merged PR from accessible private/business repo.
+- id: qingjing-grader-frontend-89
+  repo: raindrops-0199/qingjing-grader-frontend
+  url: https://github.com/raindrops-0199/qingjing-grader-frontend/pull/89
+  kind: dogfood-private-business
+  title: "feat(design-exam): 支持大题标题编辑"
+  changed_files: 12
+  additions: 283
+  deletions: 179
+  notes: User-authored merged PR from accessible private/business repo.
+- id: qingjing-grader-frontend-88
+  repo: raindrops-0199/qingjing-grader-frontend
+  url: https://github.com/raindrops-0199/qingjing-grader-frontend/pull/88
+  kind: dogfood-private-business
+  title: "feat(design-exam): 优化试卷编辑器体验，对齐老师反馈"
+  changed_files: 10
+  additions: 195
+  deletions: 94
+  notes: User-authored merged PR from accessible private/business repo.
+- id: qingjing-grader-frontend-86
+  repo: raindrops-0199/qingjing-grader-frontend
+  url: https://github.com/raindrops-0199/qingjing-grader-frontend/pull/86
+  kind: dogfood-private-business
+  title: "fix: 修复作文数据加载无限循环问题"
+  changed_files: 1
+  additions: 116
+  deletions: 92
+  notes: User-authored merged PR from accessible private/business repo.
+- id: qingjing-grader-frontend-84
+  repo: raindrops-0199/qingjing-grader-frontend
+  url: https://github.com/raindrops-0199/qingjing-grader-frontend/pull/84
+  kind: dogfood-private-business
+  title: "fix(data-analysis): 修复折叠动画高度计算，分页数调整为 15"
+  changed_files: 2
+  additions: 544
+  deletions: 108
+  notes: User-authored merged PR from accessible private/business repo.

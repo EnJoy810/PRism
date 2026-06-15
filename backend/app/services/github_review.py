@@ -14,6 +14,10 @@ _BASE_DELAY = 1.0
 def _format_inline_body(issue: ReviewIssue) -> str:
     severity = issue.severity.value if hasattr(issue.severity, "value") else issue.severity
     lines = [f"**[{severity}] {issue.title}**", "", issue.description]
+    if issue.impact_type:
+        lines.append(f"\n影响类型: `{issue.impact_type}`")
+    if issue.impact_statement:
+        lines.append(f"\n具体后果: {issue.impact_statement}")
     suggestion = getattr(issue, "suggestion", None)
     if suggestion:
         lines.append(f"\n💡 **建议**: {suggestion}")

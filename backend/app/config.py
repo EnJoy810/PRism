@@ -11,6 +11,12 @@ class BudgetConfig(BaseModel):
     max_tokens_per_call: int = 16384
 
 
+class LLMConfig(BaseModel):
+    api_key: str = ""
+    base_url: str = "https://api.deepseek.com"
+    model: str = "deepseek-v4-flash"
+
+
 class AgentConfig(BaseModel):
     expert_model: str = "deepseek-v4-flash"
     judge_model: str = "deepseek-v4-pro"
@@ -43,6 +49,7 @@ class PrismConfig(BaseModel):
     redis_url: str = "redis://localhost:6379/0"
     review: ReviewConfig = ReviewConfig()
     github: GithubConfig = GithubConfig()
+    llm: LLMConfig = LLMConfig()
 
     @property
     def webhook_secret_bytes(self) -> bytes:
@@ -64,6 +71,7 @@ def load_config(path: str | Path | None = None) -> PrismConfig:
 
     review_data = data.get("review", {})
     github_data = data.get("github", {})
+    llm_data = data.get("llm", {})
 
     github_app_id: int | None = None
     raw_id = _env_or("GITHUB_APP_ID", github_data.get("app_id") or "")
@@ -99,6 +107,13 @@ def load_config(path: str | Path | None = None) -> PrismConfig:
             webhook_secret=_env_or(
                 "GITHUB_WEBHOOK_SECRET", github_data.get("webhook_secret", "")
             )
+        ),
+        llm=LLMConfig(
+            api_key=_env_or("LLM_API_KEY", llm_data.get("api_key", "")),
+            base_url=_env_or(
+                "LLM_BASE_URL", llm_data.get("base_url", "https://api.deepseek.com")
+            ),
+            model=_env_or("LLM_MODEL", llm_data.get("model", "deepseek-v4-flash")),
         ),
     )
 
