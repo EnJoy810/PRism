@@ -4,7 +4,7 @@
   <p>GitHub App + CLI，多 Agent 并行审查，低噪声 PR 评论</p>
 
   <p>
-    <img src="https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python" />
+    <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python" />
     <img src="https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square&logo=fastapi" />
     <img src="https://img.shields.io/badge/DeepSeek-V4_Flash-4A90D9?style=flat-square" />
     <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" />
@@ -35,7 +35,6 @@ PRism 是一款自部署 AI PR Review 工具，目标是在 GitHub PR 评论区�
 | GitHub App Webhook + Worker | 已实现 | FastAPI 接收 webhook，ARQ Worker 消费队列 |
 | SAST 增强 | 已有基础模块 | `services/sast.py` 封装 Semgrep，缺工具时静默降级 |
 | 调用图跨文件分析 | 进行中 | tree-sitter + SQLite + BFS 模块已存在，仍需持续集成和评测 |
-| BlockDiff 函数级 diff | 规划中 | 把 unified diff 转为函数级新旧对比 |
 
 ---
 
@@ -56,7 +55,7 @@ PRism 是一款自部署 AI PR Review 工具，目标是在 GitHub PR 评论区�
 
 ### 环境要求
 
-- Python 3.12+
+- Python 3.11+
 - OpenAI-compatible LLM API Key
 - Redis（GitHub App / Worker 模式需要）
 
@@ -80,6 +79,8 @@ python -m app.cli review https://github.com/owner/repo/pull/42 --token ghp_xxx
 ### Docker 模式
 
 ```bash
+cp backend/.env.example backend/.env
+# 编辑 backend/.env，填入 LLM、GitHub App 和 Redis 配置
 docker compose up --build
 ```
 
@@ -93,19 +94,22 @@ docker compose up --build
 
 1. 在 GitHub 创建 GitHub App：Settings -> Developer settings -> GitHub Apps -> New GitHub App
 2. Webhook URL 设置为：`https://your-domain.com/api/webhook`
-3. 订阅事件：`Pull requests`、`Issue comments`
-4. 生成私钥并安装到目标仓库
-5. 配置环境变量：
+3. 权限：`Contents: Read-only`、`Metadata: Read-only`、`Pull requests: Read and write`
+4. 订阅事件：`Pull requests`、`Issue comments`
+5. 生成私钥并安装到目标仓库
+6. 配置环境变量。推荐把私钥保存为文件，并设置 `GITHUB_APP_PRIVATE_KEY_FILE`：
 
 ```bash
 LLM_API_KEY=your_llm_api_key
 LLM_BASE_URL=https://api.deepseek.com
 LLM_MODEL=deepseek-v4-flash
 GITHUB_APP_ID=your_app_id
-GITHUB_APP_PRIVATE_KEY=-----BEGIN RSA PRIVATE KEY-----\n...
+GITHUB_APP_PRIVATE_KEY_FILE=/run/secrets/github-app-private-key.pem
 GITHUB_WEBHOOK_SECRET=your_webhook_secret
 REDIS_URL=redis://localhost:6379/0
 ```
+
+本地调试 GitHub App webhook 需要一个公网 HTTPS URL，可用反向代理或 ngrok 指向 `http://localhost:8000/api/webhook`。
 
 ---
 
@@ -123,12 +127,10 @@ ARQ queue job
         v
 ReviewGraph
         |
-        +--> fetch PR diff / metadata / changed files
-        +--> prepare optional context / SAST / blast radius
-        +--> run Security + Quality + Performance agents in parallel
-        +--> rule dedupe
-        +--> Judge semantic grouping + severity gating
-        +--> evidence validation
+        +--> Scope: fetch PR diff / metadata / changed files
+        +--> Investigate: SAST / verification / blast radius / agents in parallel
+        +--> Gate: Judge dedupe + severity + evidence checks
+        +--> Comment: only surviving findings are posted
         |
         v
 GitHub PR inline comments + summary comment

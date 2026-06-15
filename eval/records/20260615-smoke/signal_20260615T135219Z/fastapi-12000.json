@@ -1,0 +1,27 @@
+{
+  "sample": {
+    "id": "fastapi-12000",
+    "repo": "fastapi/fastapi",
+    "url": "https://github.com/fastapi/fastapi/pull/12000",
+    "kind": "public-config-change",
+    "notes": "Prior eval produced labeler config findings."
+  },
+  "ran_at": "2026-06-15T13:52:49.681070+00:00",
+  "result": {
+    "summary": "👷 Add GitHub Action labeler",
+    "risk_level": "LOW",
+    "issues": [],
+    "stats": {
+      "files_changed": 2,
+      "additions": 35,
+      "deletions": 0,
+      "issues_by_severity": {
+        "ERROR": 0,
+        "WARNING": 0,
+        "INFO": 0
+      }
+    },
+    "merge_recommendation": "APPROVE",
+    "skipped_agents": []
+  }
+}

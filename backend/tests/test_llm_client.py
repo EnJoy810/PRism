@@ -154,6 +154,24 @@ class TestLLMClient:
             assert result == "ok"
 
     @pytest.mark.asyncio
+    async def test_default_temperature_is_deterministic(self):
+        client = LLMClient(api_key="sk-test", model="deepseek-v4-flash")
+
+        mock_response = AsyncMock()
+        mock_response.choices = [AsyncMock()]
+        mock_response.choices[0].message.content = "ok"
+        mock_response.usage = None
+
+        mock_create = AsyncMock(return_value=mock_response)
+        with patch.object(client.client.chat.completions, "create", mock_create):
+            await client.chat(
+                messages=[{"role": "user", "content": "hi"}],
+                max_tokens=100,
+            )
+
+        assert mock_create.await_args.kwargs["temperature"] == 0.0
+
+    @pytest.mark.asyncio
     async def test_no_budget_no_estimated_tokens_required(self):
         client = LLMClient(api_key="sk-test", model="deepseek-v4-flash", budget=None)
 

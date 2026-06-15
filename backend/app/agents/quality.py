@@ -1,5 +1,4 @@
 from app.agents.base import BaseAgent
-from app.models.agent import AgentResult
 
 SYSTEM_PROMPT = """你是一位关注代码可维护性的资深工程师。用中文回答。
 
@@ -63,12 +62,3 @@ class QualityAgent(BaseAgent):
             "如果无法提供 diff 中真实存在的代码片段作为证据，该问题不得上报"
         )
         return "\n".join(parts)
-
-    async def run(self, diff: str, context: dict | None = None) -> AgentResult:
-        result = await super().run(diff, context)
-        sast = (context or {}).get("sast_findings", {}).get("quality", [])
-        if sast:
-            from app.models.agent import FindingSchema
-            sast_findings = [FindingSchema(**f) for f in sast]
-            result.findings.extend(sast_findings)
-        return result

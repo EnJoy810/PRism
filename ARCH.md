@@ -38,12 +38,10 @@ Worker
         |
         v
 ReviewGraph
-  - fetch PR diff and metadata
-  - prepare optional SAST and cross-file context
-  - run Security / Quality / Performance agents in parallel
-  - rule dedupe
-  - Judge semantic grouping and severity calibration
-  - evidence validation
+  - Scope: fetch PR diff and metadata
+  - Investigate: prepare SAST, verification, and cross-file context
+  - Gate: dedupe, severity filter, evidence validation
+  - Comment: post only surviving findings
         |
         v
 GitHub Review API
@@ -73,11 +71,13 @@ GitHub Review API
 
 ## ReviewGraph 流程
 
+核心路线：`Scope -> Investigate -> Gate -> Comment`。调用图负责告诉 AI 该看哪里，AI 可以查，但不能乱评论；最终只有 PR 新增行上、有证据、非 INFO、去重后的问题能发出去。
+
 ```text
 input: owner, repo, pr_number, installation_id/token
         |
         v
-fetch_context
+Scope: fetch_context
   - PR diff
   - PR title / description
   - changed files
@@ -86,28 +86,29 @@ fetch_context
         +------------------------------+
         |                              |
         v                              v
-optional context pipeline          expert agents
+Investigate: context pipeline      Investigate: expert agents
   - Semgrep SAST                    - SecurityAgent
-  - shallow clone                   - QualityAgent
-  - tree-sitter index               - PerformanceAgent
+  - import/export verification      - QualityAgent
+  - shallow clone                   - PerformanceAgent
+  - tree-sitter index
   - blast radius
         |                              |
         +---------------+--------------+
                         v
-rule dedupe
-        |
-        v
-JudgeAgent
+Gate: JudgeAgent
+  - rule dedupe
   - semantic grouping
   - severity calibration
   - INFO filtering
         |
         v
-evidence validation
+Gate: final publication filter
   - line/snippet must exist in diff added lines
+  - evidence must match an added line
+  - duplicate file/line/title findings are collapsed
         |
         v
-post GitHub comments
+Comment: post GitHub comments
 ```
 
 并行策略：短期使用 `asyncio.gather`，不引入 LangGraph checkpoint。只有当后续需要复杂分支、恢复、长期对话状态时再评估 LangGraph。
@@ -136,6 +137,8 @@ Judge 不是重新审查代码，而是处理候选 findings：
 4. Severity gating：默认过滤 INFO，只保留 WARNING / ERROR。
 5. 合并输出：生成 summary comment 和 inline comment 数据。
 
+Judge 后还有一次最终发布门禁：无 evidence、非新增行、INFO、重复 finding 都不能进入 CLI 输出或 GitHub 评论。
+
 ---
 
 ## 上下文策略
@@ -155,6 +158,7 @@ Judge 不是重新审查代码，而是处理候选 findings：
 - Prompt 必须标注 `[DIFF]` 和 `[CONTEXT]`。
 - Agent 只能对 `[DIFF]` 中新增行报问题。
 - `[CONTEXT]` 只用于判断影响范围，不作为直接评论对象。
+- 调用图发现调用方后，评论仍只能落在 PR 新增行，不能把老代码当成 PR 新问题。
 - 调用图失败、clone 失败、Semgrep 不存在时都降级为 diff-only。
 
 ---
@@ -232,7 +236,7 @@ LLM confidence 只作为辅助信号，不作为唯一过滤机制。
 - Security rules: `p/security-audit`、`p/owasp-top-ten`
 - Quality rules: `p/python`、`p/javascript`、`p/typescript`
 - Semgrep 不存在、文件不存在、扫描失败时返回空列表
-- SAST findings 合并进 Agent result，再交给 Judge 去重和 severity gating
+- SAST findings 直接合并进 Judge 输入，不依赖 LLM Agent 成功
 
 当前定位：增强信号，不是主链路依赖。
 
@@ -285,4 +289,3 @@ python -m app.cli review https://github.com/owner/repo/pull/42
 - README、CLAUDE、ARCH 已统一当前事实；历史文档仍保留演进过程。
 - 调用图模块已存在，但需要真实仓库评测来证明收益。
 - SAST wrapper 已存在，但 Semgrep 环境依赖和 rule 配置仍需部署验证。
-- BlockDiff 仍是规划，尚未进入主链路。

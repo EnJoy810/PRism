@@ -160,7 +160,8 @@ def build_index(repo_path: Path, db_path: Path) -> None:
         CREATE UNIQUE INDEX IF NOT EXISTS idx_nodes_file_name ON nodes(file, name);
         CREATE TABLE IF NOT EXISTS edges (
             caller_id   INTEGER NOT NULL,
-            callee_name TEXT NOT NULL
+            callee_name TEXT NOT NULL,
+            callee_id   INTEGER
         );
         CREATE INDEX IF NOT EXISTS idx_edges_callee ON edges(callee_name);
         CREATE TABLE IF NOT EXISTS file_hashes (
@@ -168,6 +169,10 @@ def build_index(repo_path: Path, db_path: Path) -> None:
             hash TEXT NOT NULL
         );
     """)
+    needs_full_reindex = _ensure_edges_callee_id(conn)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_edges_callee_id ON edges(callee_id)")
+    if needs_full_reindex:
+        conn.execute("DELETE FROM file_hashes")
     conn.commit()
 
     parsers = {}
@@ -196,6 +201,18 @@ def build_index(repo_path: Path, db_path: Path) -> None:
 
     conn.close()
     logger.info("index built: %s", db_path)
+
+
+def ensure_index_schema(db_path: Path) -> None:
+    if not db_path.exists():
+        return
+    conn = sqlite3.connect(str(db_path))
+    try:
+        _ensure_edges_callee_id(conn)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_edges_callee_id ON edges(callee_id)")
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _iter_files(repo_path: Path, ext_to_lang: dict):
@@ -264,9 +281,10 @@ def _index_file(
     for call in calls:
         caller_id = fn_name_to_id.get(call["caller_name"])
         if caller_id:
+            callee_id = fn_name_to_id.get(call["callee_name"])
             conn.execute(
-                "INSERT INTO edges (caller_id, callee_name) VALUES (?, ?)",
-                (caller_id, call["callee_name"]),
+                "INSERT INTO edges (caller_id, callee_name, callee_id) VALUES (?, ?, ?)",
+                (caller_id, call["callee_name"], callee_id),
             )
 
     conn.execute(
@@ -274,3 +292,13 @@ def _index_file(
         (rel, fhash),
     )
     conn.commit()
+
+
+def _ensure_edges_callee_id(conn: sqlite3.Connection) -> bool:
+    columns = {
+        row[1] for row in conn.execute("PRAGMA table_info(edges)").fetchall()
+    }
+    if "callee_id" not in columns:
+        conn.execute("ALTER TABLE edges ADD COLUMN callee_id INTEGER")
+        return True
+    return False

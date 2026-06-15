@@ -29,7 +29,7 @@ async def test_post_comment_calls_github_review():
     }
 
     with (
-        patch.object(graph, "fetch_pr_context", new_callable=AsyncMock) as mock_fetch,
+        patch.object(graph, "_fetch_pr_context", new_callable=AsyncMock) as mock_fetch,
         patch("app.services.github_review.post_review_to_github", new_callable=AsyncMock) as mock_github,
     ):
         mock_fetch.return_value = {"diff": "+ const x = 1\n- const y = 2", "title": "", "description": "", "files": []}
@@ -43,4 +43,8 @@ async def test_post_comment_calls_github_review():
 
         assert result["html_url"] == "https://github.com/owner/repo/pull/1#pullrequestreview-123"
         assert result["inline_count"] == 1
+        mock_fetch.assert_awaited_once_with(
+            "https://github.com/owner/repo/pull/1",
+            "ghp_test",
+        )
         mock_github.assert_awaited_once()

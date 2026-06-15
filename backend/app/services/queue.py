@@ -16,7 +16,6 @@ async def enqueue_review(job: ReviewJob, redis: ArqRedis) -> None:
             "review_job",
             job.pr_url,
             job.event,
-            job.github_token,
             job.installation_id,
         )
         return

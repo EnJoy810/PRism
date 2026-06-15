@@ -68,7 +68,9 @@ async def handle_webhook(request: Request):
             return JSONResponse(status_code=200, content={"status": "ignored"})
 
         issue = payload.get("issue", {})
-        pr_url = issue.get("pull_request", {}).get("html_url", "") or issue.get("html_url", "")
+        pr_url = issue.get("pull_request", {}).get("html_url", "")
+        if not pr_url:
+            return JSONResponse(status_code=200, content={"status": "ignored"})
         job = ReviewJob(
             pr_url=pr_url,
             event="issue_comment.created",

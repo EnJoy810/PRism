@@ -139,17 +139,7 @@ cd backend && python -m app.cli review https://github.com/owner/repo/pull/42
 见 PLAN_CALLGRAPH.md。`repo.py`、`indexer.py`、`blast_radius.py` 基础模块已存在，仍需集成验证和真实 PR 评测。
 解决"改了 A，B 跟着挂，工具看不到"的结构性缺陷。
 
-### 第二阶段：BlockDiff — 改给 AI 看的 diff 格式
-把 unified diff（加减号行）改成函数级新旧对比：
-```
-函数 process_order 改动了：
-旧版本：接收一个参数，返回 tax
-新版本：接收两个参数，新增调用 apply_discount
-```
-tree-sitter 已装（调用图用），共用解析结果，工程量中等。
-没有任何竞品在做，有 arxiv 2604.27296 论文支撑。
-
-### 第三阶段：Linter + LLM 并行
+### 第二阶段：Linter + LLM 并行
 和 CodeRabbit 同一架构判断：
 - Bandit（Python 安全）/ Semgrep 先扫，确定性问题直接进 findings，不过 LLM
 - LLM 负责找规则扫不到的逻辑漏洞

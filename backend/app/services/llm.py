@@ -98,7 +98,7 @@ class LLMClient:
         messages: list[dict],
         model: str | None = None,
         max_tokens: int | None = None,
-        temperature: float = 1.0,
+        temperature: float = 0.0,
         top_p: float = 1.0,
         stream: bool = False,
         estimated_tokens: int | None = None,

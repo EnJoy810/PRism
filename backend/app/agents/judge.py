@@ -2,6 +2,7 @@ import json
 import logging
 
 from app.models.agent import AgentResult, AgentStatus, FindingSchema, JudgeVerdict
+from app.services.evidence import added_diff_lines
 from app.services.llm import LLMClient
 
 logger = logging.getLogger(__name__)
@@ -355,12 +356,17 @@ class JudgeAgent:
         if not EVIDENCE_REQUIRED:
             return findings
 
+        added_lines = added_diff_lines(diff) if diff is not None else None
+
         def _evidence_valid(f: FindingSchema) -> bool:
             if not f.evidence or len(f.evidence) == 0:
                 return False
-            if diff is None:
+            if added_lines is None:
                 return True
-            return any(e in diff for e in f.evidence)
+            return any(
+                any(e in line for line in added_lines)
+                for e in f.evidence
+            )
 
         return [f for f in findings if _evidence_valid(f)]
 

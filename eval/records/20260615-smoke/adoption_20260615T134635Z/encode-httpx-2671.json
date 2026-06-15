@@ -1,0 +1,27 @@
+{
+  "sample": {
+    "id": "encode-httpx-2671",
+    "repo": "encode/httpx",
+    "url": "https://github.com/encode/httpx/pull/2671",
+    "kind": "public-python-bugfix",
+    "notes": "Smoke eval sample across different public Python projects."
+  },
+  "ran_at": "2026-06-15T13:50:10.836125+00:00",
+  "result": {
+    "summary": "Fix optional percent encoding behaviour.",
+    "risk_level": "LOW",
+    "issues": [],
+    "stats": {
+      "files_changed": 2,
+      "additions": 40,
+      "deletions": 6,
+      "issues_by_severity": {
+        "ERROR": 0,
+        "WARNING": 0,
+        "INFO": 0
+      }
+    },
+    "merge_recommendation": "APPROVE",
+    "skipped_agents": []
+  }
+}

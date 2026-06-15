@@ -2,12 +2,21 @@ from unittest.mock import patch
 
 import pytest
 
-from app.services.repo import _cache_path, ensure_repo
+from app.services.repo import _cache_path, _redact_token, ensure_repo
 
 
 def test_cache_path():
     p = _cache_path("owner", "repo", "abc123")
     assert str(p).endswith("owner/repo/abc123")
+
+
+def test_redact_token_removes_secret_from_git_error():
+    text = "fatal: https://x-access-token:secret-token@github.com/o/r.git failed"
+
+    redacted = _redact_token(text, "secret-token")
+
+    assert "secret-token" not in redacted
+    assert "***" in redacted
 
 
 @pytest.mark.asyncio

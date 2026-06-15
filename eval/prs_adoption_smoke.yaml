@@ -1,0 +1,25 @@
+- id: fastapi-14789
+  repo: fastapi/fastapi
+  url: https://github.com/fastapi/fastapi/pull/14789
+  kind: public-python-bugfix
+  notes: Smoke eval sample across different public Python projects.
+- id: pydantic-13278
+  repo: pydantic/pydantic
+  url: https://github.com/pydantic/pydantic/pull/13278
+  kind: public-python-bugfix
+  notes: Smoke eval sample across different public Python projects.
+- id: encode-httpx-2671
+  repo: encode/httpx
+  url: https://github.com/encode/httpx/pull/2671
+  kind: public-python-bugfix
+  notes: Smoke eval sample across different public Python projects.
+- id: django-21121
+  repo: django/django
+  url: https://github.com/django/django/pull/21121
+  kind: public-python-bugfix
+  notes: Smoke eval sample across different public Python projects.
+- id: psf-requests-7431
+  repo: psf/requests
+  url: https://github.com/psf/requests/pull/7431
+  kind: public-python-bugfix
+  notes: Smoke eval sample across different public Python projects.

@@ -47,7 +47,7 @@ async def review_job(ctx, pr_url: str, event: str, installation_id: int | None =
 
     try:
         graph = ReviewGraph()
-        result = await graph.run(pr_url=pr_url)
+        result = await graph.run(pr_url=pr_url, github_token=token)
 
         if token:
             try:

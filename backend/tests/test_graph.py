@@ -2,7 +2,14 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.graph import ReviewGraph, _verification_findings, split_diff_by_file
+from app.graph import (
+    ReviewGraph,
+    _changed_node_ids_from_diff,
+    _split_into_batches,
+    _verification_findings,
+    split_diff_by_file,
+)
+from app.services.evidence import publication_gate
 
 
 @pytest.mark.asyncio
@@ -12,7 +19,7 @@ async def test_graph_returns_expected_structure():
     mock_pr_context = {
         "title": "Fix auth bug",
         "description": "Fixes the authentication issue",
-        "diff": "+ const x = 1\n- const y = 2",
+        "diff": "diff --git a/src/auth.ts b/src/auth.ts\n+++ b/src/auth.ts\n@@ -0,0 +1,1 @@\n+ const x = 1",
         "files": ["src/auth.ts"],
         "stats": None,
         "base_branch": "main",
@@ -36,12 +43,13 @@ async def test_graph_returns_expected_structure():
             findings=[
                 FindingSchema(
                     file="src/auth.ts",
-                    line=10,
+                    line=1,
                     title="SQL injection",
                     description="User input not sanitized",
                     severity="ERROR",
                     confidence=0.95,
                     category="security",
+                    evidence=["const x = 1"],
                 )
             ],
         )
@@ -58,12 +66,13 @@ async def test_graph_returns_expected_structure():
             "findings": [
                 {
                     "file": "src/auth.ts",
-                    "line": 10,
+                    "line": 1,
                     "title": "SQL injection",
                     "description": "User input not sanitized",
                     "severity": "ERROR",
                     "confidence": 0.95,
                     "category": "security",
+                    "evidence": ["const x = 1"],
                 }
             ],
             "merge_recommendation": "REQUEST_CHANGES",
@@ -224,6 +233,37 @@ class TestSplitDiffByFile:
         assert split_diff_by_file("some random text") == {}
 
 
+def test_changed_body_line_maps_to_enclosing_function(tmp_path):
+    import sqlite3
+
+    db = tmp_path / "index.db"
+    conn = sqlite3.connect(str(db))
+    conn.executescript("""
+        CREATE TABLE nodes (
+            id INTEGER PRIMARY KEY,
+            file TEXT,
+            name TEXT,
+            start_line INTEGER,
+            end_line INTEGER,
+            code TEXT,
+            file_hash TEXT
+        );
+        INSERT INTO nodes VALUES (7, 'src/app.py', 'handle', 10, 20, 'def handle(): pass', 'h1');
+    """)
+    conn.commit()
+    conn.close()
+    diff = """diff --git a/src/app.py b/src/app.py
+--- a/src/app.py
++++ b/src/app.py
+@@ -14,2 +14,3 @@ def handle():
+ old_call()
++new_call()
+ unchanged()
+"""
+
+    assert _changed_node_ids_from_diff(db, diff) == {7}
+
+
 class TestMultiRoundBatching:
     @pytest.mark.asyncio
     async def test_small_pr_single_round(self):
@@ -290,6 +330,85 @@ class TestMultiRoundBatching:
 
         assert call_count == 6
         assert result["merge_recommendation"] == "APPROVE"
+
+    @pytest.mark.asyncio
+    async def test_large_diff_uses_multi_round_even_with_few_files(self):
+        graph = ReviewGraph()
+        ctx = {
+            "title": "large diff",
+            "description": "",
+            "diff": "diff --git a/a.py b/a.py\n+++ b/a.py\n" + "+x = 1\n" * 66000,
+            "files": ["a.py"],
+            "stats": None,
+        }
+
+        with (
+            patch.object(graph, "_run_single", AsyncMock(return_value={"mode": "single"})),
+            patch.object(graph, "_run_multi", AsyncMock(return_value={"mode": "multi"})),
+        ):
+            result = await graph.run(pr_url="", context=ctx)
+
+        assert result == {"mode": "multi"}
+
+    def test_split_into_batches_splits_single_large_file_by_token_budget(self):
+        ctx = {
+            "title": "large diff",
+            "description": "",
+            "diff": "diff --git a/a.py b/a.py\n+++ b/a.py\n" + "+x = 1\n" * 66000,
+            "files": ["a.py"],
+            "stats": None,
+        }
+
+        batches = _split_into_batches(ctx, 30)
+
+        assert len(batches) > 1
+        assert all(len(batch["diff"]) // 4 <= 16384 for batch in batches)
+
+
+class TestGitHubTokenPropagation:
+    @pytest.mark.asyncio
+    async def test_run_stores_github_token_in_context_for_internal_fetchers(self):
+        graph = ReviewGraph()
+        ctx = {
+            "title": "private repo",
+            "description": "",
+            "diff": "+x",
+            "files": ["a.py"],
+            "stats": None,
+        }
+        captured = {}
+
+        async def mock_fetch_symbol(context, _pr_url):
+            captured["symbol_token"] = context.get("github_token")
+            return {}
+
+        async def mock_fetch_blast(context, _pr_url):
+            captured["blast_token"] = context.get("github_token")
+            return []
+
+        async def mock_fetch_sast(context, _pr_url):
+            captured["sast_token"] = context.get("github_token")
+            return {}
+
+        async def mock_fetch_verification(context, _pr_url):
+            captured["verification_token"] = context.get("github_token")
+            return {}
+
+        with (
+            patch.object(graph, "_fetch_symbol_context", mock_fetch_symbol),
+            patch.object(graph, "_fetch_blast_radius", mock_fetch_blast),
+            patch.object(graph, "_fetch_sast_findings", mock_fetch_sast),
+            patch.object(graph, "_fetch_verification", mock_fetch_verification),
+            patch.object(graph, "_run_single", AsyncMock(return_value={"issues": []})),
+        ):
+            await graph.run(pr_url="", context=ctx, github_token="ghs_installation")
+
+        assert captured == {
+            "symbol_token": "ghs_installation",
+            "blast_token": "ghs_installation",
+            "sast_token": "ghs_installation",
+            "verification_token": "ghs_installation",
+        }
 
 
 class TestVerificationIntegration:
@@ -457,3 +576,263 @@ class TestVerificationIntegration:
         ]
         assert len(verifier_results) == 1
         assert verifier_results[0].findings[0].title == "Unresolved import"
+
+
+class TestPublicationGate:
+    def test_filters_info_missing_evidence_and_non_added_lines(self):
+        from app.models.agent import FindingSchema
+
+        diff = """diff --git a/app.py b/app.py
+--- a/app.py
++++ b/app.py
+@@ -1,2 +1,3 @@
+ old_call()
++new_call()
+"""
+        findings = [
+            FindingSchema(
+                file="app.py",
+                line=2,
+                title="Keep added issue",
+                description="desc",
+                severity="WARNING",
+                confidence=0.9,
+                category="quality",
+                evidence=["new_call()"],
+            ),
+            FindingSchema(
+                file="app.py",
+                line=1,
+                title="Old line issue",
+                description="desc",
+                severity="ERROR",
+                confidence=0.9,
+                category="quality",
+                evidence=["old_call()"],
+            ),
+            FindingSchema(
+                file="app.py",
+                line=2,
+                title="No evidence",
+                description="desc",
+                severity="ERROR",
+                confidence=0.9,
+                category="quality",
+            ),
+            FindingSchema(
+                file="app.py",
+                line=2,
+                title="Info issue",
+                description="desc",
+                severity="INFO",
+                confidence=0.9,
+                category="quality",
+                evidence=["new_call()"],
+            ),
+        ]
+
+        gated = publication_gate(findings, diff)
+
+        assert [f.title for f in gated] == ["Keep added issue"]
+
+    def test_deduplicates_same_file_line_and_title(self):
+        from app.models.agent import FindingSchema
+
+        diff = """diff --git a/app.py b/app.py
+--- a/app.py
++++ b/app.py
+@@ -1,0 +1,1 @@
++new_call()
+"""
+        first = FindingSchema(
+            file="app.py",
+            line=1,
+            title="Duplicate issue",
+            description="desc",
+            severity="WARNING",
+            confidence=0.8,
+            category="quality",
+            evidence=["new_call()"],
+        )
+        second = first.model_copy(update={"severity": "ERROR", "confidence": 0.9})
+
+        gated = publication_gate([first, second], diff)
+
+        assert len(gated) == 1
+        assert gated[0].severity == "ERROR"
+        assert gated[0].confidence == 0.9
+
+
+class TestSastIntegration:
+    @pytest.mark.asyncio
+    async def test_graph_passes_sast_findings_to_judge(self):
+        graph = ReviewGraph()
+        ctx = {
+            "title": "sast",
+            "description": "",
+            "diff": "diff --git a/app.py b/app.py\n@@ -0,0 +1,1 @@\n+subprocess.run(cmd, shell=True)",
+            "files": ["app.py"],
+            "stats": None,
+        }
+        sast = {
+            "security": [
+                {
+                    "file": "app.py",
+                    "line": 1,
+                    "title": "subprocess-shell-true",
+                    "description": "shell=True",
+                    "severity": "ERROR",
+                    "confidence": 0.95,
+                    "category": "security",
+                    "impact_type": "security_risk",
+                    "impact_statement": "shell command can be injected",
+                    "evidence": ["+subprocess.run(cmd, shell=True)"],
+                }
+            ],
+            "quality": [],
+        }
+        async def mock_agent_run(_diff, context):
+            from app.models.agent import AgentResult, AgentStatus
+            return AgentResult(status=AgentStatus.SUCCESS, findings=[])
+
+        captured_results = []
+
+        async def mock_judge(results, **kwargs):
+            captured_results.extend(results)
+            return {"findings": [], "merge_recommendation": "APPROVE", "skipped_agents": []}
+
+        with (
+            patch.object(graph, "_fetch_sast_findings", AsyncMock(return_value=sast)),
+            patch.object(graph, "_fetch_verification", AsyncMock(return_value={})),
+            patch.object(graph.security_agent, "run", mock_agent_run),
+            patch.object(graph.performance_agent, "run", mock_agent_run),
+            patch.object(graph.quality_agent, "run", mock_agent_run),
+            patch.object(graph.judge, "run", mock_judge),
+        ):
+            await graph.run(pr_url="", context=ctx)
+
+        assert any(
+            result.findings and result.findings[0].title == "subprocess-shell-true"
+            for result in captured_results
+        )
+
+    @pytest.mark.asyncio
+    async def test_graph_includes_sast_findings_even_when_security_agent_fails(self):
+        graph = ReviewGraph()
+        ctx = {
+            "title": "sast",
+            "description": "",
+            "diff": "diff --git a/app.py b/app.py\n@@ -0,0 +1,1 @@\n+subprocess.run(cmd, shell=True)",
+            "files": ["app.py"],
+            "stats": None,
+        }
+        sast = {
+            "security": [
+                {
+                    "file": "app.py",
+                    "line": 1,
+                    "title": "subprocess-shell-true",
+                    "description": "shell=True",
+                    "severity": "ERROR",
+                    "confidence": 0.95,
+                    "category": "security",
+                    "impact_type": "security_risk",
+                    "impact_statement": "shell command can be injected",
+                    "evidence": ["+subprocess.run(cmd, shell=True)"],
+                }
+            ],
+            "quality": [],
+        }
+
+        from app.models.agent import AgentResult, AgentStatus
+
+        async def mock_security_fail(*args, **kwargs):
+            return AgentResult(status=AgentStatus.TIMEOUT, findings=[])
+
+        async def mock_ok(*args, **kwargs):
+            return AgentResult(status=AgentStatus.SUCCESS, findings=[])
+
+        captured_results = []
+
+        async def mock_judge(results, **kwargs):
+            captured_results.extend(results)
+            return {"findings": [], "merge_recommendation": "APPROVE", "skipped_agents": []}
+
+        with (
+            patch.object(graph, "_fetch_sast_findings", AsyncMock(return_value=sast)),
+            patch.object(graph, "_fetch_verification", AsyncMock(return_value={})),
+            patch.object(graph.security_agent, "run", mock_security_fail),
+            patch.object(graph.performance_agent, "run", mock_ok),
+            patch.object(graph.quality_agent, "run", mock_ok),
+            patch.object(graph.judge, "run", mock_judge),
+        ):
+            await graph.run(pr_url="", context=ctx)
+
+        assert any(
+            result.findings and result.findings[0].title == "subprocess-shell-true"
+            for result in captured_results
+        )
+
+    @pytest.mark.asyncio
+    async def test_graph_does_not_abort_when_all_llm_agents_fail_but_sast_has_findings(self):
+        graph = ReviewGraph()
+        ctx = {
+            "title": "sast fallback",
+            "description": "",
+            "diff": "diff --git a/app.py b/app.py\n@@ -0,0 +1,1 @@\n+subprocess.run(cmd, shell=True)",
+            "files": ["app.py"],
+            "stats": None,
+        }
+        sast = {
+            "security": [
+                {
+                    "file": "app.py",
+                    "line": 1,
+                    "title": "subprocess-shell-true",
+                    "description": "shell=True",
+                    "severity": "ERROR",
+                    "confidence": 0.95,
+                    "category": "security",
+                    "impact_type": "security_risk",
+                    "impact_statement": "shell command can be injected",
+                    "evidence": ["+subprocess.run(cmd, shell=True)"],
+                }
+            ],
+            "quality": [],
+        }
+
+        from app.models.agent import AgentResult, AgentStatus
+
+        async def mock_budget_fail(*args, **kwargs):
+            return AgentResult(
+                status=AgentStatus.RUNTIME_ERROR,
+                findings=[],
+                error_message="Budget exceeded: 17105 > 16384",
+            )
+
+        captured_results = []
+
+        async def mock_judge(results, **kwargs):
+            captured_results.extend(results)
+            return {"findings": [], "merge_recommendation": "APPROVE", "skipped_agents": []}
+
+        with (
+            patch.object(graph, "_fetch_sast_findings", AsyncMock(return_value=sast)),
+            patch.object(graph, "_fetch_verification", AsyncMock(return_value={})),
+            patch.object(graph.security_agent, "run", mock_budget_fail),
+            patch.object(graph.performance_agent, "run", mock_budget_fail),
+            patch.object(graph.quality_agent, "run", mock_budget_fail),
+            patch.object(graph.judge, "run", mock_judge),
+        ):
+            result = await graph.run(pr_url="", context=ctx)
+
+        assert result["merge_recommendation"] == "APPROVE"
+        assert any(
+            item.status == AgentStatus.RUNTIME_ERROR
+            and item.error_message == "Budget exceeded: 17105 > 16384"
+            for item in captured_results
+        )
+        assert any(
+            item.findings and item.findings[0].title == "subprocess-shell-true"
+            for item in captured_results
+        )

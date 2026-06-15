@@ -3,6 +3,14 @@ from unittest.mock import AsyncMock, patch
 from app.services.queue import ReviewJob, enqueue_review
 
 
+class FakeArqRedis:
+    def __init__(self):
+        self.calls = []
+
+    async def enqueue_job(self, *args):
+        self.calls.append(args)
+
+
 class TestReviewJob:
     def test_model(self):
         job = ReviewJob(
@@ -27,6 +35,22 @@ class TestReviewJob:
 
 
 class TestEnqueueReview:
+    async def test_enqueue_arq_uses_worker_signature_without_token(self):
+        from app.services import queue
+
+        fake = FakeArqRedis()
+        job = ReviewJob(
+            pr_url="https://github.com/owner/repo/pull/1",
+            event="opened",
+            installation_id=42,
+            github_token="ghp_should_not_enter_queue",
+        )
+
+        with patch.object(queue, "ArqRedis", FakeArqRedis):
+            await enqueue_review(job, fake)
+
+        assert fake.calls == [("review_job", job.pr_url, job.event, 42)]
+
     @patch("app.services.queue.aioredis")
     async def test_enqueue_with_redis_instance(self, mock_aioredis):
         mock_redis = AsyncMock()

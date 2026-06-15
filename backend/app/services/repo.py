@@ -26,6 +26,12 @@ def _clone_url(owner: str, repo: str, token: str) -> str:
     return f"https://x-access-token:{token}@github.com/{owner}/{repo}.git"
 
 
+def _redact_token(text: str, token: str) -> str:
+    if not token:
+        return text
+    return text.replace(token, "***")
+
+
 async def ensure_repo(
     owner: str,
     repo: str,
@@ -87,8 +93,10 @@ async def _clone(
         except Exception:
             shutil.rmtree(dest_tmp, ignore_errors=True)
             raise RuntimeError(
-                f"git clone failed: {stderr.decode(errors='replace')[:500]}"
+                f"git clone failed: {_redact_token(stderr.decode(errors='replace'), token)[:500]}"
             )
+    else:
+        await _set_public_remote(owner, repo, dest, token)
 
 
 async def _clone_by_fetch(
@@ -110,12 +118,31 @@ async def _clone_by_fetch(
         )
         _, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
         if proc.returncode != 0:
-            raise RuntimeError(stderr.decode(errors="replace")[:500])
+            raise RuntimeError(_redact_token(stderr.decode(errors="replace"), token)[:500])
 
     await run("git", "init", str(dest))
     await run("git", "-C", str(dest), "remote", "add", "origin", url)
     await run("git", "-C", str(dest), "fetch", "--depth=1", "origin", head_sha)
     await run("git", "-C", str(dest), "checkout", "FETCH_HEAD")
+    await _set_public_remote(owner, repo, dest, token)
+
+
+async def _set_public_remote(owner: str, repo: str, dest: Path, token: str) -> None:
+    proc = await asyncio.create_subprocess_exec(
+        "git",
+        "-C",
+        str(dest),
+        "remote",
+        "set-url",
+        "origin",
+        f"https://github.com/{owner}/{repo}.git",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+    )
+    _, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+    if proc.returncode != 0:
+        raise RuntimeError(_redact_token(stderr.decode(errors="replace"), token)[:500])
 
 
 def _evict_if_needed() -> None:

@@ -145,6 +145,24 @@ class TestWebhookIssueComment:
         assert resp.json() == {"status": "ignored"}
         mock_enqueue.assert_not_awaited()
 
+    @patch("app.routers.webhook.enqueue_review", new_callable=AsyncMock)
+    def test_plain_issue_comment_with_bot_ignored(self, mock_enqueue):
+        body = (
+            b'{"action": "created", "comment": {"body": "@prism-bot review this"},'
+            b' "issue": {"html_url": "https://github.com/owner/repo/issues/42"}}'
+        )
+        resp = client.post(
+            "/api/webhook",
+            content=body,
+            headers={
+                "X-GitHub-Event": "issue_comment",
+                "X-Hub-Signature-256": make_signature(body),
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "ignored"}
+        mock_enqueue.assert_not_awaited()
+
 
 class TestWebhookUnsupported:
     @patch("app.routers.webhook.enqueue_review", new_callable=AsyncMock)

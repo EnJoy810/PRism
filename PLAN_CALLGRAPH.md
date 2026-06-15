@@ -1,4 +1,4 @@
-# PRism 调用图跨文件分析 — 实现计划
+# PRism 调用图跨文件分析 — 收尾计划
 
 > 目标：在现有 diff-only review 基础上，加入 tree-sitter + SQLite 调用图，让 AI 能看到被改函数的调用方，从而发现跨文件 bug。
 >
@@ -11,10 +11,10 @@
 | `repo.py` | 已存在 | shallow clone + 缓存基础能力已落地 |
 | `indexer.py` | 已存在 | tree-sitter -> SQLite 基础能力已落地 |
 | `blast_radius.py` | 已存在 | BFS depth=2 + token budget 基础能力已落地 |
-| `graph.py` 集成 | 进行中 | 需继续验证调用图上下文注入、失败降级和日志 |
+| `graph.py` 集成 | 已接入 | 调用图、SAST、verification 与 Agent 并行准备 |
 | 真实 PR 评测 | 未完成 | 需用 20 个真实 PR 建立 precision/SNR 基线 |
 
-后续执行时以实际代码状态为准，不重复实现已存在模块；重点放在集成验证、测试补齐、真实 PR 评测和文档同步。
+后续执行时以实际代码状态为准，不重复实现已存在模块；重点放在最终门禁、真实 PR 评测和部署验证。
 
 ---
 
@@ -99,27 +99,27 @@ PR webhook 触发
 
 ---
 
-## 第二阶段：Linter + LLM 并行
+## 第二阶段：最终发布门禁 + 真实评测
 
-Security Agent 和 Quality Agent 改成两路并行：linter 扫确定性问题，LLM 补逻辑漏洞。
+已完成的主链路是 `Scope -> Investigate -> Gate -> Comment`：先圈范围，再并行调查，最后统一门禁，只把少量有证据的问题发出去。
 
 ### 为什么做
 
-纯 LLM 精确率 ~65%，SAST+LLM 混合接近 90%（arxiv 2411.03079）。linter 找的确定性问题 100% 准确，不需要 LLM 二次判断。评测后如果 precision 不足，这部分优先做。
+真实用户不会容忍 AI 在 PR 里乱说。调用图、SAST、verification 都只是帮 AI 查；最终能不能评论，必须由程序门禁决定。
 
-### 改动
+### 已落地
 
-- 新建 `backend/app/services/sast.py`
-- 修改 `backend/app/agents/security.py`：Bandit 扫 diff 涉及的 Python 文件 + LLM 分析并行，结果合并进 Judge
-- 修改 `backend/app/agents/quality.py`：pylint/eslint 扫 diff 涉及的文件 + LLM 分析并行，结果合并进 Judge
-- Linter 不可用时静默降级，只走 LLM
+- SAST findings 直接进 Judge 输入，LLM Agent 全失败时仍可继续输出确定性 finding
+- 大 diff 按 token 预算分批，避免单次超过 `max_tokens_per_call`
+- Judge evidence 必须匹配 diff 新增行
+- Judge 后还有最终发布门禁：过滤无 evidence、非新增行、INFO、重复 finding
 
 ### 验证
 
 ```bash
 cd backend
-pip install bandit
-pytest tests/test_sast.py -v
+pytest tests/test_sast.py tests/test_blast_radius.py tests/test_indexer.py tests/test_graph.py tests/test_judge.py -q
+ruff check app/ tests/
 ```
 
 ---

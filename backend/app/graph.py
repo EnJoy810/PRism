@@ -1,18 +1,23 @@
 import asyncio
 import logging
 import os
+import re
+import sqlite3
 import time
 from collections.abc import Sequence
+from pathlib import Path
 
 from app.agents.judge import JudgeAgent
 from app.agents.performance import PerformanceAgent
 from app.agents.quality import QualityAgent
 from app.agents.security import SecurityAgent
 from app.models.agent import AgentResult, AgentStatus, FindingSchema
+from app.services.evidence import publication_gate, severity
 
 logger = logging.getLogger(__name__)
 
 _BATCH_SIZE = 30
+_TOKEN_CHARS = 4
 
 
 class ReviewGraph:
@@ -56,14 +61,30 @@ class ReviewGraph:
             logger.warning("diff truncated >100KB for %s — coverage may be partial", pr_url)
         return ctx
 
+    async def _fetch_pr_context(self, pr_url: str, github_token: str | None = None) -> dict:
+        from app.services.github import fetch_pr_context as github_fetch_context
+        from app.services.github import parse_pr_url
+
+        if github_token is None:
+            return await self.fetch_pr_context(pr_url)
+        owner, repo, pr_number = parse_pr_url(pr_url)
+        ctx = await github_fetch_context(owner, repo, pr_number, github_token)
+        ctx["pr_url"] = pr_url
+        if ctx.get("diff_truncated"):
+            logger.warning("diff truncated >100KB for %s — coverage may be partial", pr_url)
+        return ctx
+
     async def run(
         self,
         pr_url: str,
         context: dict | None = None,
+        github_token: str | None = None,
     ) -> dict:
         t0 = time.monotonic()
         if context is None:
-            context = await self.fetch_pr_context(pr_url)
+            context = await self._fetch_pr_context(pr_url, github_token)
+        if github_token:
+            context["github_token"] = github_token
         logger.info("fetch_context done: %s — %.2fs", pr_url, time.monotonic() - t0)
 
         symbol_task = asyncio.create_task(self._fetch_symbol_context(context, pr_url))
@@ -71,6 +92,8 @@ class ReviewGraph:
         sast_task = asyncio.create_task(self._fetch_sast_findings(context, pr_url))
         verification_task = asyncio.create_task(self._fetch_verification(context, pr_url))
 
+        investigate_start = time.monotonic()
+        logger.info("investigate started: symbol_context, blast_radius, sast, verification")
         symbol_defs, blast_radius, sast_findings, verification = await asyncio.gather(
             symbol_task, blast_task, sast_task, verification_task, return_exceptions=True
         )
@@ -79,10 +102,19 @@ class ReviewGraph:
         context["blast_radius"] = blast_radius if isinstance(blast_radius, list) else []
         context["sast_findings"] = sast_findings if isinstance(sast_findings, dict) else {}
         context["verification"] = verification if isinstance(verification, dict) else {}
+        logger.info(
+            "investigate done: symbols=%d blast_groups=%d sast=%d verification_keys=%d %.2fs",
+            len(context["symbol_definitions"]),
+            len(context["blast_radius"]),
+            sum(len(v) for v in context["sast_findings"].values()),
+            len(context["verification"]),
+            time.monotonic() - investigate_start,
+        )
 
         needs_batching = (
             context.get("diff_truncated", False)
             or len(context.get("files", [])) > _BATCH_SIZE
+            or _estimated_tokens(context.get("diff", "")) > _max_tokens_per_call()
         )
         if not needs_batching:
             return await self._run_single(context, pr_url, t0)
@@ -98,7 +130,14 @@ class ReviewGraph:
             ref = context.get("head_branch", "")
             files = context.get("files", [])
             diff = context.get("diff", "")
-            return await fetch_symbol_context(owner, repo, ref, files, diff)
+            return await fetch_symbol_context(
+                owner,
+                repo,
+                ref,
+                files,
+                diff,
+                token=context.get("github_token"),
+            )
         except Exception as e:
             logger.warning("Symbol context fetch failed: %s", e)
             return {}
@@ -108,7 +147,7 @@ class ReviewGraph:
             from app.config import load_config
             from app.services.blast_radius import compute_blast_radius
             from app.services.github import parse_pr_url
-            from app.services.indexer import build_index
+            from app.services.indexer import build_index, ensure_index_schema
             from app.services.repo import ensure_repo
 
             owner, repo, pr_number = parse_pr_url(pr_url)
@@ -119,7 +158,7 @@ class ReviewGraph:
                 return []
 
             cfg = load_config()
-            token = cfg.github_token or os.environ.get("GITHUB_TOKEN", "")
+            token = context.get("github_token") or cfg.github_token or os.environ.get("GITHUB_TOKEN", "")
             if not token:
                 logger.debug("no github token, skip blast radius")
                 return []
@@ -131,16 +170,24 @@ class ReviewGraph:
             db_path = repo_path.parent / f"{repo_path.name}.db"
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, build_index, repo_path, db_path)
+            await loop.run_in_executor(None, ensure_index_schema, db_path)
 
-            changed_fns = _extract_changed_functions(context.get("diff", ""))
-            if not changed_fns:
+            diff = context.get("diff", "")
+            changed_fns = _extract_changed_functions(diff)
+            changed_node_ids = _changed_node_ids_from_diff(db_path, diff)
+            if not changed_fns and not changed_node_ids:
                 return []
 
-            diff_tokens = len(context.get("diff", "")) // 4
-            result = compute_blast_radius(db_path, changed_fns, diff_tokens)
+            diff_tokens = len(diff) // 4
+            result = compute_blast_radius(
+                db_path,
+                changed_fns,
+                diff_tokens,
+                changed_node_ids=changed_node_ids,
+            )
             logger.info(
-                "blast radius: %d changed fns, %d caller groups found",
-                len(changed_fns), len(result),
+                "blast radius: %d changed fns, %d changed nodes, %d caller groups found",
+                len(changed_fns), len(changed_node_ids), len(result),
             )
             return result
 
@@ -161,7 +208,7 @@ class ReviewGraph:
                 return {"security": [], "quality": []}
 
             cfg = load_config()
-            token = cfg.github_token or os.environ.get("GITHUB_TOKEN", "")
+            token = context.get("github_token") or cfg.github_token or os.environ.get("GITHUB_TOKEN", "")
             if not token:
                 return {"security": [], "quality": []}
 
@@ -173,9 +220,10 @@ class ReviewGraph:
             if not files:
                 return {"security": [], "quality": []}
 
+            diff = context.get("diff", "")
             sec, qual = await asyncio.gather(
-                run_sast(files, "security", repo_path),
-                run_sast(files, "quality", repo_path),
+                run_sast(files, "security", repo_path, diff=diff),
+                run_sast(files, "quality", repo_path, diff=diff),
                 return_exceptions=True,
             )
 
@@ -201,7 +249,7 @@ class ReviewGraph:
                 return {}
 
             cfg = load_config()
-            token = cfg.github_token or os.environ.get("GITHUB_TOKEN", "")
+            token = context.get("github_token") or cfg.github_token or os.environ.get("GITHUB_TOKEN", "")
             if not token:
                 return {}
 
@@ -285,6 +333,17 @@ class ReviewGraph:
 
         succeeded = [r for r in agent_results if r.status == AgentStatus.SUCCESS]
         if not succeeded:
+            deterministic_findings = _sast_findings(context.get("sast_findings", {}))
+            deterministic_findings.extend(
+                _verification_findings(context.get("verification", {}))
+            )
+            if deterministic_findings:
+                logger.warning(
+                    "all LLM agents failed; continuing with %d deterministic findings",
+                    len(deterministic_findings),
+                )
+                return agent_results
+
             failed_msgs = [
                 f"{name}({r.status}: {r.error_message})"
                 for name, r in zip(agent_names, agent_results)
@@ -302,6 +361,12 @@ class ReviewGraph:
         diff: str | None = None,
     ) -> dict:
         tj = time.monotonic()
+        sast_findings = _sast_findings(context.get("sast_findings", {}))
+        if sast_findings:
+            agent_results = [
+                *agent_results,
+                AgentResult(status=AgentStatus.SUCCESS, findings=sast_findings),
+            ]
         verifier_findings = _verification_findings(context.get("verification", {}))
         if verifier_findings:
             agent_results = [
@@ -320,7 +385,16 @@ class ReviewGraph:
             f if isinstance(f, FindingSchema) else FindingSchema(**f)
             for f in raw_findings
         ]
+        before_gate = len(findings)
+        findings = publication_gate(findings, diff or "")
+        logger.info("publication gate done: %d -> %d findings", before_gate, len(findings))
         decision: str = judge_output["merge_recommendation"]
+        if not findings:
+            decision = "APPROVE"
+        elif any(severity(f) == "ERROR" for f in findings):
+            decision = "REQUEST_CHANGES"
+        else:
+            decision = "COMMENT"
         skipped = [
             f"agent_{i}({r.status}: {r.error_message})"
             for i, r in enumerate(agent_results)
@@ -377,7 +451,7 @@ class ReviewGraph:
             stats=stats,
         )
 
-        pr_context = await self.fetch_pr_context(pr_url)
+        pr_context = await self._fetch_pr_context(pr_url, github_token)
         position_map = _build_position_map(pr_context.get("diff", ""))
 
         data = await post_review_to_github(
@@ -479,6 +553,14 @@ def _verification_findings(verification: dict) -> list[FindingSchema]:
     return findings
 
 
+def _sast_findings(sast: dict) -> list[FindingSchema]:
+    findings: list[FindingSchema] = []
+    for category in ("security", "quality"):
+        for item in sast.get(category, []):
+            findings.append(FindingSchema(**item))
+    return findings
+
+
 def split_diff_by_file(diff: str) -> dict[str, str]:
     chunks: dict[str, str] = {}
     current_file: str | None = None
@@ -506,6 +588,7 @@ def _split_into_batches(context: dict, batch_size: int) -> list[dict]:
     all_files: list[str] = context.get("files", [])
     diff = context.get("diff", "")
     diff_chunks = split_diff_by_file(diff)
+    max_tokens = _max_tokens_per_call()
 
     batches: list[dict] = []
     for i in range(0, len(all_files), batch_size):
@@ -513,14 +596,56 @@ def _split_into_batches(context: dict, batch_size: int) -> list[dict]:
         batch_diff = "\n".join(
             chunk for f, chunk in diff_chunks.items() if f in batch_files
         )
-        batch = {**context, "files": batch_files, "diff": batch_diff}
-        batches.append(batch)
+        for split_diff in _split_diff_by_token_budget(batch_diff, max_tokens):
+            batch = {**context, "files": batch_files, "diff": split_diff}
+            batches.append(batch)
 
     return batches
 
 
+def _estimated_tokens(text: str) -> int:
+    return len(text) // _TOKEN_CHARS
+
+
+def _max_tokens_per_call() -> int:
+    from app.config import load_config
+
+    return load_config().review.budget.max_tokens_per_call
+
+
+def _split_diff_by_token_budget(diff: str, max_tokens: int) -> list[str]:
+    if not diff:
+        return [""]
+    max_chars = max_tokens * _TOKEN_CHARS
+    if len(diff) <= max_chars:
+        return [diff]
+
+    batches: list[str] = []
+    current: list[str] = []
+    current_chars = 0
+    header: list[str] = []
+
+    for line in diff.splitlines():
+        line_chars = len(line) + 1
+        if line.startswith("diff --git"):
+            header = [line]
+        elif line.startswith("+++") or line.startswith("---") or line.startswith("@@"):
+            header.append(line)
+
+        if current and current_chars + line_chars > max_chars:
+            batches.append("\n".join(current))
+            current = list(header) if header else []
+            current_chars = sum(len(item) + 1 for item in current)
+
+        current.append(line)
+        current_chars += line_chars
+
+    if current:
+        batches.append("\n".join(current))
+    return batches
+
+
 def _extract_changed_functions(diff: str) -> set[str]:
-    import re
     fn_pattern = re.compile(r"^\+\s*(?:async\s+)?def\s+(\w+)\s*\(", re.MULTILINE)
     js_pattern = re.compile(r"^\+\s*(?:async\s+)?function\s+(\w+)\s*\(", re.MULTILINE)
     arrow_pattern = re.compile(r"^\+\s*(?:const|let)\s+(\w+)\s*=\s*(?:async\s+)?\(", re.MULTILINE)
@@ -529,6 +654,37 @@ def _extract_changed_functions(diff: str) -> set[str]:
     for pat in (fn_pattern, js_pattern, arrow_pattern):
         names.update(m.group(1) for m in pat.finditer(diff))
     return names
+
+
+def _changed_node_ids_from_diff(db_path: Path, diff: str) -> set[int]:
+    from app.services.diff import build_position_map
+
+    added_lines = {
+        file: set(lines.keys())
+        for file, lines in build_position_map(diff).items()
+        if lines
+    }
+    if not added_lines:
+        return set()
+
+    ids: set[int] = set()
+    conn = sqlite3.connect(str(db_path))
+    try:
+        for file, lines in added_lines.items():
+            for line in sorted(lines):
+                rows = conn.execute(
+                    """
+                    SELECT id
+                    FROM nodes
+                    WHERE file = ? AND start_line <= ? AND end_line >= ?
+                    ORDER BY start_line DESC
+                    """,
+                    (file, line, line),
+                ).fetchall()
+                ids.update(row[0] for row in rows)
+    finally:
+        conn.close()
+    return ids
 
 
 def _format_blast_radius(blast_radius: list[dict]) -> str:
