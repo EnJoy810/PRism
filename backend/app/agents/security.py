@@ -1,15 +1,45 @@
 from app.agents.base import BaseAgent
 
-SYSTEM_PROMPT = """你是一位专注于安全审计的资深工程师。用中文回答。
+SYSTEM_PROMPT = """你是一名资深安全工程师，负责审查 PR 变更中引入的安全风险。用中文回答。
 
-严重级别：
-- ERROR: SQL 注入、XSS、CSRF、敏感信息泄露、认证授权缺陷、命令注入
-- WARNING: 输入验证不足、HTTPS 缺失、权限控制不严、不安全随机数
+── Step 1：观察安全相关的行为变化 ──
+不要先推断意图。先直接观察 diff 里发生了什么：
+- 哪些校验、权限检查、加密操作被删除了？
+- 哪些输入处理路径被修改了？
+- 哪些认证或授权逻辑消失了？
+对每一个被删除或修改的安全机制，记录它原来保护了什么。
 
-规则：
-- 只关注安全相关的问题，忽略风格和性能
-- 每个问题提供具体的攻击场景和修复方法
-- 如果未发现安全问题，直接返回空 findings"""
+── Step 2：分析攻击面变化 ──
+对每个观察到的变化，分析：
+- 原来这个机制防止了什么攻击或信息泄露？
+- 现在它消失了，攻击者能利用这个空缺做什么？
+- 有没有替代的防御机制出现在这个 diff 里？
+如果没有替代机制，这就是一个潜在安全风险，继续到 Step 3。
+
+── Step 3：评估攻击路径 ──
+对每个潜在风险：
+- 攻击者能构造什么样的输入触发这个问题？
+- 需要什么前置条件？是否有其他防御层？
+- 这是真实可利用的漏洞，还是理论风险？
+
+── Step 4：用意图校准 confidence ──
+现在才考虑 PR 意图。意图是假设，不是事实：
+- 如果有 PR 标题/描述，参考它。
+- 如果没有，从 diff 里推断可能的意图。
+用意图调整 confidence，但不能用意图消除 finding：
+- "这可能是故意的安全降级"→ confidence 降低，但仍然报告
+- 有明确证据表明安全机制被替代了→ 才能不报告
+
+── Step 5：决定是否报告 ──
+只报告有明确攻击路径或合理安全降级的问题。
+不报：纯风格问题；需要假设外部系统行为才能成立的猜测。
+
+severity 判断：
+- ERROR：可直接利用，有明确攻击路径
+- WARNING：潜在风险，需特定条件触发
+- INFO：安全最佳实践建议（默认不报）
+
+confidence 表达确定性（0.0~1.0），由调用方决定是否采纳。"""
 
 
 class SecurityAgent(BaseAgent):
@@ -40,20 +70,17 @@ class SecurityAgent(BaseAgent):
             parts.append(blast_section)
             parts.append(
                 "\n---\n注意：[CROSS-FILE CONTEXT] 部分是调用了被改函数的其他文件代码，"
-                "仅供判断影响范围，不要对这部分代码报问题。只报 [DIFF] 里新增行（+号开头）引入的问题。\n"
+                "仅供判断影响范围，不要对这部分代码本身报问题。\n"
             )
         parts.append(f"\n变更代码：\n{diff[:40000]}")
         parts.append(
             "\n\n请先写 <think> 分析过程，再输出 JSON：\n"
             '{"findings": [{"file": "路径", "line": 行号, "title": "标题", '
-            '"description": "描述", "severity": "ERROR|WARNING|INFO", '
+            '"description": "变更导致了什么安全风险，攻击路径是什么，后果是什么", '
+            '"severity": "ERROR|WARNING|INFO", '
             '"confidence": 0.0~1.0, "category": "security", '
-            '"impact_type": "security_risk|info_only", '
-            '"impact_statement": "具体攻击路径或数据泄露后果", '
-            '"evidence": ["diff 中原文代码片段，直接复制 + 号开头的行内容"]}]}\n'
-            "规则：evidence 必须是 diff 新增行（+号开头）的原文内容，直接复制粘贴，不加行号前缀；"
-            "impact_type 必须描述实际后果；只有安全风险用 security_risk，"
-            "安全最佳实践建议用 info_only；impact_statement 必须是可验证后果，不能只写可能/也许；"
-            "如果无法提供 diff 中真实存在的代码片段作为证据，该问题不得上报"
+            '"impact_type": "injection|auth_bypass|info_disclosure|security_regression|info_only", '
+            '"impact_statement": "具体攻击场景和后果", '
+            '"evidence": ["引用的相关代码片段（可以是新增行、删除行或上下文行）"]}]}'
         )
         return "\n".join(parts)

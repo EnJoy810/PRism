@@ -1,15 +1,46 @@
 from app.agents.base import BaseAgent
 
-SYSTEM_PROMPT = """你是一位专注于性能优化的资深工程师。用中文回答。
+SYSTEM_PROMPT = """你是一名资深工程师，负责审查 PR 变更中引入的性能风险。用中文回答。
 
-严重级别：
-- ERROR: N+1 查询、内存泄漏、死锁、大对象重复创建、同步阻塞 IO
-- WARNING: 不必要的循环、缓存缺失、懒加载缺失、批量操作可优化
+── Step 1：观察性能相关的行为变化 ──
+不要先推断意图。先直接观察 diff 里发生了什么：
+- 哪些缓存、批量操作、连接池管理被删除或修改了？
+- 哪些循环内新增了 DB 查询或 IO 调用？
+- 哪些批量操作被改成了逐条操作？
+- 哪些异步操作变成了同步阻塞？
+对每一个涉及资源消耗的变化，记录它原来的性能特征。
 
-规则：
-- 只关注性能相关的问题，忽略安全和风格
-- 提供数据量级估算（如：1000 次请求时，这个循环会…）
-- 如果未发现性能问题，直接返回空 findings"""
+── Step 2：分析性能影响 ──
+对每个观察到的变化，分析：
+- 原来这段代码的时间/空间复杂度是什么？
+- 现在变化后，复杂度或资源消耗如何改变？
+- 在什么数据量下这个变化会成为瓶颈？
+- 有没有替代的性能优化出现在这个 diff 里？
+
+── Step 3：评估是否真实瓶颈 ──
+对每个潜在风险：
+- 实际数据量下这个路径会被频繁触发吗？
+- 性能退化是可量化的还是纯理论的？
+- 有没有其他缓解机制已经存在？
+
+── Step 4：用意图校准 confidence ──
+现在才考虑 PR 意图。意图是假设，不是事实：
+- 如果有 PR 标题/描述，参考它。
+- 如果没有，从 diff 里推断可能的意图。
+用意图调整 confidence，但不能用意图消除 finding：
+- "这可能是故意的性能权衡"→ confidence 降低，但仍然报告
+- 有明确证据表明有替代优化→ 才能不报告
+
+── Step 5：决定是否报告 ──
+只报告有实际数据量依据的性能问题。
+不报：没有数据量依据的微优化；理论上更快但无瓶颈证据的改写建议。
+
+severity 判断：
+- ERROR：明确的性能崩溃（N+1、内存泄漏、死锁）
+- WARNING：在特定数据量下会成为瓶颈
+- INFO：轻微优化建议（默认不报）
+
+confidence 表达确定性（0.0~1.0），由调用方决定是否采纳。"""
 
 
 class PerformanceAgent(BaseAgent):
@@ -40,20 +71,17 @@ class PerformanceAgent(BaseAgent):
             parts.append(blast_section)
             parts.append(
                 "\n---\n注意：[CROSS-FILE CONTEXT] 部分是调用了被改函数的其他文件代码，"
-                "仅供判断影响范围，不要对这部分代码报问题。只报 [DIFF] 里新增行（+号开头）引入的问题。\n"
+                "仅供判断影响范围，不要对这部分代码本身报问题。\n"
             )
         parts.append(f"\n变更代码：\n{diff[:40000]}")
         parts.append(
             "\n\n请先写 <think> 分析过程，再输出 JSON：\n"
             '{"findings": [{"file": "路径", "line": 行号, "title": "标题", '
-            '"description": "描述", "severity": "ERROR|WARNING|INFO", '
+            '"description": "变更导致了什么性能问题，在什么数据量下触发，后果是什么", '
+            '"severity": "ERROR|WARNING|INFO", '
             '"confidence": 0.0~1.0, "category": "performance", '
-            '"impact_type": "performance_regression|resource_leak|info_only", '
+            '"impact_type": "performance_regression|resource_leak|complexity_increase|info_only", '
             '"impact_statement": "具体数据规模下的性能/资源后果", '
-            '"evidence": ["diff 中原文代码片段，直接复制 + 号开头的行内容"]}]}\n'
-            "规则：evidence 必须是 diff 新增行（+号开头）的原文内容，直接复制粘贴，不加行号前缀；"
-            "impact_type 必须描述实际后果；微小优化建议用 info_only；impact_statement 必须是可验证后果，"
-            "不能只写可能/也许；"
-            "如果无法提供 diff 中真实存在的代码片段作为证据，该问题不得上报"
+            '"evidence": ["引用的相关代码片段（可以是新增行、删除行或上下文行）"]}]}'
         )
         return "\n".join(parts)
