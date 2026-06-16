@@ -113,38 +113,6 @@ class TestNoiseReduction:
 
 
 class TestImpactGate:
-    def test_evidence_must_match_added_diff_line_when_diff_is_available(self):
-        added = _finding(
-            "app.py",
-            10,
-            "Added line bug",
-            evidence=["new_bug()"],
-        )
-        context = _finding(
-            "app.py",
-            8,
-            "Context line bug",
-            evidence=["old_code()"],
-        )
-        diff = """diff --git a/app.py b/app.py
-@@ -8,2 +8,3 @@
- old_code()
-+new_bug()
-"""
-
-        judge = JudgeAgent(api_key="sk-test")
-        result = judge._filter_evidence([added, context], diff)
-
-        assert result == [added]
-
-    def test_evidence_without_diff_keeps_existing_behavior(self):
-        f = _finding("app.py", 10, "Bug", evidence=["old_code()"])
-
-        judge = JudgeAgent(api_key="sk-test")
-        result = judge._filter_evidence([f], diff=None)
-
-        assert result == [f]
-
     def test_style_only_discarded_even_when_warning_high_confidence(self):
         f = _finding("a.ts", 10, "Naming style", "WARNING", 0.95, "quality", impact_type="style_only")
         judge = JudgeAgent(api_key="sk-test")

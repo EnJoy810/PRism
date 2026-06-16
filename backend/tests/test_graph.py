@@ -579,7 +579,9 @@ class TestVerificationIntegration:
 
 
 class TestPublicationGate:
-    def test_filters_info_missing_evidence_and_non_added_lines(self):
+    def test_filters_info_and_fabricated_lines(self):
+        """publication_gate 应过滤：INFO 级别、行号完全不在 diff 里的 finding。
+        context 行上的 finding（如删除类 bug）应放行。"""
         from app.models.agent import FindingSchema
 
         diff = """diff --git a/app.py b/app.py
@@ -603,7 +605,7 @@ class TestPublicationGate:
             FindingSchema(
                 file="app.py",
                 line=1,
-                title="Old line issue",
+                title="Context line issue",  # line=1 是 context 行，应放行（删除类 bug）
                 description="desc",
                 severity="ERROR",
                 confidence=0.9,
@@ -612,12 +614,13 @@ class TestPublicationGate:
             ),
             FindingSchema(
                 file="app.py",
-                line=2,
-                title="No evidence",
+                line=999,  # 完全不在 diff 里的行号，应过滤
+                title="Fabricated line issue",
                 description="desc",
                 severity="ERROR",
                 confidence=0.9,
                 category="quality",
+                evidence=["old_call()"],
             ),
             FindingSchema(
                 file="app.py",
@@ -632,8 +635,12 @@ class TestPublicationGate:
         ]
 
         gated = publication_gate(findings, diff)
+        titles = [f.title for f in gated]
 
-        assert [f.title for f in gated] == ["Keep added issue"]
+        assert "Keep added issue" in titles
+        assert "Context line issue" in titles   # 删除类 bug 放行
+        assert "Info issue" not in titles        # INFO 过滤
+        assert "Fabricated line issue" not in titles  # 捏造行号过滤
 
     def test_deduplicates_same_file_line_and_title(self):
         from app.models.agent import FindingSchema
