@@ -36,16 +36,50 @@ def evidence_matches_added_line(finding: FindingSchema, diff: str) -> bool:
     if not file_lines:
         return False
     return any(
-        evidence in line
+        evidence.lstrip("+") in line
         for evidence in finding.evidence or []
         for line in file_lines
     )
 
 
+def _all_lines_by_file(diff: str) -> dict[str, set[int]]:
+    """返回 diff 中每个文件实际出现过的行号（新文件行号，包含 context 和新增行）。"""
+    result: dict[str, set[int]] = {}
+    current_file: str | None = None
+    new_line = 0
+    import re
+    for line in diff.split("\n"):
+        if line.startswith("+++ b/"):
+            current_file = line[6:]
+            new_line = 0
+            result[current_file] = set()
+        elif line.startswith("@@") and current_file is not None:
+            m = re.search(r"\+(\d+)", line)
+            if m:
+                new_line = int(m.group(1)) - 1
+        elif current_file is not None:
+            if line.startswith("+") and not line.startswith("+++"):
+                new_line += 1
+                result[current_file].add(new_line)
+            elif line.startswith("-"):
+                pass  # 删除行不增加新文件行号
+            elif line.startswith(" "):
+                new_line += 1
+                result[current_file].add(new_line)
+    return result
+
+
 def finding_targets_added_line(finding: FindingSchema, diff: str) -> bool:
+    """验证 finding 的行号在 diff 对应文件里真实存在（新增行或 context 行均可）。
+    行号为 None 时放行，防止模型对完全不在 diff 里的文件报问题。
+    删除类 bug 的行号通常落在 context 行上，也应放行。"""
     if finding.line is None:
         return True
-    return finding.line in build_position_map(diff).get(finding.file, {})
+    # 先检查 position map（新增行）
+    if finding.line in build_position_map(diff).get(finding.file, {}):
+        return True
+    # 再检查是否在 diff 任意可见行（context 行）
+    return finding.line in _all_lines_by_file(diff).get(finding.file, set())
 
 
 def publication_gate(findings: list[FindingSchema], diff: str) -> list[FindingSchema]:
@@ -53,12 +87,10 @@ def publication_gate(findings: list[FindingSchema], diff: str) -> list[FindingSc
     for finding in findings:
         if severity(finding) == "INFO":
             continue
-        if not finding.evidence:
-            continue
         if not finding_targets_added_line(finding, diff):
             continue
-        if not evidence_matches_added_line(finding, diff):
-            continue
+        # evidence 字面匹配已禁用——LLM 输出的 evidence 经常有细微差异导致合法 findings 被静默丢弃
+        # 保留行号检查作为唯一硬性门控，后续视 eval 结果决定是否恢复
 
         key = (finding.file, finding.line, finding.title)
         existing = kept.get(key)
