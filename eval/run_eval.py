@@ -1,7 +1,7 @@
 """Run PRism reviews for a small PR evaluation set.
 
 Usage:
-    cd backend && .venv/bin/python ../eval/run_eval.py --limit 3
+    cd backend && .venv/bin/python ../eval/run_eval.py --samples ../eval/prs_golden.yaml
 """
 
 from __future__ import annotations
@@ -66,8 +66,16 @@ def _render_markdown(sample: dict[str, Any], result: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-async def _run_sample(graph: ReviewGraph, sample: dict[str, Any], out_dir: Path) -> None:
-    result = await graph.run(pr_url=sample["url"])
+async def _run_sample(
+    graph: ReviewGraph,
+    sample: dict[str, Any],
+    out_dir: Path,
+    timeout_seconds: int,
+) -> None:
+    result = await asyncio.wait_for(
+        graph.run(pr_url=sample["url"]),
+        timeout=timeout_seconds,
+    )
     payload = {
         "sample": sample,
         "ran_at": datetime.now(UTC).isoformat(),
@@ -100,9 +108,10 @@ async def _fetch_context_only(sample: dict[str, Any], out_dir: Path) -> None:
 
 async def main() -> None:
     parser = argparse.ArgumentParser(description="Run PRism eval samples")
-    parser.add_argument("--samples", default=str(ROOT / "eval" / "prs.yaml"))
+    parser.add_argument("--samples", default=str(ROOT / "eval" / "prs_golden.yaml"))
     parser.add_argument("--out", default=str(ROOT / "eval" / "runs"))
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--timeout", type=int, default=300)
     parser.add_argument("--context-only", action="store_true")
     args = parser.parse_args()
 
@@ -122,7 +131,7 @@ async def main() -> None:
                 await _fetch_context_only(sample, out_dir)
             else:
                 assert graph is not None
-                await _run_sample(graph, sample, out_dir)
+                await _run_sample(graph, sample, out_dir, args.timeout)
         except Exception as exc:  # noqa: BLE001
             error_payload = {"sample": sample, "error": str(exc)}
             (out_dir / f"{sample['id']}.error.json").write_text(

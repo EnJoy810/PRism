@@ -1,0 +1,29 @@
+- id: fastapi-14789
+  repo: fastapi/fastapi
+  url: https://github.com/fastapi/fastapi/pull/14789
+  kind: clean-pr
+  expected_findings: []
+  notes: Ordinary merged bugfix; current gate should produce no findings.
+- id: encode-httpx-2671
+  repo: encode/httpx
+  url: https://github.com/encode/httpx/pull/2671
+  kind: clean-pr
+  expected_findings: []
+  notes: Ordinary merged bugfix; current gate should produce no findings.
+- id: pydantic-10500
+  repo: pydantic/pydantic
+  url: https://github.com/pydantic/pydantic/pull/10500
+  kind: signal-pr
+  expected_findings:
+    - id: duplicate-test-name
+      file: tests/test_types.py
+      line_range: [7015, 7025]
+      title_keywords:
+        - 命名冲突
+        - duplicate
+        - test function
+      evidence_keywords:
+        - test_base64_with_invalid_min_length
+      severity: WARNING
+      reason: Added test function reuses an existing test name, so pytest keeps only the later function and silently drops the earlier parametrized coverage.
+  notes: Golden signal from 2026-06-15 smoke run; useful but still needs independent human review before treating as hard benchmark truth.

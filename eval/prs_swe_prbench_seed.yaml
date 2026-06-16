@@ -1,0 +1,191 @@
+- id: cupy__9660
+  repo: cupy/cupy
+  url: https://github.com/cupy/cupy/pull/9660
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: cupy__9660-c1
+    file: cupy/_util.pyx
+    line_range:
+    - 230
+    - 230
+    title_keywords:
+    - Instead
+    - raising
+    - import
+    - _util
+    evidence_keywords:
+    - is_shutting_down
+    - _shutting_down
+    - cannot
+    - _util
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: Instead of raising an import error, would it be possible to just make
+      the loop a no-op? Would it be sufficient  to avoid the NumPy bug?
+  - id: cupy__9660-c2
+    file: cupy/_util.pyx
+    line_range:
+    - 230
+    - 230
+    title_keywords:
+    - error
+    - caught
+    - yeah
+    - _util
+    evidence_keywords:
+    - is_shutting_down
+    - _shutting_down
+    - cannot
+    - _util
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: Oh, the error is caught?  But yeah, maybe nicer to not raise an error
+      for control flow.
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: chia-blockchain__20282
+  repo: Chia-Network/chia-blockchain
+  url: https://github.com/Chia-Network/chia-blockchain/pull/20282
+  kind: swe-prbench-Type2_Contextual
+  expected_findings:
+  - id: chia-blockchain__20282-c1
+    file: chia/_tests/core/full_node/test_tx_processing_queue.py
+    line_range:
+    - 170
+    - 170
+    title_keywords:
+    - what
+    - type
+    - error
+    - test_tx_processing_queue
+    evidence_keywords:
+    - async
+    - test_queue_cleanup_and_fairness
+    - seeded_random
+    - test_tx_processing_queue
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: what's the type error we're ignoring here?
+  - id: chia-blockchain__20282-c2
+    file: chia/_tests/core/full_node/test_tx_processing_queue.py
+    line_range:
+    - 234
+    - 234
+    title_keywords:
+    - what
+    - type
+    - error
+    - test_tx_processing_queue
+    evidence_keywords:
+    - async
+    - test_queue_cleanup_and_fairness
+    - seeded_random
+    - test_tx_processing_queue
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: what type error is ignore here? It would probably be a good idea to add
+      a comment here, justifying the ignore-statement. Same in the other places where
+      you ignore mypy errors
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: datasette__2539
+  repo: simonw/datasette
+  url: https://github.com/simonw/datasette/pull/2539
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: datasette__2539-c1
+    file: datasette/default_permissions.py
+    line_range:
+    - 364
+    - 364
+    title_keywords:
+    - wrong
+    - about
+    - called
+    - default_permissions
+    evidence_keywords:
+    - add_row_allow_block
+    - parent
+    - child
+    - default_permissions
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: 'I was wrong about this, it is called with 0 here: https://github.com/simonw/datasette/blob/06ba4cff150bd15868c6b40415ae24d77497c814/datasette/default_permissions.py#L328-L331'
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: pipecat__3084
+  repo: pipecat-ai/pipecat
+  url: https://github.com/pipecat-ai/pipecat/pull/3084
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: pipecat__3084-c1
+    file: src/pipecat/services/google/llm.py
+    line_range:
+    - 796
+    - 796
+    title_keywords:
+    - situation
+    - call
+    - push_error
+    - llm
+    evidence_keywords:
+    - _maybe_unset_thinking_budget
+    - self
+    - generation_params
+    - llm
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: Why in this situation do we not call push_error?
+  - id: pipecat__3084-c2
+    file: src/pipecat/services/stt_service.py
+    line_range:
+    - 332
+    - 332
+    title_keywords:
+    - looks
+    - like
+    - _report_error
+    - stt_service
+    evidence_keywords:
+    - __init__
+    - self
+    - reconnect_on_error
+    - stt_service
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: "It looks like _report_error is used for connection level errors, triggering\
+      \ the on_connection_error event and push_error_frame.\r\n\r\nMaybe this should\
+      \ be in in the base AIService class and used consistently across services?"
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: chia-blockchain__20166
+  repo: Chia-Network/chia-blockchain
+  url: https://github.com/Chia-Network/chia-blockchain/pull/20166
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: chia-blockchain__20166-c1
+    file: chia/full_node/full_node_api.py
+    line_range:
+    - 114
+    - 114
+    title_keywords:
+    - think
+    - right
+    - send
+    - full_node_api
+    evidence_keywords:
+    - async
+    - tx_request_and_timeout
+    - full_node
+    - full_node_api
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: 'I don''t think this is right. If I send you an invalid transaction, you
+      validate it and you ban me. You still want to record that you''ve seen it, so
+      you don''t validate it again.
+
+
+      i.e. there''s a difference between "seen" and "I have it". I believe "seen"
+      may also mean it''s in the queue of transactions about to be validated.'
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.

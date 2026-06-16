@@ -1,0 +1,18 @@
+- id: fastapi-14789
+  repo: fastapi/fastapi
+  url: https://github.com/fastapi/fastapi/pull/14789
+  kind: public-python-bugfix
+  expected: no_findings
+  notes: Ordinary merged bugfix; used to check review noise.
+- id: encode-httpx-2671
+  repo: encode/httpx
+  url: https://github.com/encode/httpx/pull/2671
+  kind: public-python-bugfix
+  expected: no_findings
+  notes: Ordinary merged bugfix; used to check review noise.
+- id: pydantic-10500
+  repo: pydantic/pydantic
+  url: https://github.com/pydantic/pydantic/pull/10500
+  kind: public-python-change
+  expected: at_least_one_valid_finding
+  notes: Prior eval produced schema/type behavior findings.

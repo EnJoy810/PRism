@@ -1,0 +1,30 @@
+- id: pydantic-5877
+  repo: pydantic/pydantic
+  url: https://github.com/pydantic/pydantic/pull/5877
+  kind: reviewer-requested-code-change
+  notes: Added TypedDict validators; reviewer requested implementation and performance changes, then author pushed follow-up commits before merge.
+- id: pydantic-3197
+  repo: pydantic/pydantic
+  url: https://github.com/pydantic/pydantic/pull/3197
+  kind: reviewer-requested-code-change
+  notes: Replaced encode_default isinstance check; reviewer requested stricter schema/test assertions before merge.
+- id: django-16858
+  repo: django/django
+  url: https://github.com/django/django/pull/16858
+  kind: reviewer-requested-code-change
+  notes: Restored JSONField get_prep_value call; reviewer requested implementation placement and stronger tests before merge.
+- id: django-18303
+  repo: django/django
+  url: https://github.com/django/django/pull/18303
+  kind: reviewer-requested-code-change
+  notes: Deprecated auth.login request.user fallback; reviewer requested warning path, docs, and extra deprecation commentary before merge.
+- id: httpx-301
+  repo: encode/httpx
+  url: https://github.com/encode/httpx/pull/301
+  kind: reviewer-requested-code-change
+  notes: Added SSLKEYLOGFILE support; reviewer questioned missing path behavior, trust_env handling, and test cleanup before merge.
+- id: pytest-14443
+  repo: pytest-dev/pytest
+  url: https://github.com/pytest-dev/pytest/pull/14443
+  kind: reviewer-requested-code-change
+  notes: Fixed strict options from addopts; reviewer questioned duplicated parser work and requested a behavioral test before merge.

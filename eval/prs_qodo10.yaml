@@ -1,0 +1,523 @@
+- id: qodo-ghost-1
+  repo: agentic-review-benchmarks/Ghost
+  url: https://github.com/agentic-review-benchmarks/Ghost/pull/1
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-ghost-1-i1
+    file: ghost/core/core/boot.js
+    line_range:
+    - 351
+    - 377
+    title_keywords:
+    - Slack
+    - notifications
+    - functioning
+    - boot
+    evidence_keywords:
+    - await
+    - Promise
+    - emailAddressService
+    - boot
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The slack.listen() call was removed from the service initialization in
+      Promise.all, but the slack service module is still imported. This means the
+      Slack service event listeners for 'post.published' and 'slack.test' events are
+      never registered during boot. As a result, posts published on the site will
+      not trigger Slack webhook notifications even when Slack integration is configured
+      correctly. The slack.listen() method registers critical event handlers that
+      connect the Ghost event system to the Slack notification service, and without
+      this call, the integration is completely non-functional.
+  - id: qodo-ghost-1-i2
+    file: ghost/core/core/boot.js
+    line_range:
+    - 368
+    - 368
+    title_keywords:
+    - Post
+    - scheduling
+    - fail
+    - boot
+    evidence_keywords:
+    - webhooks
+    - listen
+    - scheduling
+    - boot
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: 'The scheduling.init() call is missing the required apiUrl parameter that
+      was previously passed via urlUtils.urlFor(''api'', {type: ''admin''}, true).
+      The PostScheduler constructor explicitly checks for this parameter and throws
+      an IncorrectUsageError if it''s not provided. This will cause Ghost to crash
+      during the boot sequence when attempting to initialize the scheduling service.
+      The apiUrl is critical for the scheduling service as it''s used to generate
+      signed admin tokens and callback URLs for scheduled post publishing. Without
+      this parameter, the scheduled publishing feature cannot function.'
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-ghost-2
+  repo: agentic-review-benchmarks/Ghost
+  url: https://github.com/agentic-review-benchmarks/Ghost/pull/2
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-ghost-2-i1
+    file: apps/comments-ui/src/components/content/forms/form.tsx
+    line_range:
+    - 311
+    - 315
+    title_keywords:
+    - Missing
+    - optional
+    - chaining
+    - form
+    evidence_keywords:
+    - openStyles
+    - isOpen
+    - const
+    - form
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The code accesses `openForm.in_reply_to_snippet` without optional chaining,
+      but openForm can be undefined when rendering certain forms (like the main comment
+      form). The original code correctly used `openForm?.in_reply_to_snippet` with
+      optional chaining. This will cause a "Cannot read property 'in_reply_to_snippet'
+      of undefined" runtime error when the FormWrapper is rendered without an openForm
+      prop, crashing the component.
+  - id: qodo-ghost-2-i2
+    file: apps/comments-ui/src/components/content/forms/form.tsx
+    line_range:
+    - 258
+    - 265
+    title_keywords:
+    - Editor
+    - editability
+    - incorrectly
+    - form
+    evidence_keywords:
+    - useEffect
+    - editor
+    - return
+    - form
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The Form component determines whether the editor should be editable by
+      checking `member?.expertise` instead of `memberName` (which is derived from
+      `member?.name`). According to the comment and the original logic, the editor
+      should be disabled only when the member doesn't have a name or when submitting.
+      Expertise is optional metadata, but name is required for posting. This bug prevents
+      users without expertise from typing in the comment editor, even though they
+      have a valid name and should be allowed to comment.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-ghost-3
+  repo: agentic-review-benchmarks/Ghost
+  url: https://github.com/agentic-review-benchmarks/Ghost/pull/3
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-ghost-3-i1
+    file: ghost/core/core/server/services/email-service/DomainWarmingService.ts
+    line_range:
+    - 124
+    - 129
+    title_keywords:
+    - High
+    - volume
+    - threshold
+    - DomainWarmingService
+    evidence_keywords:
+    - high
+    - volume
+    - senders
+    - DomainWarmingService
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The condition uses `>=` instead of `>` when checking if lastCount qualifies
+      for high-volume capping at exactly 400,000 emails. According to the documented
+      scaling table, 400k should use the 2× multiplier from the thresholds array,
+      but with this bug it immediately applies the high-volume cap of 1.2× or +75k
+      absolute increase. For a site hitting exactly 400k messages, this means getting
+      a limit of 480k (1.2×) or 475k (+75k) instead of the expected 800k (2×). This
+      creates a significant bottleneck at a critical growth milestone and breaks the
+      documented warmup progression.
+  - id: qodo-ghost-3-i2
+    file: ghost/core/core/server/services/email-service/DomainWarmingService.ts
+    line_range:
+    - 131
+    - 135
+    title_keywords:
+    - Threshold
+    - boundary
+    - values
+    - DomainWarmingService
+    evidence_keywords:
+    - const
+    - threshold
+    - WARMUP_SCALING_TABLE
+    - DomainWarmingService
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The loop uses `<` instead of `<=` when comparing lastCount to threshold
+      limits. This causes exact boundary values (1000, 5000, 100000, 400000) to incorrectly
+      skip their tier and fall through to the next scaling factor or the fallback
+      logic. For example, a site with exactly 1000 previous emails will bypass the
+      1.25× tier and incorrectly use 1.5× scaling (getting 1500 instead of 1250).
+      Similarly, 5000 will use 1.75× instead of 1.5×, and 100000 will use 2× instead
+      of 1.75×. This creates unexpected jumps in scaling at precisely the documented
+      threshold boundaries.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-ghost-4
+  repo: agentic-review-benchmarks/Ghost
+  url: https://github.com/agentic-review-benchmarks/Ghost/pull/4
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-ghost-4-i1
+    file: apps/posts/src/views/comments/components/comments-list.tsx
+    line_range:
+    - 92
+    - 104
+    title_keywords:
+    - Missing
+    - dependency
+    - useEffect
+    - comments-list
+    evidence_keywords:
+    - useEffect
+    - const
+    - checkIfClamped
+    - comments-list
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The CommentContent component's useEffect hook has an empty dependency
+      array, but it uses item.html to determine if content should be clamped. When
+      a comment's HTML content changes (e.g., after an edit or when new data is loaded),
+      the clamp detection won't re-run. This means the 'Show more' button may appear
+      when it shouldn't or disappear when it should still be visible, creating a poor
+      user experience. The dependency array should include item.html to ensure the
+      clamp detection re-runs whenever the content changes.
+  - id: qodo-ghost-4-i2
+    file: apps/posts/src/views/comments/components/comments-list.tsx
+    line_range:
+    - 236
+    - 248
+    title_keywords:
+    - Filter
+    - button
+    - becomes
+    - comments-list
+    evidence_keywords:
+    - item
+    - post
+    - title
+    - comments-list
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The conditional check for rendering the post title button was changed
+      from `item.post?.id && item.post?.title && onAddFilter` to `item.post?.id &&
+      item.post?.title`, removing the onAddFilter null check. However, the button's
+      onClick handler still calls onAddFilter('post', item.post!.id). Since onAddFilter
+      is now a required prop in the TypeScript signature but the runtime check was
+      removed, if onAddFilter is ever undefined or null at runtime, clicking the post
+      title button will throw an error and crash the component. The original three-part
+      condition was protecting against this scenario.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-ghost-5
+  repo: agentic-review-benchmarks/Ghost
+  url: https://github.com/agentic-review-benchmarks/Ghost/pull/5
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-ghost-5-i1
+    file: apps/signup-form/src/utils/helpers.tsx
+    line_range:
+    - 40
+    - 46
+    title_keywords:
+    - Potential
+    - undefined
+    - return
+    - helpers
+    evidence_keywords:
+    - export
+    - function
+    - getUrlHistory
+    - helpers
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The getUrlHistory() function can now return undefined when the form is
+      embedded on the same host and getDefaultUrlHistory() returns undefined (e.g.,
+      when sessionStorage is empty or invalid). This violates the URLHistory return
+      type contract and will cause a runtime error when the API tries to use the history
+      in sendMagicLink(), as it expects an array. The original code properly handled
+      this by checking 'if (history)' before returning, ensuring a fallback to the
+      constructed history array.
+  - id: qodo-ghost-5-i2
+    file: apps/signup-form/src/components/pages/form-page.tsx
+    line_range:
+    - 27
+    - 30
+    title_keywords:
+    - Loading
+    - state
+    - reset
+    - form-page
+    evidence_keywords:
+    - minimal
+    - success
+    - page
+    - form-page
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: When the form is in minimal mode and successfully sends a magic link,
+      the loading state is set to true but never reset to false. This causes the submit
+      button to remain disabled with a loading spinner showing indefinitely, preventing
+      users from resubmitting. The non-minimal mode correctly resets loading through
+      setPage(), but minimal mode now lacks the setLoading(false) call that was removed,
+      creating an inconsistent and broken user experience.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-ghost-6
+  repo: agentic-review-benchmarks/Ghost
+  url: https://github.com/agentic-review-benchmarks/Ghost/pull/6
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-ghost-6-i1
+    file: ghost/core/core/server/services/member-welcome-emails/jobs/index.js
+    line_range:
+    - 15
+    - 15
+    title_keywords:
+    - scheduler
+    - never
+    - schedule
+    - index
+    evidence_keywords:
+    - async
+    - scheduleMemberWelcomeEmailJob
+    - config
+    - index
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The condition `hasScheduled.processOutbox && !process.env.NODE_ENV.startsWith('test')`
+      is incorrect - it checks if the job is already scheduled before scheduling it,
+      creating a logical impossibility. The job will never be scheduled on the first
+      call since `hasScheduled.processOutbox` starts as `false`. This should be `!hasScheduled.processOutbox`
+      to schedule the job when it hasn't been scheduled yet. This breaks the welcome
+      email processing functionality entirely, as the background job that processes
+      the outbox entries will never be registered.
+  - id: qodo-ghost-6-i2
+    file: ghost/core/core/server/services/members/members-api/repositories/MemberRepository.js
+    line_range:
+    - 342
+    - 342
+    title_keywords:
+    - Incorrect
+    - logical
+    - operator
+    - MemberRepository
+    evidence_keywords:
+    - const
+    - memberAddOptions
+    - options
+    - MemberRepository
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: 'The condition uses OR (`||`) instead of AND (`&&`) when checking whether
+      to create welcome email outbox entries. This means welcome emails will be triggered
+      if EITHER the config is set OR the source is ''member'', instead of requiring
+      BOTH conditions. This causes two problems: (1) welcome emails are sent even
+      when the feature is disabled (config not set) as long as source is ''member'',
+      and (2) welcome emails are sent for disallowed sources (like ''import'' or ''admin'')
+      when the config is set. The correct logic should require both the feature to
+      be enabled AND the source to be in the allowed list.'
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-ghost-7
+  repo: agentic-review-benchmarks/Ghost
+  url: https://github.com/agentic-review-benchmarks/Ghost/pull/7
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-ghost-7-i1
+    file: ghost/core/core/server/services/members/members-api/members-api.js
+    line_range:
+    - 18
+    - 19
+    title_keywords:
+    - Incorrect
+    - require
+    - path
+    - members-api
+    evidence_keywords:
+    - const
+    - EmailSuppressedEvent
+    - require
+    - members-api
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The require statement references 'magic-link' (kebab-case) but the actual
+      file is still named 'MagicLink.js' (PascalCase). This PR renamed many files
+      to kebab-case, but this file was not renamed - it remains as MagicLink.js. When
+      this code executes, Node.js will throw a MODULE_NOT_FOUND error because the
+      path './../../lib/magic-link/magic-link' does not exist. The correct path should
+      be './../../lib/magic-link/MagicLink' to match the actual file. This will cause
+      the entire members API to fail to initialize, breaking member authentication,
+      signup, and magic link functionality across the application.
+  - id: qodo-ghost-7-i2
+    file: ghost/core/core/server/services/donations/donation-service-wrapper.js
+    line_range:
+    - 10
+    - 11
+    title_keywords:
+    - Incorrect
+    - require
+    - path
+    - donation-service-wrapper
+    evidence_keywords:
+    - const
+    - DonationBookshelfRepository
+    - require
+    - donation-service-wrapper
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The require statement uses 'DonationBookshelfRepository' (PascalCase)
+      but the actual file was renamed to 'donation-bookshelf-repository.js' (kebab-case)
+      as part of this PR's refactoring. When the init() method is called, Node.js
+      will fail to find the module at './DonationBookshelfRepository' and throw a
+      MODULE_NOT_FOUND error. This breaks the donation service initialization, preventing
+      the application from tracking and storing donation payments. The correct path
+      should be './donation-bookshelf-repository' to match the renamed file.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-ghost-8
+  repo: agentic-review-benchmarks/Ghost
+  url: https://github.com/agentic-review-benchmarks/Ghost/pull/8
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-ghost-8-i1
+    file: ghost/i18n/locales/zh/portal.json
+    line_range:
+    - 68
+    - 72
+    title_keywords:
+    - Translation
+    - inconsistency
+    - Enter
+    - portal
+    evidence_keywords:
+    - Ends
+    - offerEndDate
+    - Enter
+    - portal
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The PR introduces an inconsistency in the Chinese translation for the
+      'Enter your name' input field. In portal.json line 71, it's translated as '输入您的名字'
+      (enter your first name), which suggests only a first name is needed. However,
+      based on the context of Ghost's user registration and profile system, and the
+      fact that the 'Name' field itself should be '姓名' (full name), this creates a
+      mismatch between what the label asks for ('名字' - first name) and what the system
+      actually expects ('姓名' - full name). This can cause user confusion during registration
+      and profile completion, potentially leading to incomplete or incorrectly formatted
+      name entries.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-ghost-9
+  repo: agentic-review-benchmarks/Ghost
+  url: https://github.com/agentic-review-benchmarks/Ghost/pull/9
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-ghost-9-i1
+    file: ghost/core/core/server/services/email-service/DomainWarmingService.ts
+    line_range:
+    - 75
+    - 75
+    title_keywords:
+    - Incorrect
+    - rounding
+    - calculation
+    - DomainWarmingService
+    evidence_keywords:
+    - data
+    - length
+    - return
+    - DomainWarmingService
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The getDaysSinceFirstEmail method uses Math.ceil instead of Math.floor
+      to calculate days since the first email. This causes the warmup to start one
+      day ahead of schedule. For example, on the same day an email is sent (even minutes
+      after), the partial day will round up to day 1 instead of day 0. This breaks
+      the entire 42-day warmup progression as all subsequent calculations will be
+      offset by one day, causing the service to use higher email limits than intended
+      for each actual day, potentially harming domain reputation by warming up too
+      aggressively.
+  - id: qodo-ghost-9-i2
+    file: ghost/core/core/server/services/email-service/DomainWarmingService.ts
+    line_range:
+    - 85
+    - 86
+    title_keywords:
+    - error
+    - warmup
+    - completion
+    - DomainWarmingService
+    evidence_keywords:
+    - const
+    - await
+    - getDaysSinceFirstEmail
+    - DomainWarmingService
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The condition checking if warmup is complete uses `day > this.#warmupConfig.totalDays`
+      instead of `day >= this.#warmupConfig.totalDays`. With a 42-day warmup period
+      (totalDays=42), this means the warmup won't complete until day 43 instead of
+      day 42. On day 42, the system will still calculate and apply a limit instead
+      of returning Infinity to indicate unlimited sending. This extends the warmup
+      period by one full day, delaying when users can send emails at full volume and
+      potentially causing confusion when the warmup doesn't complete as documented.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-ghost-10
+  repo: agentic-review-benchmarks/Ghost
+  url: https://github.com/agentic-review-benchmarks/Ghost/pull/10
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-ghost-10-i1
+    file: apps/activitypub/src/views/Preferences/components/BlueskySharing.tsx
+    line_range:
+    - 48
+    - 55
+    title_keywords:
+    - Missing
+    - error
+    - handling
+    - BlueskySharing
+    evidence_keywords:
+    - const
+    - handleEnable
+    - async
+    - BlueskySharing
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The handleEnable function removes the try-catch block that was wrapping
+      the enableBlueskyMutation call. When the API call fails (network error, server
+      error, etc.), the loading state is never reset to false, leaving the user stuck
+      with a spinning loader and no way to retry. This is inconsistent with the handleDisable
+      function which properly handles errors. The bug causes a poor user experience
+      where users must refresh the page to recover from any API failure.
+  - id: qodo-ghost-10-i2
+    file: apps/activitypub/src/views/Preferences/components/BlueskySharing.tsx
+    line_range:
+    - 103
+    - 117
+    title_keywords:
+    - Polling
+    - logic
+    - performs
+    - BlueskySharing
+    evidence_keywords:
+    - const
+    - confirmHandleInterval
+    - setInterval
+    - BlueskySharing
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The confirmation polling interval increments the retry counter after checking
+      if the limit is reached, combined with changing the condition from `>` to `>=`.
+      This creates an off-by-one error where the system will actually make 13 API
+      calls (retries 0-12) instead of the intended 12 calls defined by MAX_CONFIRMATION_RETRIES.
+      The counter starts at 0, gets incremented to 12, makes a call, then on the next
+      iteration checks if 12 >= 12 and only then stops. This wastes API resources
+      and delays the timeout error message by one additional polling interval (5 seconds).
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.

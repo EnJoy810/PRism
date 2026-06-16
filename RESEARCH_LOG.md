@@ -735,3 +735,105 @@ Judge 的输入应该是结构化的，按文件分组之后再给 Judge。Judge
 - 本地测试：CLI entry point（`app/cli.py`），输出 markdown 到终端
 - GitHub App 认证：替代 personal token，用私钥 + installation_id 换 token
 - 竞品定位对比：无人做系统性符号级 import 链，这是 PRism 的差异化方向
+
+---
+
+## 第十八轮：recall 低的系统性诊断（2026-06-16）
+
+### 背景
+
+eval baseline（10 个 Ghost PR，Qodo PR-Review-Bench）：
+- hit=3, miss=16, noise=6, recall=16%, precision=33%
+
+### 走过的弯路
+
+**弯路 1：chunk 改造**
+
+假设：diff 太长导致模型漏报，切分成文件粒度 chunk 可以让模型更专注。
+
+未验证假设就直接实现，结果：recall=16%（不变），noise=13（从 6 翻倍）。
+
+根因：chunk 在没有跨文件上下文的情况下，每个文件独立分析反而丢失了全局 PR 语义。
+
+教训：没有诊断清楚根因就动手实现，时间全烧在 LLM 调用验证上了。
+
+**弯路 2：evidence 过滤假设**
+
+假设：publication_gate 的字面匹配静默丢弃了大量合法 findings。
+
+验证方法：禁用 evidence 字面匹配，只保留行号门控，同时回退 chunk。
+
+结果（ghost 1-3）：noise=0（chunk 带来的噪声消失），但 recall 没有提升，ghost-1 最终 findings=0。
+
+结论：evidence 过滤不是 recall 低的主要原因。LLM 根本没有输出命中注入 bug 的 findings。
+
+### 真正的根因
+
+ghost-1 的两个注入 bug 都是**删除行引发的问题**：
+- `slack.listen()` 被从 Promise.all 中删除 → Slack 通知完全失效
+- `scheduling.init()` 缺少必要参数 → 定时任务崩溃
+
+三个 agent 的 SYSTEM_PROMPT 写着"只报 diff 新增行（+号开头）引入的问题"，模型遵守了这条规则，所以对删除类 bug 一条都没报。
+
+---
+
+## 第十九轮：Prompt 设计的根本性错误
+
+**用户核心观点**：
+
+问题本质是 Prompt 在定义「检查过程」，而不是定义「检查目标」。
+
+> 如果 prompt 写成"只关注新增代码中的问题"，那么模型推理链会变成：
+> 新增代码？没有。结束。
+>
+> 而一个真正的 Reviewer 的思维过程应该是：
+> 这个 PR 修改了什么？→ 行为发生了什么变化？→ Slack 监听被删除 → 通知功能可能失效 → 这是一个高风险回归
+
+很多 Code Review Prompt 的共同问题：**把 AI 当 grep 用。**
+
+规则叠加之后：
+```
+先过滤 → 再过滤 → 继续过滤 → 最后剩下极少内容
+```
+
+一个比较健康的原则：
+- 让模型尽可能广泛地发现风险
+- 用 evidence、severity、confidence 约束**输出质量**
+- 不用规则提前限制它能思考什么
+
+**三层 Prompt 结构（用户提出）**：
+
+第一层：目标（Goal）— 不提 changed line，只说"找出本次变更可能引入的真实缺陷"，包括新增、删除、修改。
+
+第二层：证据（Evidence）— evidence 是支撑结论，不是决定能不能说话。"每个结论必须引用对应代码作为依据"，而不是"只有找到明确证据才能输出"。
+
+第三层：置信度（Confidence）— high/medium/low 三档，由人决定是否采纳，不是 prompt 提前替模型做裁决。
+
+**最危险的一句话**：
+> "Only report issues that can be proven from the diff."
+>
+> 因为真实世界的大量 Bug 恰恰是：A 文件改了一行 → B 模块行为变化 → 线上炸了。Diff 本身根本证明不了。
+
+**资深工程师 review 的核心能力从来不是"看见 bug"，而是"推断 bug"。**
+
+---
+
+## 当前代码状态（2026-06-16）
+
+### 已回退
+- `base.py`：chunk 逻辑已撤，恢复单次整段 diff 调用
+
+### 已修改
+- `evidence.py`：禁用 evidence 字面匹配，只保留行号门控
+- `quality.py`、`security.py`、`performance.py`：SYSTEM_PROMPT 重写为目标导向三层结构（Goal / Evidence / Confidence），不再约束看哪些行，evidence 允许引用新增行/删除行/上下文行
+
+### 待做
+- [ ] 各过滤层加诊断日志，量化每层实际损耗
+- [ ] Step 1 理解阶段：先让 LLM 理解 PR 意图，再带着上下文做深度审查
+- [ ] 调用图（blast_radius）端到端验证
+- [ ] 重新跑 10 PR eval 取新 baseline
+
+### 未解决的问题
+1. Judge noise filter 的误杀率：`_has_actionable_impact()` 实际误杀了多少合法 findings 未知
+2. Blast radius 实际成功率：clone 失败率未知，blast_radius 返回空的频率未知
+3. agent 编排应该模仿真人 review 过程，而不是并行独立扫描——待设计

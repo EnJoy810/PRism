@@ -1,0 +1,129 @@
+- id: pip__9058
+  repo: pypa/pip
+  url: https://github.com/pypa/pip/pull/9058
+  kind: swe-prbench-manual-Type1_Direct
+  expected_findings:
+  - id: pip__9058-c1
+    file: src/pip/_internal/commands/cache.py
+    line_range:
+    - 206
+    - 206
+    title_keywords:
+    - typo
+    - rmdir
+    - call
+    - raise
+    evidence_keywords:
+    - remove_cache_items
+    - self
+    - options
+    - Values
+    severity: WARNING
+    source: swe-prbench-human-review-manual-pick
+    reason: Yes, that's a typo. It's the `rmdir()` call that can raise `FileNotFoundError`.
+  notes: Manually selected from SWE-PRBench for clearer code-risk signal.
+- id: dask__12103
+  repo: dask/dask
+  url: https://github.com/dask/dask/pull/12103
+  kind: swe-prbench-manual-Type1_Direct
+  expected_findings:
+  - id: dask__12103-c1
+    file: dask/utils.py
+    line_range:
+    - 2359
+    - 2359
+    title_keywords:
+    - dislike
+    - these
+    - fail
+    - exception
+    evidence_keywords:
+    - __exit__
+    - self
+    - exc_type
+    - exc_value
+    severity: WARNING
+    source: swe-prbench-human-review-manual-pick
+    reason: I dislike that these can fail with an exception. We don't know that just
+      because an object has `.nnz` that it's comparable to an int, and we don't know
+      that `obj.shape` is a sequence. I'd feel better if these also catch exceptions
+      (probably broad ones) so that we get through to the fallback.
+  notes: Manually selected from SWE-PRBench for clearer code-risk signal.
+- id: prowler__9876
+  repo: prowler-cloud/prowler
+  url: https://github.com/prowler-cloud/prowler/pull/9876
+  kind: swe-prbench-manual-Type1_Direct
+  expected_findings:
+  - id: prowler__9876-c1
+    file: prowler/providers/azure/lib/service/service.py
+    line_range:
+    - 41
+    - 41
+    title_keywords:
+    - Empty
+    - except
+    - clause
+    - does
+    evidence_keywords:
+    - self
+    - audit_config
+    - provider
+    - fixer_config
+    severity: WARNING
+    source: swe-prbench-human-review-manual-pick
+    reason: '## Empty except
+
+
+      ''except'' clause does nothing but pass and there is no explanatory comment.
+
+
+      [Show more details](https://github.com/prowler-cloud/prowler/security/code-scanning/3945)'
+  notes: Manually selected from SWE-PRBench for clearer code-risk signal.
+- id: cupy__9554
+  repo: cupy/cupy
+  url: https://github.com/cupy/cupy/pull/9554
+  kind: swe-prbench-manual-Type1_Direct
+  expected_findings:
+  - id: cupy__9554-c1
+    file: cupy/_environment.py
+    line_range:
+    - 164
+    - 164
+    title_keywords:
+    - TODO
+    - incorrect
+    - CUDA
+    - Windows
+    evidence_keywords:
+    - get_cub_path
+    - return
+    - _cub_path
+    - _PLATFORM_LINUX
+    severity: WARNING
+    source: swe-prbench-human-review-manual-pick
+    reason: 'TODO: This is incorrect for CUDA 13 + Windows + wheels.'
+  notes: Manually selected from SWE-PRBench for clearer code-risk signal.
+- id: chia-blockchain__20317
+  repo: Chia-Network/chia-blockchain
+  url: https://github.com/Chia-Network/chia-blockchain/pull/20317
+  kind: swe-prbench-manual-Type1_Direct
+  expected_findings:
+  - id: chia-blockchain__20317-c1
+    file: chia/_tests/wallet/rpc/test_wallet_rpc.py
+    line_range:
+    - 3161
+    - 3161
+    title_keywords:
+    - endpoint
+    - raise
+    - doesn
+    - pass
+    evidence_keywords:
+    - async
+    - test_verify_signature
+    - assert
+    - rpc_response
+    severity: WARNING
+    source: swe-prbench-human-review-manual-pick
+    reason: The endpoint would raise if it doesn't pass
+  notes: Manually selected from SWE-PRBench for clearer code-risk signal.
