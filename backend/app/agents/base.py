@@ -67,30 +67,27 @@ class BaseAgent(ABC):
             messages = self._build_messages(diff, context)
             content = await self.client.chat(
                 messages=messages,
-                temperature=0.2,
+                temperature=0.0,
                 estimated_tokens=len(diff) // 4,
-            )
-
-            findings, self.thinking = self._parse_response(content)
-            return AgentResult(
-                status=AgentStatus.SUCCESS,
-                findings=findings,
-            )
-
-        except json.JSONDecodeError as e:
-            logger.warning(
-                "%s: failed to parse JSON from LLM response: %s\nraw content (first 200): %s",
-                self.__class__.__name__, e, content[:200],
-            )
-            return AgentResult(
-                status=AgentStatus.FORMAT_ERROR,
-                findings=[],
-                error_message="Failed to parse JSON from LLM response",
             )
         except Exception as e:
             logger.warning("%s: agent failed: %s", self.__class__.__name__, e)
             return AgentResult(
                 status=AgentStatus.RUNTIME_ERROR,
+                findings=[],
+                error_message=str(e),
+            )
+        try:
+            findings, thinking = self._parse_response(content)
+            self.thinking = thinking
+            return AgentResult(
+                status=AgentStatus.SUCCESS,
+                findings=findings,
+            )
+        except Exception as e:
+            logger.warning("%s: parse failed: %s", self.__class__.__name__, e)
+            return AgentResult(
+                status=AgentStatus.FORMAT_ERROR,
                 findings=[],
                 error_message=str(e),
             )
