@@ -54,7 +54,7 @@ async def ensure_repo(
             return cache_path
 
         try:
-            await _clone(owner, repo, head_sha, token, cache_path)
+            await _clone_by_fetch(owner, repo, head_sha, token, cache_path)
             _evict_if_needed()
             return cache_path
         except Exception as e:
@@ -62,41 +62,6 @@ async def ensure_repo(
             if cache_path.exists():
                 shutil.rmtree(cache_path, ignore_errors=True)
             return None
-
-
-async def _clone(
-    owner: str,
-    repo: str,
-    head_sha: str,
-    token: str,
-    dest: Path,
-) -> None:
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    url = _clone_url(owner, repo, token)
-
-    proc = await asyncio.create_subprocess_exec(
-        "git", "clone", "--depth=1", "--filter=blob:none",
-        f"--branch={head_sha}",
-        url, str(dest),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
-    )
-    _, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
-
-    if proc.returncode != 0:
-        dest_tmp = dest.parent / f"{dest.name}_tmp"
-        dest_tmp.mkdir(parents=True, exist_ok=True)
-        try:
-            await _clone_by_fetch(owner, repo, head_sha, token, dest_tmp)
-            dest_tmp.rename(dest)
-        except Exception:
-            shutil.rmtree(dest_tmp, ignore_errors=True)
-            raise RuntimeError(
-                f"git clone failed: {_redact_token(stderr.decode(errors='replace'), token)[:500]}"
-            )
-    else:
-        await _set_public_remote(owner, repo, dest, token)
 
 
 async def _clone_by_fetch(
@@ -120,10 +85,28 @@ async def _clone_by_fetch(
         if proc.returncode != 0:
             raise RuntimeError(_redact_token(stderr.decode(errors="replace"), token)[:500])
 
-    await run("git", "init", str(dest))
-    await run("git", "-C", str(dest), "remote", "add", "origin", url)
-    await run("git", "-C", str(dest), "fetch", "--depth=1", "origin", head_sha)
-    await run("git", "-C", str(dest), "checkout", "FETCH_HEAD")
+    # GitHub does not allow fetching arbitrary SHAs by default.
+    # Clone the default branch first (shallow), then fetch the exact SHA.
+    proc = await asyncio.create_subprocess_exec(
+        "git", "clone", "--depth=1", "--filter=blob:none", url, str(dest),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env=env,
+    )
+    _, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+    if proc.returncode != 0:
+        raise RuntimeError(_redact_token(stderr.decode(errors="replace"), token)[:500])
+
+    # Deepen to reach head_sha if it's not the tip of the default branch.
+    fetch_proc = await asyncio.create_subprocess_exec(
+        "git", "-C", str(dest), "fetch", "--depth=1", "origin", head_sha,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env=env,
+    )
+    _, _ = await asyncio.wait_for(fetch_proc.communicate(), timeout=120)
+    if fetch_proc.returncode == 0:
+        await run("git", "-C", str(dest), "checkout", head_sha)
     await _set_public_remote(owner, repo, dest, token)
 
 

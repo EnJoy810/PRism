@@ -320,7 +320,6 @@ class ReviewGraph:
             return_exceptions=True,
         )
         logger.info("agents done: %.2fs", time.monotonic() - ta)
-
         agent_names = ["security", "performance", "quality"]
         agent_results: list[AgentResult] = []
         for r in results:

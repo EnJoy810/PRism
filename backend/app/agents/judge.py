@@ -2,13 +2,11 @@ import json
 import logging
 
 from app.models.agent import AgentResult, AgentStatus, FindingSchema, JudgeVerdict
-from app.services.evidence import added_diff_lines
 from app.services.llm import LLMClient
 
 logger = logging.getLogger(__name__)
 
 SEVERITY_ORDER = {"ERROR": 0, "WARNING": 1, "INFO": 2}
-EVIDENCE_REQUIRED = True
 
 _CATEGORY_KEYWORDS: dict[str, set[str]] = {
     "security": {"password", "credential", "injection", "xss", "csrf", "auth",
@@ -183,8 +181,8 @@ _SEMANTIC_DEDUP_PROMPT = """以下是在同一个文件里发现的多个问题�
 {findings_json}
 
 规则：
-- 同一行报的多个问题，如果描述的都是同一个现象（如"空指针"和"可能崩溃"是同一个），标记为重复
-- 不同行的问题如果描述不同现象，不算重复
+- 必须同时满足以下两个条件才能标记为重复：(1) 行号相同或相差 ≤3 行；(2) 描述的是完全相同的现象
+- 行号不同的问题，即使类型相似（如都是边界值错误、都是空指针），也不算重复——它们是独立的 bug
 - 宁可漏标重复，不可误标不重复"""
 
 
@@ -270,7 +268,7 @@ class JudgeAgent:
                     )},
                 ],
                 max_tokens=1024,
-                temperature=0.1,
+                temperature=0.0,
                 estimated_tokens=len(findings) * 60,
             )
 
@@ -325,9 +323,8 @@ class JudgeAgent:
                 continue
             all_findings.extend(r.findings)
 
-        # Pass 1: evidence filter + rule dedup
-        evidenced = self._filter_evidence(all_findings, diff)
-        deduped = self.dedup(evidenced)
+        # Pass 1: rule dedup（evidence filter 已移除——行号验证在 publication_gate 里做）
+        deduped = self.dedup(all_findings)
 
         # Pass 2: group by file → semantic dedup per file
         by_file = _group_by_file(deduped)
@@ -347,28 +344,6 @@ class JudgeAgent:
             merge_recommendation=decision,
             skipped_agents=skipped_agents,
         ).model_dump()
-
-    def _filter_evidence(
-        self,
-        findings: list[FindingSchema],
-        diff: str | None = None,
-    ) -> list[FindingSchema]:
-        if not EVIDENCE_REQUIRED:
-            return findings
-
-        added_lines = added_diff_lines(diff) if diff is not None else None
-
-        def _evidence_valid(f: FindingSchema) -> bool:
-            if not f.evidence or len(f.evidence) == 0:
-                return False
-            if added_lines is None:
-                return True
-            return any(
-                any(e in line for line in added_lines)
-                for e in f.evidence
-            )
-
-        return [f for f in findings if _evidence_valid(f)]
 
     def _filter_severity(
         self,
