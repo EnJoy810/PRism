@@ -101,9 +101,8 @@ class LLMClient:
         temperature: float = 0.0,
         top_p: float = 1.0,
         stream: bool = False,
-        token_hint: int | None = None,
+        estimated_tokens: int | None = None,
     ) -> str:
-        estimated_tokens = token_hint
         if estimated_tokens is None:
             estimated_tokens = sum(len(str(m.get("content", ""))) for m in messages) // 4
 
