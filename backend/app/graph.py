@@ -690,9 +690,17 @@ def _format_blast_radius(blast_radius: list[dict]) -> str:
     if not blast_radius:
         return ""
     lines = ["## [CROSS-FILE CONTEXT] 调用了被改函数的地方\n"]
+    all_callers: list[str] = []
     for item in blast_radius:
         lines.append(f"### 被改函数：`{item['changed_fn']}`\n")
         for caller in item["callers"]:
-            lines.append(f"**{caller['file']}:{caller['start_line']}** `{caller['fn']}`")
+            label = f"{caller['file']}:{caller['start_line']} `{caller['fn']}`"
+            lines.append(f"**{label}**")
             lines.append(f"```\n{caller['code']}\n```\n")
+            all_callers.append(label)
+    if all_callers:
+        lines.append(
+            "\n> **必须逐一检查以下每个调用方是否受到接口变更影响（不能跳过任何一个）：**\n"
+            + "\n".join(f"> - {c}" for c in all_callers)
+        )
     return "\n".join(lines)

@@ -70,6 +70,7 @@ class SecurityAgent(BaseAgent):
             parts.append(blast_section)
             parts.append(
                 "\n---\n[CROSS-FILE CONTEXT] 是调用了被改函数的其他文件代码。"
+                "必须对其中列出的每一个调用方逐一检查，不能只看第一个。"
                 "如果发现调用方因接口变更产生安全风险（如参数校验缺失、权限绕过），"
                 "可以报告，但必须将 evidence_source 设为 \"CONTEXT\"，"
                 "并在 evidence 里引用 [CROSS-FILE CONTEXT] 中的具体代码片段。\n"
