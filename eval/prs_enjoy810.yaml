@@ -1,0 +1,153 @@
+- id: prism-1
+  repo: EnJoy810/PRism
+  url: https://github.com/EnJoy810/PRism/pull/1
+  kind: dogfood-user-repo
+  title: "feat(frontend): 添加 PR URL 输入表单与 Mock Review 结果展示"
+  changed_files: 8
+  additions: 627
+  deletions: 17
+  notes: User-owned merged PR; useful for dogfood, not public benchmark.
+- id: prism-2
+  repo: EnJoy810/PRism
+  url: https://github.com/EnJoy810/PRism/pull/2
+  kind: dogfood-user-repo
+  title: "feat(frontend): 接入真实后端，优化三态体验"
+  changed_files: 10
+  additions: 109
+  deletions: 450
+  notes: User-owned merged PR; useful for dogfood, not public benchmark.
+- id: prism-3
+  repo: EnJoy810/PRism
+  url: https://github.com/EnJoy810/PRism/pull/3
+  kind: dogfood-user-repo
+  title: "feat(frontend): 添加 SSE 流式 Review 渲染"
+  changed_files: 2
+  additions: 150
+  deletions: 17
+  notes: User-owned merged PR; useful for dogfood, not public benchmark.
+- id: prism-4
+  repo: EnJoy810/PRism
+  url: https://github.com/EnJoy810/PRism/pull/4
+  kind: dogfood-user-repo
+  title: "feat(frontend): 添加 Review 配置面板"
+  changed_files: 4
+  additions: 103
+  deletions: 4
+  notes: User-owned merged PR; useful for dogfood, not public benchmark.
+- id: prism-5
+  repo: EnJoy810/PRism
+  url: https://github.com/EnJoy810/PRism/pull/5
+  kind: dogfood-user-repo
+  title: "feat(frontend): 添加统计面板与严重度筛选器"
+  changed_files: 3
+  additions: 64
+  deletions: 42
+  notes: User-owned merged PR; useful for dogfood, not public benchmark.
+- id: prism-6
+  repo: EnJoy810/PRism
+  url: https://github.com/EnJoy810/PRism/pull/6
+  kind: dogfood-user-repo
+  title: "fix: P0 端到端链路修复 — LLM JSON 解析、路由重构、dotenv 加载"
+  changed_files: 6
+  additions: 56
+  deletions: 38
+  notes: User-owned merged PR; useful for dogfood, not public benchmark.
+- id: prism-7
+  repo: EnJoy810/PRism
+  url: https://github.com/EnJoy810/PRism/pull/7
+  kind: dogfood-user-repo
+  title: "feat: 添加 AI Diff Scanner Panel"
+  changed_files: 6
+  additions: 512
+  deletions: 4
+  notes: User-owned merged PR; useful for dogfood, not public benchmark.
+- id: prism-8
+  repo: EnJoy810/PRism
+  url: https://github.com/EnJoy810/PRism/pull/8
+  kind: dogfood-user-repo
+  title: "feat(backend/models): 新增 RiskArea、MergeRecommendation 数据模型"
+  changed_files: 1
+  additions: 18
+  deletions: 0
+  notes: User-owned merged PR; useful for dogfood, not public benchmark.
+- id: prism-9
+  repo: EnJoy810/PRism
+  url: https://github.com/EnJoy810/PRism/pull/9
+  kind: dogfood-user-repo
+  title: "feat(backend/llm): LLM 提示词质量升级 + 结构化流式输出 + deepseek-v4-flash"
+  changed_files: 3
+  additions: 228
+  deletions: 52
+  notes: User-owned merged PR; useful for dogfood, not public benchmark.
+- id: prism-10
+  repo: EnJoy810/PRism
+  url: https://github.com/EnJoy810/PRism/pull/10
+  kind: dogfood-user-repo
+  title: "feat(frontend/types): 同步 RiskArea、MergeRecommendation 类型及 model 选项"
+  changed_files: 5
+  additions: 258
+  deletions: 63
+  notes: User-owned merged PR; useful for dogfood, not public benchmark.
+- id: prism-11
+  repo: EnJoy810/PRism
+  url: https://github.com/EnJoy810/PRism/pull/11
+  kind: dogfood-user-repo
+  title: "feat(frontend/ui): 新增 FileDiffViewer、PRUrlInput、ReviewResultsPanel 组件并重构 ReviewPage"
+  changed_files: 12
+  additions: 1848
+  deletions: 572
+  notes: Large user-owned merged PR; keep for stress testing, not default eval.
+- id: prism-12
+  repo: EnJoy810/PRism
+  url: https://github.com/EnJoy810/PRism/pull/12
+  kind: dogfood-user-repo
+  title: "feat(frontend/ui): 新增 SettingsDrawer 设置抽屉，支持模型切换"
+  changed_files: 4
+  additions: 280
+  deletions: 8
+  notes: User-owned merged PR; useful for dogfood, not public benchmark.
+- id: prism-13
+  repo: EnJoy810/PRism
+  url: https://github.com/EnJoy810/PRism/pull/13
+  kind: dogfood-user-repo
+  title: "fix(frontend/ui): 移除 IssueRow 占位按钮 + 修复流式 JSON 解析容错"
+  changed_files: 1
+  additions: 12
+  deletions: 25
+  notes: Small bugfix dogfood sample.
+- id: prism-14
+  repo: EnJoy810/PRism
+  url: https://github.com/EnJoy810/PRism/pull/14
+  kind: dogfood-user-repo
+  title: "refactor(frontend): 删除 7 个无引用的死代码文件"
+  changed_files: 7
+  additions: 0
+  deletions: 1293
+  notes: Deletion-heavy refactor dogfood sample.
+- id: prism-15
+  repo: EnJoy810/PRism
+  url: https://github.com/EnJoy810/PRism/pull/15
+  kind: dogfood-user-repo
+  title: "feat(backend+frontend): apiKey 端到端打通，前端可配置 DeepSeek API Key"
+  changed_files: 4
+  additions: 20
+  deletions: 10
+  notes: Security-sensitive API key flow dogfood sample.
+- id: prism-16
+  repo: EnJoy810/PRism
+  url: https://github.com/EnJoy810/PRism/pull/16
+  kind: dogfood-user-repo
+  title: "refactor(frontend/ui): 拆分 ReviewResultsPanel 为 7 个独立模块"
+  changed_files: 8
+  additions: 522
+  deletions: 654
+  notes: Refactor dogfood sample.
+- id: prism-17
+  repo: EnJoy810/PRism
+  url: https://github.com/EnJoy810/PRism/pull/17
+  kind: dogfood-user-repo
+  title: "refactor(frontend/ui): 统一 SettingsDrawer，Navbar 改用 common/SettingsDrawer"
+  changed_files: 2
+  additions: 8
+  deletions: 115
+  notes: Small refactor dogfood sample.

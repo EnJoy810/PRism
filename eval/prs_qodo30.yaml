@@ -1,0 +1,1543 @@
+- id: qodo-ghost-1
+  repo: agentic-review-benchmarks/Ghost
+  url: https://github.com/agentic-review-benchmarks/Ghost/pull/1
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-ghost-1-i1
+    file: ghost/core/core/boot.js
+    line_range:
+    - 351
+    - 377
+    title_keywords:
+    - Slack
+    - notifications
+    - functioning
+    - boot
+    evidence_keywords:
+    - await
+    - Promise
+    - emailAddressService
+    - boot
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The slack.listen() call was removed from the service initialization in
+      Promise.all, but the slack service module is still imported. This means the
+      Slack service event listeners for 'post.published' and 'slack.test' events are
+      never registered during boot. As a result, posts published on the site will
+      not trigger Slack webhook notifications even when Slack integration is configured
+      correctly. The slack.listen() method registers critical event handlers that
+      connect the Ghost event system to the Slack notification service, and without
+      this call, the integration is completely non-functional.
+  - id: qodo-ghost-1-i2
+    file: ghost/core/core/boot.js
+    line_range:
+    - 368
+    - 368
+    title_keywords:
+    - Post
+    - scheduling
+    - fail
+    - boot
+    evidence_keywords:
+    - webhooks
+    - listen
+    - scheduling
+    - boot
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: 'The scheduling.init() call is missing the required apiUrl parameter that
+      was previously passed via urlUtils.urlFor(''api'', {type: ''admin''}, true).
+      The PostScheduler constructor explicitly checks for this parameter and throws
+      an IncorrectUsageError if it''s not provided. This will cause Ghost to crash
+      during the boot sequence when attempting to initialize the scheduling service.
+      The apiUrl is critical for the scheduling service as it''s used to generate
+      signed admin tokens and callback URLs for scheduled post publishing. Without
+      this parameter, the scheduled publishing feature cannot function.'
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-ghost-2
+  repo: agentic-review-benchmarks/Ghost
+  url: https://github.com/agentic-review-benchmarks/Ghost/pull/2
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-ghost-2-i1
+    file: apps/comments-ui/src/components/content/forms/form.tsx
+    line_range:
+    - 311
+    - 315
+    title_keywords:
+    - Missing
+    - optional
+    - chaining
+    - form
+    evidence_keywords:
+    - openStyles
+    - isOpen
+    - const
+    - form
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The code accesses `openForm.in_reply_to_snippet` without optional chaining,
+      but openForm can be undefined when rendering certain forms (like the main comment
+      form). The original code correctly used `openForm?.in_reply_to_snippet` with
+      optional chaining. This will cause a "Cannot read property 'in_reply_to_snippet'
+      of undefined" runtime error when the FormWrapper is rendered without an openForm
+      prop, crashing the component.
+  - id: qodo-ghost-2-i2
+    file: apps/comments-ui/src/components/content/forms/form.tsx
+    line_range:
+    - 258
+    - 265
+    title_keywords:
+    - Editor
+    - editability
+    - incorrectly
+    - form
+    evidence_keywords:
+    - useEffect
+    - editor
+    - return
+    - form
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The Form component determines whether the editor should be editable by
+      checking `member?.expertise` instead of `memberName` (which is derived from
+      `member?.name`). According to the comment and the original logic, the editor
+      should be disabled only when the member doesn't have a name or when submitting.
+      Expertise is optional metadata, but name is required for posting. This bug prevents
+      users without expertise from typing in the comment editor, even though they
+      have a valid name and should be allowed to comment.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-ghost-3
+  repo: agentic-review-benchmarks/Ghost
+  url: https://github.com/agentic-review-benchmarks/Ghost/pull/3
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-ghost-3-i1
+    file: ghost/core/core/server/services/email-service/DomainWarmingService.ts
+    line_range:
+    - 124
+    - 129
+    title_keywords:
+    - High
+    - volume
+    - threshold
+    - DomainWarmingService
+    evidence_keywords:
+    - high
+    - volume
+    - senders
+    - DomainWarmingService
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The condition uses `>=` instead of `>` when checking if lastCount qualifies
+      for high-volume capping at exactly 400,000 emails. According to the documented
+      scaling table, 400k should use the 2× multiplier from the thresholds array,
+      but with this bug it immediately applies the high-volume cap of 1.2× or +75k
+      absolute increase. For a site hitting exactly 400k messages, this means getting
+      a limit of 480k (1.2×) or 475k (+75k) instead of the expected 800k (2×). This
+      creates a significant bottleneck at a critical growth milestone and breaks the
+      documented warmup progression.
+  - id: qodo-ghost-3-i2
+    file: ghost/core/core/server/services/email-service/DomainWarmingService.ts
+    line_range:
+    - 131
+    - 135
+    title_keywords:
+    - Threshold
+    - boundary
+    - values
+    - DomainWarmingService
+    evidence_keywords:
+    - const
+    - threshold
+    - WARMUP_SCALING_TABLE
+    - DomainWarmingService
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The loop uses `<` instead of `<=` when comparing lastCount to threshold
+      limits. This causes exact boundary values (1000, 5000, 100000, 400000) to incorrectly
+      skip their tier and fall through to the next scaling factor or the fallback
+      logic. For example, a site with exactly 1000 previous emails will bypass the
+      1.25× tier and incorrectly use 1.5× scaling (getting 1500 instead of 1250).
+      Similarly, 5000 will use 1.75× instead of 1.5×, and 100000 will use 2× instead
+      of 1.75×. This creates unexpected jumps in scaling at precisely the documented
+      threshold boundaries.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-ghost-4
+  repo: agentic-review-benchmarks/Ghost
+  url: https://github.com/agentic-review-benchmarks/Ghost/pull/4
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-ghost-4-i1
+    file: apps/posts/src/views/comments/components/comments-list.tsx
+    line_range:
+    - 92
+    - 104
+    title_keywords:
+    - Missing
+    - dependency
+    - useEffect
+    - comments-list
+    evidence_keywords:
+    - useEffect
+    - const
+    - checkIfClamped
+    - comments-list
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The CommentContent component's useEffect hook has an empty dependency
+      array, but it uses item.html to determine if content should be clamped. When
+      a comment's HTML content changes (e.g., after an edit or when new data is loaded),
+      the clamp detection won't re-run. This means the 'Show more' button may appear
+      when it shouldn't or disappear when it should still be visible, creating a poor
+      user experience. The dependency array should include item.html to ensure the
+      clamp detection re-runs whenever the content changes.
+  - id: qodo-ghost-4-i2
+    file: apps/posts/src/views/comments/components/comments-list.tsx
+    line_range:
+    - 236
+    - 248
+    title_keywords:
+    - Filter
+    - button
+    - becomes
+    - comments-list
+    evidence_keywords:
+    - item
+    - post
+    - title
+    - comments-list
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The conditional check for rendering the post title button was changed
+      from `item.post?.id && item.post?.title && onAddFilter` to `item.post?.id &&
+      item.post?.title`, removing the onAddFilter null check. However, the button's
+      onClick handler still calls onAddFilter('post', item.post!.id). Since onAddFilter
+      is now a required prop in the TypeScript signature but the runtime check was
+      removed, if onAddFilter is ever undefined or null at runtime, clicking the post
+      title button will throw an error and crash the component. The original three-part
+      condition was protecting against this scenario.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-ghost-5
+  repo: agentic-review-benchmarks/Ghost
+  url: https://github.com/agentic-review-benchmarks/Ghost/pull/5
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-ghost-5-i1
+    file: apps/signup-form/src/utils/helpers.tsx
+    line_range:
+    - 40
+    - 46
+    title_keywords:
+    - Potential
+    - undefined
+    - return
+    - helpers
+    evidence_keywords:
+    - export
+    - function
+    - getUrlHistory
+    - helpers
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The getUrlHistory() function can now return undefined when the form is
+      embedded on the same host and getDefaultUrlHistory() returns undefined (e.g.,
+      when sessionStorage is empty or invalid). This violates the URLHistory return
+      type contract and will cause a runtime error when the API tries to use the history
+      in sendMagicLink(), as it expects an array. The original code properly handled
+      this by checking 'if (history)' before returning, ensuring a fallback to the
+      constructed history array.
+  - id: qodo-ghost-5-i2
+    file: apps/signup-form/src/components/pages/form-page.tsx
+    line_range:
+    - 27
+    - 30
+    title_keywords:
+    - Loading
+    - state
+    - reset
+    - form-page
+    evidence_keywords:
+    - minimal
+    - success
+    - page
+    - form-page
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: When the form is in minimal mode and successfully sends a magic link,
+      the loading state is set to true but never reset to false. This causes the submit
+      button to remain disabled with a loading spinner showing indefinitely, preventing
+      users from resubmitting. The non-minimal mode correctly resets loading through
+      setPage(), but minimal mode now lacks the setLoading(false) call that was removed,
+      creating an inconsistent and broken user experience.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-ghost-6
+  repo: agentic-review-benchmarks/Ghost
+  url: https://github.com/agentic-review-benchmarks/Ghost/pull/6
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-ghost-6-i1
+    file: ghost/core/core/server/services/member-welcome-emails/jobs/index.js
+    line_range:
+    - 15
+    - 15
+    title_keywords:
+    - scheduler
+    - never
+    - schedule
+    - index
+    evidence_keywords:
+    - async
+    - scheduleMemberWelcomeEmailJob
+    - config
+    - index
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The condition `hasScheduled.processOutbox && !process.env.NODE_ENV.startsWith('test')`
+      is incorrect - it checks if the job is already scheduled before scheduling it,
+      creating a logical impossibility. The job will never be scheduled on the first
+      call since `hasScheduled.processOutbox` starts as `false`. This should be `!hasScheduled.processOutbox`
+      to schedule the job when it hasn't been scheduled yet. This breaks the welcome
+      email processing functionality entirely, as the background job that processes
+      the outbox entries will never be registered.
+  - id: qodo-ghost-6-i2
+    file: ghost/core/core/server/services/members/members-api/repositories/MemberRepository.js
+    line_range:
+    - 342
+    - 342
+    title_keywords:
+    - Incorrect
+    - logical
+    - operator
+    - MemberRepository
+    evidence_keywords:
+    - const
+    - memberAddOptions
+    - options
+    - MemberRepository
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: 'The condition uses OR (`||`) instead of AND (`&&`) when checking whether
+      to create welcome email outbox entries. This means welcome emails will be triggered
+      if EITHER the config is set OR the source is ''member'', instead of requiring
+      BOTH conditions. This causes two problems: (1) welcome emails are sent even
+      when the feature is disabled (config not set) as long as source is ''member'',
+      and (2) welcome emails are sent for disallowed sources (like ''import'' or ''admin'')
+      when the config is set. The correct logic should require both the feature to
+      be enabled AND the source to be in the allowed list.'
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-ghost-7
+  repo: agentic-review-benchmarks/Ghost
+  url: https://github.com/agentic-review-benchmarks/Ghost/pull/7
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-ghost-7-i1
+    file: ghost/core/core/server/services/members/members-api/members-api.js
+    line_range:
+    - 18
+    - 19
+    title_keywords:
+    - Incorrect
+    - require
+    - path
+    - members-api
+    evidence_keywords:
+    - const
+    - EmailSuppressedEvent
+    - require
+    - members-api
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The require statement references 'magic-link' (kebab-case) but the actual
+      file is still named 'MagicLink.js' (PascalCase). This PR renamed many files
+      to kebab-case, but this file was not renamed - it remains as MagicLink.js. When
+      this code executes, Node.js will throw a MODULE_NOT_FOUND error because the
+      path './../../lib/magic-link/magic-link' does not exist. The correct path should
+      be './../../lib/magic-link/MagicLink' to match the actual file. This will cause
+      the entire members API to fail to initialize, breaking member authentication,
+      signup, and magic link functionality across the application.
+  - id: qodo-ghost-7-i2
+    file: ghost/core/core/server/services/donations/donation-service-wrapper.js
+    line_range:
+    - 10
+    - 11
+    title_keywords:
+    - Incorrect
+    - require
+    - path
+    - donation-service-wrapper
+    evidence_keywords:
+    - const
+    - DonationBookshelfRepository
+    - require
+    - donation-service-wrapper
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The require statement uses 'DonationBookshelfRepository' (PascalCase)
+      but the actual file was renamed to 'donation-bookshelf-repository.js' (kebab-case)
+      as part of this PR's refactoring. When the init() method is called, Node.js
+      will fail to find the module at './DonationBookshelfRepository' and throw a
+      MODULE_NOT_FOUND error. This breaks the donation service initialization, preventing
+      the application from tracking and storing donation payments. The correct path
+      should be './donation-bookshelf-repository' to match the renamed file.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-ghost-8
+  repo: agentic-review-benchmarks/Ghost
+  url: https://github.com/agentic-review-benchmarks/Ghost/pull/8
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-ghost-8-i1
+    file: ghost/i18n/locales/zh/portal.json
+    line_range:
+    - 68
+    - 72
+    title_keywords:
+    - Translation
+    - inconsistency
+    - Enter
+    - portal
+    evidence_keywords:
+    - Ends
+    - offerEndDate
+    - Enter
+    - portal
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The PR introduces an inconsistency in the Chinese translation for the
+      'Enter your name' input field. In portal.json line 71, it's translated as '输入您的名字'
+      (enter your first name), which suggests only a first name is needed. However,
+      based on the context of Ghost's user registration and profile system, and the
+      fact that the 'Name' field itself should be '姓名' (full name), this creates a
+      mismatch between what the label asks for ('名字' - first name) and what the system
+      actually expects ('姓名' - full name). This can cause user confusion during registration
+      and profile completion, potentially leading to incomplete or incorrectly formatted
+      name entries.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-ghost-9
+  repo: agentic-review-benchmarks/Ghost
+  url: https://github.com/agentic-review-benchmarks/Ghost/pull/9
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-ghost-9-i1
+    file: ghost/core/core/server/services/email-service/DomainWarmingService.ts
+    line_range:
+    - 75
+    - 75
+    title_keywords:
+    - Incorrect
+    - rounding
+    - calculation
+    - DomainWarmingService
+    evidence_keywords:
+    - data
+    - length
+    - return
+    - DomainWarmingService
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The getDaysSinceFirstEmail method uses Math.ceil instead of Math.floor
+      to calculate days since the first email. This causes the warmup to start one
+      day ahead of schedule. For example, on the same day an email is sent (even minutes
+      after), the partial day will round up to day 1 instead of day 0. This breaks
+      the entire 42-day warmup progression as all subsequent calculations will be
+      offset by one day, causing the service to use higher email limits than intended
+      for each actual day, potentially harming domain reputation by warming up too
+      aggressively.
+  - id: qodo-ghost-9-i2
+    file: ghost/core/core/server/services/email-service/DomainWarmingService.ts
+    line_range:
+    - 85
+    - 86
+    title_keywords:
+    - error
+    - warmup
+    - completion
+    - DomainWarmingService
+    evidence_keywords:
+    - const
+    - await
+    - getDaysSinceFirstEmail
+    - DomainWarmingService
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The condition checking if warmup is complete uses `day > this.#warmupConfig.totalDays`
+      instead of `day >= this.#warmupConfig.totalDays`. With a 42-day warmup period
+      (totalDays=42), this means the warmup won't complete until day 43 instead of
+      day 42. On day 42, the system will still calculate and apply a limit instead
+      of returning Infinity to indicate unlimited sending. This extends the warmup
+      period by one full day, delaying when users can send emails at full volume and
+      potentially causing confusion when the warmup doesn't complete as documented.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-ghost-10
+  repo: agentic-review-benchmarks/Ghost
+  url: https://github.com/agentic-review-benchmarks/Ghost/pull/10
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-ghost-10-i1
+    file: apps/activitypub/src/views/Preferences/components/BlueskySharing.tsx
+    line_range:
+    - 48
+    - 55
+    title_keywords:
+    - Missing
+    - error
+    - handling
+    - BlueskySharing
+    evidence_keywords:
+    - const
+    - handleEnable
+    - async
+    - BlueskySharing
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The handleEnable function removes the try-catch block that was wrapping
+      the enableBlueskyMutation call. When the API call fails (network error, server
+      error, etc.), the loading state is never reset to false, leaving the user stuck
+      with a spinning loader and no way to retry. This is inconsistent with the handleDisable
+      function which properly handles errors. The bug causes a poor user experience
+      where users must refresh the page to recover from any API failure.
+  - id: qodo-ghost-10-i2
+    file: apps/activitypub/src/views/Preferences/components/BlueskySharing.tsx
+    line_range:
+    - 103
+    - 117
+    title_keywords:
+    - Polling
+    - logic
+    - performs
+    - BlueskySharing
+    evidence_keywords:
+    - const
+    - confirmHandleInterval
+    - setInterval
+    - BlueskySharing
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The confirmation polling interval increments the retry counter after checking
+      if the limit is reached, combined with changing the condition from `>` to `>=`.
+      This creates an off-by-one error where the system will actually make 13 API
+      calls (retries 0-12) instead of the intended 12 calls defined by MAX_CONFIRMATION_RETRIES.
+      The counter starts at 0, gets incremented to 12, makes a call, then on the next
+      iteration checks if 12 >= 12 and only then stops. This wastes API resources
+      and delays the timeout error message by one additional polling interval (5 seconds).
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-ghost-11
+  repo: agentic-review-benchmarks/Ghost
+  url: https://github.com/agentic-review-benchmarks/Ghost/pull/11
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-ghost-11-i1
+    file: apps/shade/src/components/ui/filters.tsx
+    line_range:
+    - 1049
+    - 1053
+    title_keywords:
+    - Race
+    - condition
+    - search
+    - filters
+    evidence_keywords:
+    - const
+    - handleClose
+    - setOpen
+    - filters
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The handleClose function was modified to clear the search input synchronously
+      using setSearchInput('') instead of the debounced setTimeout(() => setSearchInput(''),
+      200). This creates a race condition where the search input is cleared while
+      the popover closing animation is still running, causing a visible flash where
+      the filtered results disappear before the popover closes. The original implementation
+      used a 200ms delay to allow the popover animation to complete before clearing
+      the search state, preventing visual artifacts. This bug affects user experience
+      by showing jarring UI state changes during the transition.
+  - id: qodo-ghost-11-i2
+    file: apps/shade/src/components/ui/filters.tsx
+    line_range:
+    - 1275
+    - 1278
+    title_keywords:
+    - Missing
+    - handleClose
+    - call
+    - filters
+    evidence_keywords:
+    - else
+    - onChange
+    - option
+    - filters
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: In the unselected options section for single-select mode, the code calls
+      setOpen(false) but fails to call handleClose(), unlike the multiselect path
+      which properly calls handleClose() when autoCloseOnSelect is enabled. This means
+      when a user selects a single option, the popover closes but the search input
+      state is never cleared, causing the next time the popover opens to show stale
+      search results and filtered options from the previous interaction. The handleClose()
+      function is responsible for clearing the search input and triggering the onClose
+      callback, both of which are now skipped in single-select scenarios.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-ghost-12
+  repo: agentic-review-benchmarks/Ghost
+  url: https://github.com/agentic-review-benchmarks/Ghost/pull/12
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-ghost-12-i1
+    file: ghost/core/core/server/services/tinybird/TinybirdService.js
+    line_range:
+    - 97
+    - 99
+    title_keywords:
+    - Token
+    - caching
+    - stores
+    - TinybirdService
+    evidence_keywords:
+    - _serverToken
+    - _isJWTExpired
+    - const
+    - TinybirdService
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: 'In the getToken method, when caching the JWT token, the code now stores
+      the entire tokenData object (containing both ''token'' and ''exp'' properties)
+      instead of just extracting the token string. This causes the returned token
+      structure to be malformed as {token: {token: string, exp: number}, exp: number}
+      instead of the expected {token: string, exp: number}. This will break any consumers
+      of the Tinybird API (like the /api/tinybird/token endpoint and stats/tinybird.js)
+      that expect a string token value, causing authentication failures when making
+      requests to Tinybird pipes.'
+  - id: qodo-ghost-12-i2
+    file: ghost/core/core/server/services/tinybird/TinybirdService.js
+    line_range:
+    - 162
+    - 170
+    title_keywords:
+    - signature
+    - validation
+    - bypassed
+    - TinybirdService
+    evidence_keywords:
+    - _isJWTExpired
+    - token
+    - bufferSeconds
+    - TinybirdService
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The _isJWTExpired method now uses jwt.decode() instead of jwt.verify()
+      to check token expiration. While jwt.verify() validates the token's signature
+      and ensures it hasn't been tampered with, jwt.decode() only decodes the token
+      without any cryptographic validation. This creates a security vulnerability
+      where expired, tampered, or forged tokens could be accepted as valid. An attacker
+      could potentially modify token claims (like extending expiration or changing
+      site_uuid in scopes) and the system would accept the malicious token, bypassing
+      authentication controls for Tinybird API access.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-ghost-13
+  repo: agentic-review-benchmarks/Ghost
+  url: https://github.com/agentic-review-benchmarks/Ghost/pull/13
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-ghost-13-i1
+    file: apps/admin-x-framework/src/providers/framework-provider.tsx
+    line_range:
+    - 90
+    - 90
+    title_keywords:
+    - props
+    - ordered
+    - incorrectly
+    - framework-provider
+    evidence_keywords:
+    - FrameworkContext
+    - Provider
+    - children
+    - framework-provider
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The rule requires JSX props to be ordered with regular props before the
+      children prop. In the FrameworkContext.Provider component, the children prop
+      appears before the value prop, violating the standard ordering convention where
+      regular props should come before children.
+  - id: qodo-ghost-13-i2
+    file: apps/admin-x-framework/src/utils/stats-config.ts
+    line_range:
+    - 17
+    - 18
+    title_keywords:
+    - Incorrect
+    - version
+    - suffix
+    - stats-config
+    evidence_keywords:
+    - Append
+    - version
+    - suffix
+    - stats-config
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The frontend code constructs Tinybird endpoint URLs with the version prefix
+      in reverse order compared to the backend. The frontend builds URLs as `v2_api_kpis`
+      (version first) while the backend expects `api_kpis_v2` (version last). This
+      mismatch causes the frontend to call non-existent endpoints when the version
+      config is set, resulting in failed API calls and missing analytics data. The
+      comment correctly describes the pattern as 'api_kpis_v2' but the implementation
+      reverses this to `${config.version}_${endpointName}`.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-aspnetcore-1
+  repo: agentic-review-benchmarks/aspnetcore
+  url: https://github.com/agentic-review-benchmarks/aspnetcore/pull/1
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-aspnetcore-1-i1
+    file: src/Components/test/E2ETest/ServerRenderingTests/RedirectionTest.cs
+    line_range:
+    - 28
+    - 35
+    title_keywords:
+    - Stale
+    - element
+    - reference
+    - RedirectionTest
+    evidence_keywords:
+    - public
+    - override
+    - async
+    - RedirectionTest
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: In the InitializeAsync method, _originalH1Element is captured by calling
+      Browser.Exists(By.TagName("h1")) before navigating to the test page. This captures
+      an element from whatever page the browser was previously on (from a prior test),
+      then the Navigate() call loads the /redirect page. The stored element reference
+      now points to a detached DOM node from the old page, making it stale. When test
+      methods later access _originalH1Element.Text, they will encounter StaleElementReferenceException
+      or get incorrect values because the element belongs to a different page's DOM
+      that no longer exists in the browser.
+  - id: qodo-aspnetcore-1-i2
+    file: src/Components/test/E2ETest/ServerRenderingTests/RedirectionTest.cs
+    line_range:
+    - 112
+    - 115
+    title_keywords:
+    - Browser
+    - navigation
+    - uses
+    - RedirectionTest
+    evidence_keywords:
+    - back
+    - takes
+    - place
+    - RedirectionTest
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: In the RedirectEnhancedGetToInternal test, after clicking a link that
+      redirects from /redirect to /scroll-to-hash, the test attempts to verify that
+      browser back navigation works correctly. However, the code calls Browser.Navigate().Forward()
+      instead of Browser.Navigate().Back(). Since there is no forward history (the
+      browser just navigated forward to the current page), Forward() does nothing
+      and the browser remains at /scroll-to-hash. The subsequent assertions expect
+      the browser to be back at /redirect with the "Redirections" heading, but it's
+      still at the redirected page, causing the test to fail. The comment explicitly
+      states "See that 'back' takes you to the place from before the redirection"
+      but the code does the opposite action.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-aspnetcore-2
+  repo: agentic-review-benchmarks/aspnetcore
+  url: https://github.com/agentic-review-benchmarks/aspnetcore/pull/2
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-aspnetcore-2-i1
+    file: src/Components/test/E2ETest/ServerExecutionTests/WebSocketCompressionTests.cs
+    line_range:
+    - 107
+    - 110
+    title_keywords:
+    - Incorrect
+    - boolean
+    - operator
+    - WebSocketCompressionTests
+    evidence_keywords:
+    - Assert
+    - 'True'
+    - ParseErrorMessageRegexOld
+    - WebSocketCompressionTests
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The test assertion uses AND (&&) operator instead of OR (||) when checking
+      if the log message matches either the old or new CSP error pattern. This causes
+      the test to fail because a log message cannot simultaneously match both regex
+      patterns - they represent different browser error message formats. The original
+      intent was to accept either format, but the AND operator requires both patterns
+      to match at the same time, which is impossible. This will cause the test to
+      fail even when receiving a valid CSP error message in either format.
+  - id: qodo-aspnetcore-2-i2
+    file: src/SignalR/server/StackExchangeRedis/test/RedisEndToEnd.cs
+    line_range:
+    - 210
+    - 214
+    title_keywords:
+    - Disposal
+    - order
+    - causing
+    - RedisEndToEnd
+    evidence_keywords:
+    - await
+    - connection
+    - InvokeAsync
+    - RedisEndToEnd
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The connection disposal order is reversed - disposing secondConnection
+      before the connection that is still being used. In the test, 'connection' performs
+      an InvokeAsync call and its TaskCompletionSource (tcs) is awaited immediately
+      before disposal. However, disposing secondConnection first may cause premature
+      cleanup of shared resources or message handlers since both connections share
+      the same user ('*'). This can lead to flaky test behavior where the connection's
+      pending operations are interrupted by the disposal of secondConnection, especially
+      in distributed scenarios where both connections interact with the same Redis
+      backplane.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-aspnetcore-3
+  repo: agentic-review-benchmarks/aspnetcore
+  url: https://github.com/agentic-review-benchmarks/aspnetcore/pull/3
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-aspnetcore-3-i1
+    file: src/Shared/CertificateGeneration/UnixCertificateManager.cs
+    line_range:
+    - 373
+    - 376
+    title_keywords:
+    - Case
+    - insensitive
+    - path
+    - UnixCertificateManager
+    evidence_keywords:
+    - return
+    - string
+    - Equals
+    - UnixCertificateManager
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The SSL_CERT_DIR validation logic uses StringComparison.OrdinalIgnoreCase
+      when comparing Unix file paths. On Unix systems, file paths are case-sensitive,
+      so '/home/user/certs' and '/home/user/Certs' are different directories. This
+      case-insensitive comparison will incorrectly match different directories, causing
+      the tool to report that the certificate directory is already configured when
+      it's not, preventing proper certificate trust setup and leaving certificates
+      untrusted.
+  - id: qodo-aspnetcore-3-i2
+    file: src/Shared/CertificateGeneration/UnixCertificateManager.cs
+    line_range:
+    - 364
+    - 365
+    title_keywords:
+    - Using
+    - display
+    - path
+    - UnixCertificateManager
+    evidence_keywords:
+    - existingDirs
+    - existingSslCertDir
+    - Split
+    - UnixCertificateManager
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The code uses prettyCertDir (which contains '$HOME' placeholder for display
+      purposes) instead of certDir (the actual file system path) when computing certDirFullPath.
+      Since prettyCertDir contains the literal string '$HOME' rather than the expanded
+      home directory path, Path.GetFullPath() will fail to resolve it correctly or
+      resolve it to an incorrect path. This causes the directory comparison logic
+      to always fail, preventing the tool from detecting when the certificate directory
+      is already configured in SSL_CERT_DIR, resulting in unnecessary warning messages
+      to users who have already configured their environment correctly.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-aspnetcore-4
+  repo: agentic-review-benchmarks/aspnetcore
+  url: https://github.com/agentic-review-benchmarks/aspnetcore/pull/4
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-aspnetcore-4-i1
+    file: src/Components/Web/src/Forms/ExpressionMemberAccessor.cs
+    line_range:
+    - 84
+    - 86
+    title_keywords:
+    - Incomplete
+    - cache
+    - clearing
+    - ExpressionMemberAccessor
+    evidence_keywords:
+    - private
+    - static
+    - void
+    - ExpressionMemberAccessor
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The ClearCache method only clears _memberInfoCache but fails to clear
+      _displayNameCache (line 85). During hot reload scenarios when metadata updates
+      occur, the HotReloadManager triggers ClearCache to ensure fresh metadata is
+      loaded. However, with _displayNameCache not being cleared, the component will
+      continue to display stale display names from cached MemberInfo objects even
+      after the attributes have been modified in code. This breaks the hot reload
+      functionality for DisplayAttribute and DisplayNameAttribute changes, requiring
+      developers to restart the application to see attribute changes take effect.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-aspnetcore-5
+  repo: agentic-review-benchmarks/aspnetcore
+  url: https://github.com/agentic-review-benchmarks/aspnetcore/pull/5
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-aspnetcore-5-i1
+    file: src/Components/Server/test/Circuits/ServerComponentDeserializerTest.cs
+    line_range:
+    - 121
+    - 124
+    title_keywords:
+    - Incorrect
+    - type
+    - conversion
+    - ServerComponentDeserializerTest
+    evidence_keywords:
+    - parameters
+    - deserializedDescriptor
+    - Parameters
+    - ServerComponentDeserializerTest
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The test validates a generic component with an int type parameter but
+      uses Convert.ToInt64 instead of Convert.ToInt32 to assert the parameter value.
+      Since the parameter is defined as int (System.Int32) in GenericTestComponent<int>,
+      this creates a type mismatch. The assertion compares a long (Int64) value to
+      the expected int (Int32) value 42, which will cause the test to fail even though
+      the component deserialization is working correctly. This breaks the validation
+      logic for generic component parameters.
+  - id: qodo-aspnetcore-5-i2
+    file: src/Components/Server/test/Circuits/ServerComponentDeserializerTest.cs
+    line_range:
+    - 142
+    - 144
+    title_keywords:
+    - Incorrect
+    - sequence
+    - validation
+    - ServerComponentDeserializerTest
+    evidence_keywords:
+    - secondDescriptor
+    - descriptors
+    - Assert
+    - ServerComponentDeserializerTest
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The test validates deserialization of multiple closed generic components
+      but checks that both descriptors have sequence number 0 instead of verifying
+      that the second descriptor has sequence number 1. Component descriptors in a
+      collection must have sequential ordering starting from 0, and this test should
+      verify the second component has sequence 1. This incorrect assertion fails to
+      validate proper sequence ordering, which is critical for component initialization
+      and rendering order in Blazor.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-aspnetcore-6
+  repo: agentic-review-benchmarks/aspnetcore
+  url: https://github.com/agentic-review-benchmarks/aspnetcore/pull/6
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-aspnetcore-6-i1
+    file: src/Components/WebAssembly/WebAssembly.Authentication/src/RemoteAuthenticatorViewCore.cs
+    line_range:
+    - 281
+    - 281
+    title_keywords:
+    - Logout
+    - validation
+    - incorrectly
+    - RemoteAuthenticatorViewCore
+    evidence_keywords:
+    - private
+    - async
+    - Task
+    - RemoteAuthenticatorViewCore
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The sign-out validation logic was modified to remove the null check for
+      Navigation.HistoryEntryState before calling ValidateSignOutRequestState(). This
+      causes ValidateSignOutRequestState() to return false when HistoryEntryState
+      is null (since GetCachedNavigationState() returns null), which incorrectly redirects
+      users to the logout failure page even for legitimate logout operations. The
+      original code correctly allowed logout when HistoryEntryState is null by using
+      the condition 'HistoryEntryState != null && !ValidateSignOutRequestState()',
+      which only validated if state existed. This breaks backward compatibility with
+      logout flows that don't use history state.
+  - id: qodo-aspnetcore-6-i2
+    file: src/Components/WebAssembly/WebAssembly.Authentication/src/Services/AccessTokenNotAvailableException.cs
+    line_range:
+    - 38
+    - 41
+    title_keywords:
+    - Missing
+    - 'null'
+    - check
+    - AccessTokenNotAvailableException
+    evidence_keywords:
+    - public
+    - void
+    - Redirect
+    - AccessTokenNotAvailableException
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The Redirect() method condition was changed from checking both InteractionOptions
+      and InteractiveRequestUrl to only checking InteractionOptions. This creates
+      a bug where if InteractionOptions is not null but InteractiveRequestUrl is null,
+      the code will call NavigateToLogin with a null URL parameter at line 40. The
+      NavigateToLogin method expects a non-null URL, so this will cause a null reference
+      exception or navigation failure. The original PR properly validated both properties
+      before choosing the navigation method.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-aspnetcore-7
+  repo: agentic-review-benchmarks/aspnetcore
+  url: https://github.com/agentic-review-benchmarks/aspnetcore/pull/7
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-aspnetcore-7-i1
+    file: src/Components/Web.JS/src/Rendering/JSRootComponents.ts
+    line_range:
+    - 126
+    - 130
+    title_keywords:
+    - Inverted
+    - renderer
+    - type
+    - JSRootComponents
+    evidence_keywords:
+    - manager
+    - currentRendererId
+    - rendererId
+    - JSRootComponents
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The condition checking for different renderer types has been inverted
+      from `!==` to `===`. This causes the function to throw an error when the SAME
+      renderer type tries to re-enable JS root components (e.g., during circuit restart),
+      which is the exact scenario that should be allowed. The original intent was
+      to throw an error only when a DIFFERENT renderer type attempts to enable root
+      components. This bug breaks circuit restart functionality, causing applications
+      to fail when users reconnect after a circuit disconnect.
+  - id: qodo-aspnetcore-7-i2
+    file: src/Components/Web.JS/src/Rendering/JSRootComponents.ts
+    line_range:
+    - 132
+    - 137
+    title_keywords:
+    - Missing
+    - parameter
+    - update
+    - JSRootComponents
+    evidence_keywords:
+    - same
+    - renderer
+    - type
+    - JSRootComponents
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The assignment `jsComponentParametersByIdentifier = jsComponentParameters;`
+      has been removed from the re-enabling logic. When a circuit restarts and `enableJSRootComponents`
+      is called again with new parameters, the global `jsComponentParametersByIdentifier`
+      is not updated. This causes the application to continue using stale parameters
+      from the previous circuit. The `DynamicRootComponent` class constructor and
+      methods rely on `jsComponentParametersByIdentifier` to retrieve component parameter
+      definitions, so they will operate with outdated metadata after a circuit restart.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-aspnetcore-8
+  repo: agentic-review-benchmarks/aspnetcore
+  url: https://github.com/agentic-review-benchmarks/aspnetcore/pull/8
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-aspnetcore-8-i1
+    file: src/OpenApi/gen/XmlCommentGenerator.Emitter.cs
+    line_range:
+    - 380
+    - 383
+    title_keywords:
+    - Remarks
+    - overwrite
+    - Summary
+    - XmlCommentGenerator.Emitter
+    evidence_keywords:
+    - methodComment
+    - Remarks
+    - remarks
+    - XmlCommentGenerator.Emitter
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: When XML remarks are present, they are incorrectly assigned to operation.Summary
+      instead of operation.Description. This causes the remarks to overwrite the summary
+      that was set earlier in the code (line 374). The XML documentation model distinguishes
+      between summary (brief description) and remarks (detailed notes), and they should
+      map to different OpenAPI fields. This bug causes the loss of the summary information
+      when remarks are present, resulting in incorrect OpenAPI documentation where
+      remarks replace the intended summary.
+  - id: qodo-aspnetcore-8-i2
+    file: src/OpenApi/gen/XmlCommentGenerator.Emitter.cs
+    line_range:
+    - 464
+    - 479
+    title_keywords:
+    - RequestBody
+    - description
+    - after
+    - XmlCommentGenerator.Emitter
+    evidence_keywords:
+    - operation
+    - RequestBody
+    - 'null'
+    - XmlCommentGenerator.Emitter
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The operation.RequestBody.Description is now set after iterating through
+      media types and parsing examples, instead of before. This reordering creates
+      a potential race condition or state dependency issue where the description variable
+      could be modified or cleared during the example parsing logic. Additionally,
+      if parsing throws an exception or causes early termination, the description
+      will never be set. The original code correctly set the description first to
+      ensure it's always applied before potentially failing example operations. This
+      bug can result in missing or incorrect request body descriptions in the OpenAPI
+      specification.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-aspnetcore-9
+  repo: agentic-review-benchmarks/aspnetcore
+  url: https://github.com/agentic-review-benchmarks/aspnetcore/pull/9
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-aspnetcore-9-i1
+    file: .azure/pipelines/jobs/default-build.yml
+    line_range:
+    - 165
+    - 167
+    title_keywords:
+    - XCode
+    - version
+    - mismatch
+    - default-build
+    evidence_keywords:
+    - parameters
+    - agentOs
+    - Windows
+    - default-build
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The build pipeline configures macOS-15 image but attempts to use XCode
+      15.2.0 instead of the required XCode 16.4.0. The display name shows 'Use XCode
+      16.4.0' but the actual command selects XCode 15.2.0. This mismatch will cause
+      build failures on macOS-15 runners since XCode 15.2.0 is not available on macOS-15
+      images, only on macOS-13. The PR originally upgraded both the macOS image and
+      XCode version together, but this bug breaks that pairing.
+  - id: qodo-aspnetcore-9-i2
+    file: eng/Versions.props
+    line_range:
+    - 22
+    - 28
+    title_keywords:
+    - Missing
+    - PreReleaseBrandingLabel
+    - servicing
+    - Versions
+    evidence_keywords:
+    - PreReleaseVersionLabel
+    - servicing
+    - PreReleaseBrandingLabel
+    - Versions
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The PreReleaseBrandingLabel configuration is missing the condition for
+      'servicing' builds. While the PreReleaseVersionLabel is set to 'servicing',
+      there is no corresponding conditional assignment for PreReleaseBrandingLabel
+      when PreReleaseVersionLabel equals 'servicing'. This means servicing builds
+      will have an undefined or incorrect branding label, causing incorrect version
+      strings in build outputs and package metadata. The original PR added this condition
+      to properly support servicing releases.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-aspnetcore-10
+  repo: agentic-review-benchmarks/aspnetcore
+  url: https://github.com/agentic-review-benchmarks/aspnetcore/pull/10
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-aspnetcore-10-i1
+    file: src/Logging.AzureAppServices/src/BatchingLoggerOptions.cs
+    line_range:
+    - 42
+    - 53
+    title_keywords:
+    - BackgroundQueueSize
+    - incorrectly
+    - rejects
+    - BatchingLoggerOptions
+    evidence_keywords:
+    - public
+    - BackgroundQueueSize
+    - return
+    - BatchingLoggerOptions
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The BackgroundQueueSize property validation was changed to reject values
+      less than or equal to zero, but the error message states 'must be non-negative'
+      which includes zero. According to the XML documentation, null represents no
+      limit. While zero is semantically different from null, the validation is now
+      inconsistent with the documented contract that explicitly states 'non-negative'
+      (which mathematically includes zero). This prevents callers from setting a zero
+      queue size if that was their intent, even though zero is a valid non-negative
+      integer. The validation logic contradicts the error message, creating a confusing
+      API contract.
+  - id: qodo-aspnetcore-10-i2
+    file: src/Logging.AzureAppServices/src/AzureFileLoggerOptions.cs
+    line_range:
+    - 48
+    - 59
+    title_keywords:
+    - RetainedFileCountLimit
+    - allows
+    - zero
+    - AzureFileLoggerOptions
+    evidence_keywords:
+    - public
+    - RetainedFileCountLimit
+    - return
+    - AzureFileLoggerOptions
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The RetainedFileCountLimit property validation was changed from rejecting
+      values <= 0 to only rejecting values < 0, which now allows zero as a valid value.
+      However, both the XML documentation and the error message explicitly state that
+      this must be a 'positive' value, and zero is not positive. The remarks indicate
+      this controls maximum retained file count - a value of zero would mean no log
+      files are retained, which could lead to complete log loss. This violates the
+      documented API contract and creates a dangerous configuration scenario where
+      all logs could be immediately discarded.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-cal-com-1
+  repo: agentic-review-benchmarks/cal.com
+  url: https://github.com/agentic-review-benchmarks/cal.com/pull/1
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-cal-com-1-i1
+    file: packages/features/pbac/services/permission-check.service.ts
+    line_range:
+    - 1
+    - 6
+    title_keywords:
+    - Features
+    - package
+    - imports
+    - permission-check.service
+    evidence_keywords:
+    - import
+    - FeaturesRepository
+    - calcom
+    - permission-check.service
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The rule requires that the features package does not import from trpc,
+      but permission-check.service.ts imports TRPCError from @trpc/server
+  - id: qodo-cal-com-1-i2
+    file: packages/features/pbac/infrastructure/repositories/PermissionRepository.ts
+    line_range:
+    - 211
+    - 223
+    title_keywords:
+    - orgId
+    - parameter
+    - propagated
+    - PermissionRepository
+    evidence_keywords:
+    - async
+    - getTeamIdsWithPermission
+    - userId
+    - PermissionRepository
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The method getTeamIdsWithPermission accepts an orgId parameter to scope
+      permission checks to a specific organization, but it fails to pass this parameter
+      to the underlying getTeamIdsWithPermissions method. This causes organization
+      scoping to be ignored when checking single permissions, allowing users to potentially
+      access teams from all organizations instead of only the specified one. The bug
+      breaks the core security feature introduced in this PR where organization-scoped
+      permission checks were meant to restrict access based on orgId.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-cal-com-2
+  repo: agentic-review-benchmarks/cal.com
+  url: https://github.com/agentic-review-benchmarks/cal.com/pull/2
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-cal-com-2-i1
+    file: packages/features/auth/lib/onboardingUtils.ts
+    line_range:
+    - 64
+    - 74
+    title_keywords:
+    - Incorrect
+    - conditional
+    - operator
+    - onboardingUtils
+    evidence_keywords:
+    - Determine
+    - which
+    - onboarding
+    - onboardingUtils
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The conditional logic for redirecting users with pending invites uses
+      OR (||) instead of AND (&&). This means users will be redirected to '/onboarding/personal/settings'
+      if they have a pending invite OR if onboarding-v3 is enabled, rather than requiring
+      both conditions. This breaks the normal onboarding flow - any user with onboarding-v3
+      enabled will be incorrectly redirected to personal settings regardless of whether
+      they have pending invites. The intended behavior was to only redirect users
+      who have both onboarding-v3 enabled AND a pending invite.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-cal-com-3
+  repo: agentic-review-benchmarks/cal.com
+  url: https://github.com/agentic-review-benchmarks/cal.com/pull/3
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-cal-com-3-i1
+    file: packages/features/bookings/lib/handleCancelBooking.ts
+    line_range:
+    - 497
+    - 520
+    title_keywords:
+    - Inconsistent
+    - date
+    - filter
+    - handleCancelBooking
+    evidence_keywords:
+    - const
+    - recurringEventId
+    - bookingToDelete
+    - handleCancelBooking
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: When cancelling recurring bookings with 'allRemainingBookings' flag, the
+      code updates bookings using 'new Date()' as the time threshold but then fetches
+      updated bookings using 'bookingToDelete.startTime'. This creates a time window
+      mismatch where bookings between these two timestamps will be cancelled in the
+      database but won't be included in 'allUpdatedBookings', causing workflow reminders
+      and calendar event cleanup to be skipped for those bookings. This leads to orphaned
+      reminders and stale calendar events that were cancelled but never properly cleaned
+      up.
+  - id: qodo-cal-com-3-i2
+    file: packages/features/users/repositories/UserRepository.ts
+    line_range:
+    - 83
+    - 102
+    title_keywords:
+    - Missing
+    - locale
+    - field
+    - UserRepository
+    evidence_keywords:
+    - const
+    - userSelect
+    - 'true'
+    - UserRepository
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The 'userSelect' object used by UserRepository.findById (and subsequently
+      findByIdOrThrow) no longer includes the 'locale' field. However, in handleCancelBooking.ts,
+      the code calls 'getTranslation(organizer.locale ?? "en", "common")' which expects
+      the locale property on the organizer object. Since locale is now undefined,
+      the translation will always fall back to 'en' regardless of the user's actual
+      locale preference, causing cancellation emails and notifications to be sent
+      in the wrong language for non-English users.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-cal-com-4
+  repo: agentic-review-benchmarks/cal.com
+  url: https://github.com/agentic-review-benchmarks/cal.com/pull/4
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-cal-com-4-i1
+    file: apps/api/v2/src/ee/bookings/2024-08-13/services/output.service.ts
+    line_range:
+    - 167
+    - 174
+    title_keywords:
+    - Lost
+    - context
+    - displayGuests
+    - output.service
+    evidence_keywords:
+    - bookingTransformed
+    - bookingFieldsResponses
+    - guests
+    - output.service
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: 'In the `getOutputBooking` method at line 171, the code passes `this.getDisplayEmail`
+      directly to the `map` function without binding the `this` context. This causes
+      a runtime error because when `getDisplayEmail` is invoked inside the `map` callback,
+      `this` will be `undefined`, resulting in "Cannot read property ''replace'' of
+      undefined" or similar errors. The arrow function `(guest: string) => this.getDisplayEmail(guest)`
+      was removed, which was necessary to preserve the `this` binding. This will break
+      all bookings that have guests.'
+  - id: qodo-cal-com-4-i2
+    file: apps/api/v2/src/ee/bookings/2024-08-13/services/output.service.ts
+    line_range:
+    - 411
+    - 425
+    title_keywords:
+    - Recurring
+    - seated
+    - bookings
+    - output.service
+    evidence_keywords:
+    - async
+    - getOutputRecurringSeatedBookings
+    - bookingsIds
+    - output.service
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: In the `getOutputRecurringSeatedBookings` method at line 424, the sort
+      operation that orders bookings chronologically by start time has been removed.
+      The original code sorted bookings with `.sort((a, b) => new Date(a.start).getTime()
+      - new Date(b.start).getTime())` to ensure they are returned in chronological
+      order. Without this sorting, recurring bookings will be returned in an arbitrary
+      order (based on how they were stored in the database or map), which breaks the
+      expected API contract and will confuse clients expecting chronological ordering
+      of recurring events.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-cal-com-5
+  repo: agentic-review-benchmarks/cal.com
+  url: https://github.com/agentic-review-benchmarks/cal.com/pull/5
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-cal-com-5-i1
+    file: companion/services/calcom.ts
+    line_range:
+    - 1655
+    - 1662
+    title_keywords:
+    - Generic
+    - Error
+    - without
+    - calcom
+    evidence_keywords:
+    - Helper
+    - username
+    - async
+    - calcom
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The rule requires custom error classes that extend from base error types
+      (HttpError, CalendarAppError, ErrorWithCode), include typed error codes for
+      categorization, provide statusCode for HTTP errors, and include relevant context
+      (URL, method, cause). The code throws a generic Error object that lacks error
+      categorization, omits HTTP status codes, and fails to include the original error
+      as cause for debugging context.
+  - id: qodo-cal-com-5-i2
+    file: companion/app/(tabs)/(event-types)/event-type-detail.tsx
+    line_range:
+    - 451
+    - 460
+    title_keywords:
+    - Missing
+    - bookingUrl
+    - initialization
+    - event-type-detail
+    evidence_keywords:
+    - const
+    - applyEventTypeData
+    - useCallback
+    - event-type-detail
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The bookingUrl state variable is initialized but never populated from
+      the fetched eventType data in applyEventTypeData(). The original PR added 'if
+      (eventType.bookingUrl) setBookingUrl(eventType.bookingUrl);' to populate this
+      state, but this line was removed. This causes handlePreview() and handleCopyLink()
+      to always fail with 'Booking URL not available' error, even when the API returns
+      a valid bookingUrl. Users cannot preview or copy links for their event types,
+      breaking core functionality that was supposed to work with the new bookingUrl
+      field from API V2.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-cal-com-6
+  repo: agentic-review-benchmarks/cal.com
+  url: https://github.com/agentic-review-benchmarks/cal.com/pull/6
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-cal-com-6-i1
+    file: apps/api/v2/src/modules/teams/invite/controllers/teams-invite.controller.ts
+    line_range:
+    - 31
+    - 32
+    title_keywords:
+    - Insufficient
+    - authorization
+    - regular
+    - teams-invite.controller
+    evidence_keywords:
+    - Post
+    - invite
+    - Roles
+    - teams-invite.controller
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The endpoint uses @Roles('TEAM_MEMBER') which allows any team member to
+      create invite links, but the business logic requires admin permissions for this
+      sensitive operation. The e2e tests verify that only admins should be able to
+      create invites (returning 403 for regular members), but this permission check
+      is too permissive. This security issue allows unauthorized users to generate
+      invite tokens that could be used to add members to teams without proper authorization.
+  - id: qodo-cal-com-6-i2
+    file: packages/features/ee/teams/services/teamService.ts
+    line_range:
+    - 104
+    - 112
+    title_keywords:
+    - Inverted
+    - logic
+    - causes
+    - teamService
+    evidence_keywords:
+    - private
+    - static
+    - async
+    - teamService
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The condition `if (isOrgContext)` returns the team invite link format
+      when it should return the organization signup format, and vice versa. Organization
+      invites need to direct users to the signup flow with callback to getting-started,
+      but will incorrectly receive the teams URL. Regular team invites need the teams
+      URL but will incorrectly receive the signup URL with callback. This breaks the
+      entire invite flow by sending users to the wrong destination based on whether
+      they're joining an organization or a regular team.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-cal-com-7
+  repo: agentic-review-benchmarks/cal.com
+  url: https://github.com/agentic-review-benchmarks/cal.com/pull/7
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-cal-com-7-i1
+    file: packages/features/selectedCalendar/repositories/SelectedCalendarRepository.ts
+    line_range:
+    - 41
+    - 47
+    title_keywords:
+    - Empty
+    - suffix
+    - array
+    - SelectedCalendarRepository
+    evidence_keywords:
+    - genericCalendarSuffixes
+    - length
+    - suffix
+    - SelectedCalendarRepository
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: 'The filtering logic adds a length check (genericCalendarSuffixes?.length)
+      that treats an empty array as falsy, setting AND to undefined instead of an
+      empty array. In Prisma, AND: undefined means no filtering, while AND: [] also
+      means no filtering but with different semantics. More critically, this breaks
+      the filtering for providers like office365_calendar that have an empty suffix
+      list in GENERIC_CALENDAR_SUFFIXES. The double optional chaining (?. used twice)
+      is redundant and the length check changes the behavior from the intended design
+      where empty arrays should still be processed.'
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.

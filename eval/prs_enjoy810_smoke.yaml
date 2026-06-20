@@ -1,0 +1,60 @@
+- id: prism-3
+  repo: EnJoy810/PRism
+  url: https://github.com/EnJoy810/PRism/pull/3
+  kind: dogfood-user-repo
+  notes: Small frontend streaming review sample; 2 files, diff 7683.
+- id: prism-4
+  repo: EnJoy810/PRism
+  url: https://github.com/EnJoy810/PRism/pull/4
+  kind: dogfood-user-repo
+  notes: Small frontend options panel sample; 4 files, diff 6224.
+- id: prism-5
+  repo: EnJoy810/PRism
+  url: https://github.com/EnJoy810/PRism/pull/5
+  kind: dogfood-user-repo
+  notes: Small frontend severity filter sample; 3 files, diff 8049.
+- id: prism-6
+  repo: EnJoy810/PRism
+  url: https://github.com/EnJoy810/PRism/pull/6
+  kind: dogfood-user-repo
+  notes: Backend/frontend bugfix sample; 6 files, diff 7613.
+- id: prism-8
+  repo: EnJoy810/PRism
+  url: https://github.com/EnJoy810/PRism/pull/8
+  kind: dogfood-user-repo
+  notes: Tiny backend model sample; 1 file, diff 1364.
+- id: prism-9
+  repo: EnJoy810/PRism
+  url: https://github.com/EnJoy810/PRism/pull/9
+  kind: dogfood-user-repo
+  notes: Backend LLM structured output sample; 3 files, diff 16783.
+- id: prism-10
+  repo: EnJoy810/PRism
+  url: https://github.com/EnJoy810/PRism/pull/10
+  kind: dogfood-user-repo
+  notes: Backend/frontend type sync sample; 5 files, diff 18543.
+- id: prism-12
+  repo: EnJoy810/PRism
+  url: https://github.com/EnJoy810/PRism/pull/12
+  kind: dogfood-user-repo
+  notes: Frontend settings drawer sample; 4 files, diff 17461.
+- id: prism-13
+  repo: EnJoy810/PRism
+  url: https://github.com/EnJoy810/PRism/pull/13
+  kind: dogfood-user-repo
+  notes: Small bugfix sample; 1 file, diff 3236.
+- id: prism-15
+  repo: EnJoy810/PRism
+  url: https://github.com/EnJoy810/PRism/pull/15
+  kind: dogfood-user-repo
+  notes: Security-sensitive API key flow sample; 4 files, diff 5269.
+- id: prism-17
+  repo: EnJoy810/PRism
+  url: https://github.com/EnJoy810/PRism/pull/17
+  kind: dogfood-user-repo
+  notes: Small refactor sample; 2 files, diff 5908.
+- id: prism-1
+  repo: EnJoy810/PRism
+  url: https://github.com/EnJoy810/PRism/pull/1
+  kind: dogfood-user-repo
+  notes: Medium frontend mock review sample; 8 files, diff 21130.

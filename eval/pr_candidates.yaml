@@ -1,0 +1,174 @@
+- id: fastapi-14789
+  repo: fastapi/fastapi
+  url: https://github.com/fastapi/fastapi/pull/14789
+  kind: public-python-bugfix
+  source: anysearch
+  notes: Merged bugfix; search snippet reports 4 changed files, +46/-5.
+- id: fastapi-14873
+  repo: fastapi/fastapi
+  url: https://github.com/fastapi/fastapi/pull/14873
+  kind: public-python-bugfix
+  source: anysearch
+  notes: Merged bugfix for APIRouter startup/shutdown parameters; needs GitHub API verification.
+- id: fastapi-14099
+  repo: fastapi/fastapi
+  url: https://github.com/fastapi/fastapi/pull/14099
+  kind: public-python-bugfix
+  source: anysearch
+  notes: Merged bugfix for StreamingResponse cleanup behavior; needs GitHub API verification.
+- id: fastapi-14455
+  repo: fastapi/fastapi
+  url: https://github.com/fastapi/fastapi/pull/14455
+  kind: public-python-bugfix
+  source: anysearch
+  notes: Merged bugfix for OpenAPI security scheme scopes; needs GitHub API verification.
+- id: fastapi-13827
+  repo: fastapi/fastapi
+  url: https://github.com/fastapi/fastapi/pull/13827
+  kind: public-python-bugfix
+  source: anysearch
+  notes: Merged bugfix for unions with Form; needs GitHub API verification.
+- id: fastapi-14430
+  repo: fastapi/fastapi
+  url: https://github.com/fastapi/fastapi/pull/14430
+  kind: public-python-bugfix
+  source: anysearch
+  notes: Merged bugfix for optional sequence handling with Python 3.10 union syntax.
+- id: fastapi-14512
+  repo: fastapi/fastapi
+  url: https://github.com/fastapi/fastapi/pull/14512
+  kind: public-python-bugfix
+  source: anysearch
+  notes: Merged bugfix for tagged union discriminator inside Annotated with Body.
+- id: pydantic-13278
+  repo: pydantic/pydantic
+  url: https://github.com/pydantic/pydantic/pull/13278
+  kind: public-python-bugfix
+  source: anysearch
+  notes: Merged relnotes-fix for missing max_length check on lazy iteration validation.
+- id: pydantic-13096
+  repo: pydantic/pydantic
+  url: https://github.com/pydantic/pydantic/pull/13096
+  kind: public-python-bugfix
+  source: anysearch
+  notes: Merged relnotes-fix for AttributeError subclasses with from_attributes.
+- id: pydantic-13062
+  repo: pydantic/pydantic
+  url: https://github.com/pydantic/pydantic/pull/13062
+  kind: public-python-bugfix
+  source: anysearch
+  notes: Merged relnotes-fix for model equality with runtime extra configuration; snippet reports +13/-2.
+- id: pydantic-12495
+  repo: pydantic/pydantic
+  url: https://github.com/pydantic/pydantic/pull/12495
+  kind: public-python-bugfix
+  source: anysearch
+  notes: Merged relnotes-fix for InitVar ignored when using pydantic.Field.
+- id: pydantic-12905
+  repo: pydantic/pydantic
+  url: https://github.com/pydantic/pydantic/pull/12905
+  kind: public-python-bugfix
+  source: anysearch
+  notes: Merged relnotes-fix for MISSING during serialization with exclude_unset.
+- id: encode-httpx-2671
+  repo: encode/httpx
+  url: https://github.com/encode/httpx/pull/2671
+  kind: public-python-bugfix
+  source: anysearch
+  notes: Merged bugfix for optional percent encoding behavior.
+- id: encode-httpx-2701
+  repo: encode/httpx
+  url: https://github.com/encode/httpx/pull/2701
+  kind: public-python-bugfix
+  source: anysearch
+  notes: Merged bugfix for gen-delims escaping in path/query/fragment.
+- id: encode-httpx-2354
+  repo: encode/httpx
+  url: https://github.com/encode/httpx/pull/2354
+  kind: public-python-bugfix
+  source: anysearch
+  notes: Merged bugfix for empty query params.
+- id: django-21121
+  repo: django/django
+  url: https://github.com/django/django/pull/21121
+  kind: public-python-bugfix
+  source: anysearch
+  notes: Merged crash fix for Query.orderby_issubset_groupby with descending/random order_by strings.
+- id: django-21110
+  repo: django/django
+  url: https://github.com/django/django/pull/21110
+  kind: public-python-bugfix
+  source: anysearch
+  notes: Merged TypeError fix for defer() with FETCH_PEERS on FK fields.
+- id: pytest-11879
+  repo: pytest-dev/pytest
+  url: https://github.com/pytest-dev/pytest/pull/11879
+  kind: public-python-bugfix
+  source: anysearch
+  notes: Merged bugfix for ExceptionInfo._stringify_exception crash in pytest.raises.
+- id: pytest-13741
+  repo: pytest-dev/pytest
+  url: https://github.com/pytest-dev/pytest/pull/13741
+  kind: public-python-bugfix
+  source: anysearch
+  notes: Merged bugfix for all-skip exception groups being reported as error.
+- id: pytest-13380
+  repo: pytest-dev/pytest
+  url: https://github.com/pytest-dev/pytest/pull/13380
+  kind: public-python-bugfix
+  source: anysearch
+  notes: Merged bugfix for ExceptionGroup traceback filtering of pytest internals.
+- id: psf-requests-7431
+  repo: psf/requests
+  url: https://github.com/psf/requests/pull/7431
+  kind: public-python-bugfix
+  source: anysearch
+  notes: Merged bugfix for mutability issues with headers input types; snippet reports +6/-6.
+- id: psf-requests-7309
+  repo: psf/requests
+  url: https://github.com/psf/requests/pull/7309
+  kind: public-python-bugfix
+  source: anysearch
+  notes: Merged bugfix for malformed Content-Type value parsing.
+- id: psf-requests-7433
+  repo: psf/requests
+  url: https://github.com/psf/requests/pull/7433
+  kind: public-python-bugfix
+  source: anysearch
+  notes: Merged bugfix for prepare_body stream detection with __getattr__ file wrappers.
+- id: psf-requests-7205
+  repo: psf/requests
+  url: https://github.com/psf/requests/pull/7205
+  kind: public-python-bugfix
+  source: anysearch
+  notes: Merged bugfix for empty netrc entry usage.
+- id: pallets-flask-5928
+  repo: pallets/flask
+  url: https://github.com/pallets/flask/pull/5928
+  kind: public-python-bugfix
+  source: anysearch
+  notes: Merged bugfix ensuring all teardown callbacks run despite errors.
+- id: pallets-flask-5917
+  repo: pallets/flask
+  url: https://github.com/pallets/flask/pull/5917
+  kind: public-python-bugfix
+  source: anysearch
+  notes: Merged bugfix for provide_automatic_options override.
+- id: celery-10204
+  repo: celery/celery
+  url: https://github.com/celery/celery/pull/10204
+  kind: public-python-bugfix
+  source: anysearch
+  notes: Merged worker Redis broker bugfix for hub.reset on synloop connection error.
+- id: celery-10179
+  repo: celery/celery
+  url: https://github.com/celery/celery/pull/10179
+  kind: public-python-bugfix
+  source: anysearch
+  notes: Merged RPC backend reconnection bugfix.
+- id: celery-10226
+  repo: celery/celery
+  url: https://github.com/celery/celery/pull/10226
+  kind: public-python-bugfix
+  source: anysearch
+  notes: Merged hard timeout failure hook bugfix; snippet reports 3 changed files, +175/-7.

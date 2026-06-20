@@ -1,0 +1,165 @@
+- id: qodo-ghost-1
+  repo: agentic-review-benchmarks/Ghost
+  url: https://github.com/agentic-review-benchmarks/Ghost/pull/1
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-ghost-1-i1
+    file: ghost/core/core/boot.js
+    line_range:
+    - 351
+    - 377
+    title_keywords:
+    - Slack
+    - notifications
+    - functioning
+    - boot
+    evidence_keywords:
+    - await
+    - Promise
+    - emailAddressService
+    - boot
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The slack.listen() call was removed from the service initialization in
+      Promise.all, but the slack service module is still imported. This means the
+      Slack service event listeners for 'post.published' and 'slack.test' events are
+      never registered during boot. As a result, posts published on the site will
+      not trigger Slack webhook notifications even when Slack integration is configured
+      correctly. The slack.listen() method registers critical event handlers that
+      connect the Ghost event system to the Slack notification service, and without
+      this call, the integration is completely non-functional.
+  - id: qodo-ghost-1-i2
+    file: ghost/core/core/boot.js
+    line_range:
+    - 368
+    - 368
+    title_keywords:
+    - Post
+    - scheduling
+    - fail
+    - boot
+    evidence_keywords:
+    - webhooks
+    - listen
+    - scheduling
+    - boot
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: 'The scheduling.init() call is missing the required apiUrl parameter that
+      was previously passed via urlUtils.urlFor(''api'', {type: ''admin''}, true).
+      The PostScheduler constructor explicitly checks for this parameter and throws
+      an IncorrectUsageError if it''s not provided. This will cause Ghost to crash
+      during the boot sequence when attempting to initialize the scheduling service.
+      The apiUrl is critical for the scheduling service as it''s used to generate
+      signed admin tokens and callback URLs for scheduled post publishing. Without
+      this parameter, the scheduled publishing feature cannot function.'
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-ghost-2
+  repo: agentic-review-benchmarks/Ghost
+  url: https://github.com/agentic-review-benchmarks/Ghost/pull/2
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-ghost-2-i1
+    file: apps/comments-ui/src/components/content/forms/form.tsx
+    line_range:
+    - 311
+    - 315
+    title_keywords:
+    - Missing
+    - optional
+    - chaining
+    - form
+    evidence_keywords:
+    - openStyles
+    - isOpen
+    - const
+    - form
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The code accesses `openForm.in_reply_to_snippet` without optional chaining,
+      but openForm can be undefined when rendering certain forms (like the main comment
+      form). The original code correctly used `openForm?.in_reply_to_snippet` with
+      optional chaining. This will cause a "Cannot read property 'in_reply_to_snippet'
+      of undefined" runtime error when the FormWrapper is rendered without an openForm
+      prop, crashing the component.
+  - id: qodo-ghost-2-i2
+    file: apps/comments-ui/src/components/content/forms/form.tsx
+    line_range:
+    - 258
+    - 265
+    title_keywords:
+    - Editor
+    - editability
+    - incorrectly
+    - form
+    evidence_keywords:
+    - useEffect
+    - editor
+    - return
+    - form
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The Form component determines whether the editor should be editable by
+      checking `member?.expertise` instead of `memberName` (which is derived from
+      `member?.name`). According to the comment and the original logic, the editor
+      should be disabled only when the member doesn't have a name or when submitting.
+      Expertise is optional metadata, but name is required for posting. This bug prevents
+      users without expertise from typing in the comment editor, even though they
+      have a valid name and should be allowed to comment.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.
+- id: qodo-ghost-3
+  repo: agentic-review-benchmarks/Ghost
+  url: https://github.com/agentic-review-benchmarks/Ghost/pull/3
+  kind: qodo-pr-review-bench
+  expected_findings:
+  - id: qodo-ghost-3-i1
+    file: ghost/core/core/server/services/email-service/DomainWarmingService.ts
+    line_range:
+    - 124
+    - 129
+    title_keywords:
+    - High
+    - volume
+    - threshold
+    - DomainWarmingService
+    evidence_keywords:
+    - high
+    - volume
+    - senders
+    - DomainWarmingService
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The condition uses `>=` instead of `>` when checking if lastCount qualifies
+      for high-volume capping at exactly 400,000 emails. According to the documented
+      scaling table, 400k should use the 2× multiplier from the thresholds array,
+      but with this bug it immediately applies the high-volume cap of 1.2× or +75k
+      absolute increase. For a site hitting exactly 400k messages, this means getting
+      a limit of 480k (1.2×) or 475k (+75k) instead of the expected 800k (2×). This
+      creates a significant bottleneck at a critical growth milestone and breaks the
+      documented warmup progression.
+  - id: qodo-ghost-3-i2
+    file: ghost/core/core/server/services/email-service/DomainWarmingService.ts
+    line_range:
+    - 131
+    - 135
+    title_keywords:
+    - Threshold
+    - boundary
+    - values
+    - DomainWarmingService
+    evidence_keywords:
+    - const
+    - threshold
+    - WARMUP_SCALING_TABLE
+    - DomainWarmingService
+    severity: WARNING
+    source: qodo-pr-review-bench-injected-issue
+    reason: The loop uses `<` instead of `<=` when comparing lastCount to threshold
+      limits. This causes exact boundary values (1000, 5000, 100000, 400000) to incorrectly
+      skip their tier and fall through to the next scaling factor or the fallback
+      logic. For example, a site with exactly 1000 previous emails will bypass the
+      1.25× tier and incorrectly use 1.5× scaling (getting 1500 instead of 1250).
+      Similarly, 5000 will use 1.75× instead of 1.5×, and 100000 will use 2× instead
+      of 1.75×. This creates unexpected jumps in scaling at precisely the documented
+      threshold boundaries.
+  notes: Imported from Qodo PR-Review-Bench; functional-looking injected issues only.

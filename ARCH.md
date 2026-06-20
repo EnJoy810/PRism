@@ -1,242 +1,291 @@
 # PRism 架构设计
 
-> AI 驱动的 PR Review 助手。多 Agent 并行审查，裁判汇总去重，自托管可部署。
+> 当前事实源：GitHub App + FastAPI + ARQ Worker + 多 Agent ReviewGraph。前端已废弃，审查结果 UI 是 GitHub PR 页面。
+
+---
+
+## 产品边界
+
+PRism 做一件事：在 GitHub PR 打开或同步时自动审查代码，并把少量高置信度问题写回 PR 评论区。
+
+不做的事：
+
+- 不维护独立 Review Dashboard
+- 不把整仓库塞给 LLM
+- 不用向量 RAG 追调用关系
+- 不承诺覆盖动态调用
+- 不支持 GitLab / Bitbucket 等多平台
 
 ---
 
 ## 系统架构
 
+```text
+GitHub PR event
+  opened / synchronized / issue_comment @prism-bot
+        |
+        v
+FastAPI webhook
+  - HMAC signature verification
+  - GitHub App event parsing
+  - return 202 quickly
+        |
+        v
+Redis / ARQ queue
+        |
+        v
+Worker
+        |
+        v
+ReviewGraph
+  - Scope: fetch PR diff and metadata
+  - Investigate: prepare SAST, verification, and cross-file context
+  - Gate: dedupe, severity filter, evidence validation
+  - Comment: post only surviving findings
+        |
+        v
+GitHub Review API
+  - inline comments
+  - summary comment
 ```
-GitHub Webhook（opened / synchronized / issue_comment @prism-bot）
-  │
-  ▼
-验证 HMAC 签名 → 返回 202（10 秒内）
-  │
-  ▼
-Redis 队列（ARQ Worker）
-  │
-  ▼
-ReviewGraph（自定义 asyncio.gather 编排）
-  │
-  ├── fetch_context（获取 PR diff + 元数据 + 文件列表 + 调用链）
-  │
-  ├── [安全 Agent]    ────┐
-  ├── [性能 Agent]    ────┤── 并行执行，DeepSeek V4 Flash
-  ├── [代码规范 Agent] ──┘
-  │
-  ├── Judge Agent（裁判）── 去重 / 降噪 / 严重级别校准 / 合并建议
-  │                     ── 更强模型（DeepSeek V4 Pro 或 Claude）
-  │                     ── 任一 Agent 超时/失败，跳过并标注
-  │
-  └── post_comment（写回 GitHub PR 评论区）
-               可选：SSE 流推送给 Web Dashboard
+
+### 核心模块
+
+| 模块 | 职责 | 约束 |
+|------|------|------|
+| `app/main.py` | FastAPI app 入口 | 只注册路由和生命周期 |
+| `app/routers/webhook.py` | GitHub webhook 入口 | 验签后入队，不直接跑 review |
+| `app/worker.py` | ARQ worker | 消费队列并调用 ReviewGraph |
+| `app/graph.py` | ReviewGraph 编排 | router 不直接编排 Agent |
+| `app/auth.py` | GitHub App JWT / installation token | token 不写日志 |
+| `app/services/github.py` | 获取 PR diff / metadata | router 不直接调用 httpx |
+| `app/services/github_review.py` | 写回 PR 评论 | GitHub API 重试和格式转换 |
+| `app/services/llm.py` | OpenAI-compatible LLM 调用 | 所有模型调用都走这里 |
+| `app/agents/*` | 专家 Agent 和 Judge | 输出 Pydantic schema |
+| `app/services/sast.py` | Semgrep wrapper | 不可用时静默降级 |
+| `app/services/repo.py` | shallow clone + cache | clone `head.sha`，不是默认分支 |
+| `app/services/indexer.py` | tree-sitter -> SQLite | 单文件失败不影响主链路 |
+| `app/services/blast_radius.py` | BFS 查调用方 | depth=2，token 预算受控 |
+
+---
+
+## ReviewGraph 流程
+
+核心路线：`Scope -> Investigate -> Gate -> Comment`。调用图负责告诉 AI 该看哪里，AI 可以查，但不能乱评论；最终只有 PR 新增行上、有证据、非 INFO、去重后的问题能发出去。
+
+```text
+input: owner, repo, pr_number, installation_id/token
+        |
+        v
+Scope: fetch_context
+  - PR diff
+  - PR title / description
+  - changed files
+  - head sha
+        |
+        +------------------------------+
+        |                              |
+        v                              v
+Investigate: context pipeline      Investigate: expert agents
+  - Semgrep SAST                    - SecurityAgent
+  - import/export verification      - QualityAgent
+  - shallow clone                   - PerformanceAgent
+  - tree-sitter index
+  - blast radius
+        |                              |
+        +---------------+--------------+
+                        v
+Gate: JudgeAgent
+  - rule dedupe
+  - semantic grouping
+  - severity calibration
+  - INFO filtering
+        |
+        v
+Gate: final publication filter
+  - line/snippet must exist in diff added lines
+  - evidence must match an added line
+  - duplicate file/line/title findings are collapsed
+        |
+        v
+Comment: post GitHub comments
 ```
 
-### 阶段对应关系
-
-- Phase 1：Webhook 接入 + Redis 队列 + GitHub App 认证
-- Phase 2：多 Agent 图编排（ReviewGraph — asyncio.gather 并行） + 裁判 Agent + 容错 + 成本护栏
-- Phase 3（独立）：Web Dashboard 历史记录 + 配置面板
-
-Phase 1 和 Phase 2 合并为一个版本发布，不拆。
+并行策略：短期使用 `asyncio.gather`，不引入 LangGraph checkpoint。只有当后续需要复杂分支、恢复、长期对话状态时再评估 LangGraph。
 
 ---
 
 ## Agent 设计
 
-### 三个专家 Agent
+### 专家 Agent
 
-| Agent | System Prompt 职责 | 输出 |
-|-------|-------------------|------|
-| 安全 | SQL 注入、XSS、CSRF、敏感信息泄露、认证缺陷、命令注入 | `list[Finding]` |
-| 性能 | N+1 查询、内存泄漏、死锁、大对象重复创建、同步阻塞 IO | `list[Finding]` |
-| 代码规范 | 设计缺陷、职责边界混乱、重复代码、过长函数、过度耦合 | `list[Finding]` |
+| Agent | 关注范围 | 不关注 |
+|-------|----------|--------|
+| Security | 注入、鉴权、敏感信息、输入校验、安全配置 | 风格、性能 |
+| Quality | 设计缺陷、边界条件、可维护性、重复逻辑 | 纯格式问题 |
+| Performance | N+1、阻塞 IO、重复计算、内存/复杂度问题 | 安全、命名 |
 
-每个 Agent 只关注自己的领域，忽略其他维度。通过 System Prompt 强制执行。
+每个 Agent 必须输出结构化 JSON，由 `FindingSchema` 校验。格式异常时该 Agent 降级为空结果，不中断整次审查。
 
-### 两阶段提示（解决 JSON 格式不稳定）
+### Judge Agent
 
-1. Agent 先自由推理（chain-of-thought，`<think>` 标签），不限长度
-2. 再将推理结果交给同一 Agent，提取结构化 JSON 输出
+Judge 不是重新审查代码，而是处理候选 findings：
 
-JSON 格式由 `Pydantic FindingSchema` 定义，Agent 出口做 Pydantic 校验。校验失败时标记"该 Agent 结果格式异常，已跳过"。
+1. 规则去重：同文件、同行、同标题的显式重复先合并。
+2. 按文件分组：减少 Judge 单次输入 token。
+3. 语义分组：处理表达不同但本质相同的问题。
+4. Severity gating：默认过滤 INFO，只保留 WARNING / ERROR。
+5. 合并输出：生成 summary comment 和 inline comment 数据。
 
-### 裁判 Agent
-
-职责（按执行顺序）：
-1. 去重：同一行报相同问题的只保留严重级别最高的
-2. 重新分类：走错分区的问题挪到正确分区
-3. 降噪：置信度 < 0.6 的降一级标注
-4. 合并建议：根据最终 issue 严重级别确定 APPROVE / REQUEST_CHANGES / COMMENT
-
-裁判不做模糊判断，全部规则驱动。规则写在 prompt 里，不出自由裁量。
-裁判使用比专家更强的模型。
+Judge 后还有一次最终发布门禁：无 evidence、非新增行、INFO、重复 finding 都不能进入 CLI 输出或 GitHub 评论。
 
 ---
 
 ## 上下文策略
 
-不克隆完整仓库，只获取：
-- PR diff（unified diff 格式）
-- PR 元数据（标题、描述、base_branch、head_branch）
-- 变更文件列表（含每个文件的增删行数）
-- 关联 commit 信息
-- Level 3（规划中）：GitHub GraphQL 调用链分析
+原则：少而精，避免注意力稀释。
 
-超长 PR 处理：
-- Diff > 100KB 时截断前 100KB
-- 文件列表自动分页拉取（GitHub API per_page=100）
-- PR > 30 个文件或 diff 被截断时自动启用多轮次分批审查：
-  每批 ≤30 个文件，各批并发运行 3 个 Agent，结果汇总后由 Judge 统一去重
-- 取变更最多的前 3 个文件获取完整内容供 Agent 参考
+| 层级 | 内容 | 设计理由 |
+|------|------|----------|
+| Diff | PR 新增/修改行 | finding 只能报 diff 引入的问题 |
+| Metadata | 标题、描述、文件列表 | 帮助理解改动意图 |
+| Symbol context | 符号定义/短片段 | 比整文件上下文更可控 |
+| Blast radius | 调用方函数片段 | 发现跨文件影响，但不扩大报错范围 |
+| SAST findings | Semgrep 结果 | 确定性问题不完全依赖 LLM |
 
-### 范围限定
+关键约束：
 
-LLM-only 审查不跑静态分析工具。这是有意识的设计决策：
-- 不做 sandbox 避免了 linter/SAST 的安装、版本管理、超时控制、输出解析等基础设施
-- 代价：安全审查召回率有上限。文档诚实说明这一段。
+- Prompt 必须标注 `[DIFF]` 和 `[CONTEXT]`。
+- Agent 只能对 `[DIFF]` 中新增行报问题。
+- `[CONTEXT]` 只用于判断影响范围，不作为直接评论对象。
+- 调用图发现调用方后，评论仍只能落在 PR 新增行，不能把老代码当成 PR 新问题。
+- 调用图失败、clone 失败、Semgrep 不存在时都降级为 diff-only。
 
 ---
 
-## 容错策略
+## 调用图设计
 
-### Agent 超时/失败（Option B）
+### 数据流
 
-任一 Agent 超时或返回格式错误：
-- 裁判用其他 Agent 的已有结果继续输出
-- 在最终评论中标注"XX Agent 本次未返回"
-- 不中断其他 Agent，不整次报废
+```text
+PR head.sha
+   |
+   v
+repo.py shallow clone
+   |
+   v
+indexer.py parse Python / JS / TS with tree-sitter
+   |
+   v
+SQLite nodes + edges
+   |
+   v
+blast_radius.py BFS callers depth=2
+   |
+   v
+agent context [CROSS-FILE CONTEXT]
+```
 
-### LLM API 调用容错
+### 工程约束
 
-- 每次 LLM 调用包装在带重试的 Client 中
-- 重试策略：指数退避，最多 3 次，退避间隔 1s / 2s / 4s
-- 区分错误类型：
-  - 429（限流）→ 等待后重试
-  - 500 / 502 / 503（服务端）→ 等待后重试
-  - 401（认证失败）→ 不重试，直接报错
-  - 空响应 / 乱码 → 重试
+- clone 使用 PR 的 `head.sha`，避免用默认分支最新代码审老 PR。
+- 按 `repo@sha` 隔离缓存和 SQLite，防并发写冲突。
+- 跳过 `node_modules/`、`vendor/`、`dist/`、`test_*.py`、`*.test.ts`。
+- 单文件解析失败只跳过该文件。
+- BFS 默认 `depth=2`，并用 diff token 的 50% 作为上下文预算上限。
+- installation token 不出现在日志。
 
-### GitHub API 容错
+### 已知边界
 
-- post_comment 重试：指数退避，最多 3 次，退避间隔 1s / 2s / 4s
-- 重试完仍然失败时，异常上抛由 Worker 层记录日志
+- Python `getattr`、JS Proxy 等动态调用无法静态追踪。
+- 行为语义变化无法仅靠调用图可靠识别。
+- 跨语言调用暂不支持。
+- 超大仓库 clone 超时后降级，不阻塞主链路。
 
 ---
 
-## 成本护栏
+## 幻觉控制
 
-审查开始前预检：
-1. 估算本次审查的 token 消耗（基于 diff 大小 + Agent 数量）
-2. 估算结果超过阈值时拒绝执行，返回 4xx
+核心规则：没有 evidence 的 finding 不能发出去。
 
-审查执行中监控：
-1. TokenBudget 每次 LLM 调用前做 token 预算预检
-2. 每次 LLM 调用后累加实时消耗到总预算
-3. 超过阈值时熔断停止后续调用，返回已有结果
-4. token 消耗和预算均输出到日志
+### Evidence 验证
 
-预算阈值从配置文件读取，不是硬编码。
+LLM 输出必须包含：
+
+- 文件路径
+- 行号
+- 代码片段 evidence
+- severity
+- description
+- confidence
+
+程序验证：
+
+- 行号必须落在 diff 新增行范围内。
+- evidence 片段必须能在 diff 新增行中找到。
+- 引用变量或函数名必须真实出现在对应片段中。
+
+LLM confidence 只作为辅助信号，不作为唯一过滤机制。
 
 ---
 
-## 流式输出
+## SAST 集成
 
-SSE 事件类型：
+`services/sast.py` 统一封装 Semgrep：
 
-| 事件 | 触发时机 | 内容 |
-|------|---------|------|
-| `diff` | fetch_context 完成 | PR diff 片段 + 元数据 |
-| `thinking` | 裁判 Agent 推理中 | 裁判的 thinking token 流 |
-| `result` | 裁判输出结果 | 增量结果片段 |
-| `done` | 全部完成 | 最终的完整 ReviewResult JSON |
+- Security rules: `p/security-audit`、`p/owasp-top-ten`
+- Quality rules: `p/python`、`p/javascript`、`p/typescript`
+- Semgrep 不存在、文件不存在、扫描失败时返回空列表
+- SAST findings 直接合并进 Judge 输入，不依赖 LLM Agent 成功
 
-不做三个 Agent 分别流式展示。三个 Agent 跑完只需数秒，人眼来不及追踪。差异化在于裁判汇总过程的可视化，不是每个 Agent 的 thinking。
+当前定位：增强信号，不是主链路依赖。
+
+---
+
+## 配置与预算
+
+配置来源：`app/config.py` + `prism.yaml` + 环境变量。LLM 使用 OpenAI-compatible 接口，`LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` 优先于旧版 `DEEPSEEK_API_KEY`。
+
+关键预算：
+
+- 单次模型上下文不超过配置的 `max_tokens_per_call`
+- 总上下文目标上限 16K
+- blast radius 上下文不超过 diff token 估算的 50%
+- Agent 超时或异常时跳过该 Agent，不整次失败
 
 ---
 
 ## 部署
 
-### docker compose
+生产形态：Docker Compose 或服务器上的等价进程管理。
 
-```yaml
-services:
-  api:       # FastAPI 后端
-  worker:    # ARQ Worker（消费审查队列）
-  redis:     # 队列 + 缓存
-  web:       # Next.js 前端（可选，依赖 Phase 3）
+```text
+api     FastAPI webhook / health check
+worker  ARQ Worker
+redis   queue backend
 ```
 
-### 配置文件暴露
+本地验证：
 
-```yaml
-# prism.yaml（示例）
-review:
-  budget:
-    max_per_review_usd: 0.50
-    max_tokens_per_call: 4096
-  agents:
-    expert_model: deepseek-v4-flash
-    judge_model: deepseek-v4-pro
-  filters:
-    min_confidence: 0.6
-    severity_threshold: WARNING
-  skip:
-    - "*.lock"
-    - "*.snap"
-    - "*.min.js"
+```bash
+cd backend
+uvicorn app.main:app --reload --port 8000
+python -m app.worker
+python -m app.cli review https://github.com/owner/repo/pull/42
 ```
 
 ---
 
-## 工程质量
+## 可观测性
 
-- Pydantic v2 校验所有 Agent 输入输出
-- 三个专家 Agent、裁判 Agent、fetch_context 各有独立单元测试
-- CI 自动跑（pytest + ruff）
-- 结构化日志：每个节点执行前后打印（Agent 名称、耗时、token 数、结果摘要）
-- LangSmith 免费版追踪每条 trace（Phase 2）
+- `graph.py` 输出各阶段耗时、token、finding 数量。
+- `LANGSMITH_TRACING=true` 时追踪 LLM 调用。
+- Worker 日志记录降级原因，但不记录 token、私钥、clone URL 中的 installation token。
 
 ---
 
-## 不做的事
+## 当前技术债
 
-- SQLite Checkpoint — 审查跑完就出结果，没有等待恢复的场景，写入无意义
-- BackgroundTasks — 进程回收丢任务，直接上 Redis 队列
-- 前端分 Agent 展示 thinking token — 工程复杂度 > 展示价值
-- 超长 PR 按优先级排序 — 改为多轮 round-robin 分批审查
-- 用户侧记忆/反馈学习 — 独立功能，未来再评估
-- 完整仓库克隆 — 不做 sandbox 所以不需要
-
----
-
-## 目录结构计划
-
-```
-backend/app/
-├── main.py                  # FastAPI app 入口
-├── config.py                # 配置读取（prism.yaml + 环境变量）
-│
-├── routers/
-│   ├── review.py            # /api/review, /api/review/stream
-│   └── webhook.py           # /api/webhook（GitHub App 入口）
-│
-├── services/
-│   ├── llm.py               # LLM Client（重试、预算、tracing）
-│   ├── github.py            # GitHub API（fetch_pr_context、parse_pr_url）
-│   ├── github_review.py     # GitHub Review API（post_comment）
-│   └── queue.py             # ARQ Worker + Redis 连接
-│
-├── agents/
-│   ├── base.py              # Agent 基类（两阶段提示、Pydantic 校验）
-│   ├── security.py          # 安全审查 Agent
-│   ├── performance.py       # 性能审查 Agent
-│   ├── quality.py           # 代码规范 Agent
-│   └── judge.py             # 裁判 Agent（去重/降噪/合并）
-│
-├── graph.py                 # ReviewGraph 编排（fetch → parallel agents → judge → post）
-│
-└── models/
-    ├── review.py            # ReviewRequest / ReviewResult / ReviewIssue
-    └── agent.py             # FindingSchema / AgentResult / JudgeVerdict
-```
+- README、CLAUDE、ARCH 已统一当前事实；历史文档仍保留演进过程。
+- 调用图模块已存在，但需要真实仓库评测来证明收益。
+- SAST wrapper 已存在，但 Semgrep 环境依赖和 rule 配置仍需部署验证。

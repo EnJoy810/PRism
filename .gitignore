@@ -26,3 +26,5 @@ frontend/dist/
 .claude/
 *.pem
 prism-review-agent.*.private-key.pem
+.omx/
+eval/runs/

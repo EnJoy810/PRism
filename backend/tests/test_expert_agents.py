@@ -98,6 +98,14 @@ class TestQualityAgent:
         prompt = agent.build_prompt("+ function foo()")
         assert "function foo()" in prompt
 
+    def test_build_prompt_targets_correctness_regressions(self):
+        agent = QualityAgent(api_key="sk-test")
+        prompt = agent.build_prompt("+ const isOpen = !!openForm.in_reply_to_snippet")
+        assert "运行时错误" in prompt
+        assert "行为回归" in prompt
+        assert "边界条件" in prompt
+        assert "删除必要调用" in prompt
+
     @pytest.mark.asyncio
     async def test_run_empty(self):
         agent = QualityAgent(api_key="sk-test")

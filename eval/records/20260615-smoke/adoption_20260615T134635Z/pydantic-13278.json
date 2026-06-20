@@ -1,0 +1,27 @@
+{
+  "sample": {
+    "id": "pydantic-13278",
+    "repo": "pydantic/pydantic",
+    "url": "https://github.com/pydantic/pydantic/pull/13278",
+    "kind": "public-python-bugfix",
+    "notes": "Smoke eval sample across different public Python projects."
+  },
+  "ran_at": "2026-06-15T13:49:08.169310+00:00",
+  "result": {
+    "summary": "Fix missing `max_length` check on lazy iteration validation",
+    "risk_level": "LOW",
+    "issues": [],
+    "stats": {
+      "files_changed": 2,
+      "additions": 44,
+      "deletions": 28,
+      "issues_by_severity": {
+        "ERROR": 0,
+        "WARNING": 0,
+        "INFO": 0
+      }
+    },
+    "merge_recommendation": "APPROVE",
+    "skipped_agents": []
+  }
+}

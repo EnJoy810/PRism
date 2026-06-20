@@ -42,7 +42,7 @@ def test_load_config_defaults():
     try:
         cfg = load_config(tmp_path)
         assert cfg.review.budget.max_per_review_usd == 0.50
-        assert cfg.review.budget.max_tokens_per_call == 4096
+        assert cfg.review.budget.max_tokens_per_call == 16384
         assert cfg.review.agents.expert_model == "deepseek-v4-flash"
         assert cfg.review.filters.min_confidence == 0.7
         assert cfg.review.filters.severity_threshold == "WARNING"

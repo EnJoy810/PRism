@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 _UNSET = object()
 
 MODEL = "deepseek-v4-flash"
-BASE_URL = "https://api.deepseek.com/v1"
+BASE_URL = "https://api.deepseek.com"
 
 RETRYABLE_STATUSES = {429, 500, 502, 503}
 MAX_RETRIES = 3
@@ -46,7 +46,10 @@ class TokenBudget:
 
     @property
     def exceeded(self) -> bool:
-        return self.total_tokens >= self.max_tokens_per_call
+        return False
+
+    def would_exceed_call(self, estimated_tokens: int) -> bool:
+        return estimated_tokens > self.max_tokens_per_call
 
     def record(self, tokens: int) -> None:
         self.total_tokens += tokens
@@ -61,23 +64,31 @@ class LLMClient:
     def __init__(
         self,
         api_key: str | None = None,
-        model: str = MODEL,
-        base_url: str = BASE_URL,
+        model: str | None = None,
+        base_url: str | None = None,
         budget: TokenBudget | None | object = _UNSET,
     ):
         cfg = load_config()
-        resolved_key = api_key or cfg.deepseek_api_key or os.environ.get("DEEPSEEK_API_KEY") or "sk-placeholder"
+        resolved_model = model or cfg.llm.model or MODEL
+        resolved_base = base_url or cfg.llm.base_url or BASE_URL
+        resolved_key = (
+            api_key
+            or cfg.llm.api_key
+            or cfg.deepseek_api_key
+            or os.environ.get("DEEPSEEK_API_KEY")
+            or "sk-placeholder"
+        )
         raw_client = AsyncOpenAI(
             api_key=resolved_key,
-            base_url=base_url or BASE_URL,
+            base_url=resolved_base,
         )
         if wrap_openai is not None:
             self.client = wrap_openai(raw_client)
         else:
             self.client = raw_client
-        self.model = model
+        self.model = resolved_model
         if budget is _UNSET:
-            self.budget = TokenBudget()
+            self.budget = TokenBudget(max_tokens_per_call=cfg.review.budget.max_tokens_per_call)
         else:
             self.budget = budget
         self.total_tokens = 0
@@ -85,40 +96,36 @@ class LLMClient:
     async def chat(
         self,
         messages: list[dict],
-        max_tokens: int = 4096,
-        temperature: float = 1.0,
+        model: str | None = None,
+        max_tokens: int | None = None,
+        temperature: float = 0.0,
         top_p: float = 1.0,
         stream: bool = False,
         estimated_tokens: int | None = None,
     ) -> str:
+        if estimated_tokens is None:
+            estimated_tokens = sum(len(str(m.get("content", ""))) for m in messages) // 4
+
         if self.budget is not None:
-            if estimated_tokens is None:
-                raise ValueError(
-                    "estimated_tokens is required when budget is configured"
-                )
-            if self.budget.exceeded:
+            if self.budget.would_exceed_call(estimated_tokens):
                 raise BudgetExceededError(
-                    f"Budget exceeded: {self.budget.total_tokens} >= "
+                    f"Budget exceeded: {estimated_tokens} > "
                     f"{self.budget.max_tokens_per_call}"
-                )
-            if self.budget.total_tokens + estimated_tokens > self.budget.max_tokens_per_call:
-                raise BudgetExceededError(
-                    f"Estimated {estimated_tokens} tokens would exceed budget "
-                    f"({self.budget.total_tokens} + {estimated_tokens} > "
-                    f"{self.budget.max_tokens_per_call})"
                 )
 
         last_error: Exception | None = None
         for attempt in range(MAX_RETRIES):
             try:
-                response = await self.client.chat.completions.create(
-                    model=self.model,
+                create_kwargs: dict = dict(
+                    model=model or self.model,
                     messages=messages,
-                    max_tokens=max_tokens,
                     temperature=temperature,
                     top_p=top_p,
                     stream=stream,
                 )
+                if max_tokens is not None:
+                    create_kwargs["max_tokens"] = max_tokens
+                response = await self.client.chat.completions.create(**create_kwargs)
 
                 if stream:
                     full = await self._handle_stream(response)
@@ -392,10 +399,17 @@ PR意图说明：统一A3Three与A4/A3的定位逻辑，page_idx直接为栏序�
 
 def _make_client(api_key: str | None = None, base_url: str | None = None) -> AsyncOpenAI:
     cfg = load_config()
-    resolved_key = api_key or cfg.deepseek_api_key or os.environ.get("DEEPSEEK_API_KEY") or "sk-placeholder"
+    resolved_key = (
+        api_key
+        or cfg.llm.api_key
+        or cfg.deepseek_api_key
+        or os.environ.get("DEEPSEEK_API_KEY")
+        or "sk-placeholder"
+    )
+    resolved_base = base_url or cfg.llm.base_url or BASE_URL
     raw = AsyncOpenAI(
         api_key=resolved_key,
-        base_url=base_url or BASE_URL,
+        base_url=resolved_base,
     )
     if wrap_openai is not None:
         return wrap_openai(raw)

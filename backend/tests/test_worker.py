@@ -26,7 +26,11 @@ async def test_review_job_runs_graph_and_posts():
 
         await review_job(ctx, pr_url="https://github.com/owner/repo/pull/1", event="pull_request.opened")
 
-        mock_run.assert_awaited_once_with(pr_url="https://github.com/owner/repo/pull/1")
+        mock_run.assert_awaited_once_with(
+            pr_url="https://github.com/owner/repo/pull/1",
+            github_token="ghp_test",
+            event="pull_request.opened",
+        )
         mock_post.assert_awaited_once()
 
 
@@ -43,7 +47,11 @@ async def test_review_job_skips_comment_without_token():
 
         await review_job(ctx, pr_url="https://github.com/owner/repo/pull/1", event="pull_request.opened")
 
-        mock_run.assert_awaited_once()
+        mock_run.assert_awaited_once_with(
+            pr_url="https://github.com/owner/repo/pull/1",
+            github_token=None,
+            event="pull_request.opened",
+        )
         mock_post.assert_not_awaited()
 
 
@@ -57,4 +65,8 @@ async def test_review_job_handles_graph_exception():
 
         await review_job(ctx, pr_url="https://github.com/owner/repo/pull/1", event="pull_request.opened")
 
-        mock_run.assert_awaited_once()
+        mock_run.assert_awaited_once_with(
+            pr_url="https://github.com/owner/repo/pull/1",
+            github_token="ghp_test",
+            event="pull_request.opened",
+        )

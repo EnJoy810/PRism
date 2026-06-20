@@ -1,0 +1,27 @@
+{
+  "sample": {
+    "id": "django-21121",
+    "repo": "django/django",
+    "url": "https://github.com/django/django/pull/21121",
+    "kind": "public-python-bugfix",
+    "notes": "Smoke eval sample across different public Python projects."
+  },
+  "ran_at": "2026-06-15T13:50:53.020150+00:00",
+  "result": {
+    "summary": "Fixed #37047 -- Fixed crash in Query.orderby_issubset_groupby for descending and random order_by strings.",
+    "risk_level": "LOW",
+    "issues": [],
+    "stats": {
+      "files_changed": 2,
+      "additions": 17,
+      "deletions": 8,
+      "issues_by_severity": {
+        "ERROR": 0,
+        "WARNING": 0,
+        "INFO": 0
+      }
+    },
+    "merge_recommendation": "APPROVE",
+    "skipped_agents": []
+  }
+}

@@ -16,13 +16,15 @@ class TestTokenBudget:
     def test_exceeded(self):
         budget = TokenBudget(max_tokens_per_call=4096)
         budget.record(5000)
-        assert budget.exceeded
+        assert not budget.exceeded
+        assert budget.would_exceed_call(5000)
 
     def test_accumulation(self):
         budget = TokenBudget(max_tokens_per_call=4096)
         budget.record(3000)
         budget.record(2000)
-        assert budget.exceeded
+        assert not budget.exceeded
+        assert budget.total_tokens == 5000
 
     def test_reset(self):
         budget = TokenBudget(max_tokens_per_call=4096)
@@ -106,24 +108,68 @@ class TestLLMClient:
     async def test_budget_pre_check_blocks(self):
         budget = TokenBudget(max_tokens_per_call=100)
         client = LLMClient(api_key="sk-test", model="deepseek-v4-flash", budget=budget)
-        budget.record(90)
 
         with pytest.raises(BudgetExceededError):
             await client.chat(
                 messages=[{"role": "user", "content": "hi"}],
                 max_tokens=50,
-                estimated_tokens=20,
+                estimated_tokens=101,
             )
 
     @pytest.mark.asyncio
-    async def test_estimated_tokens_required_with_budget(self):
+    async def test_budget_does_not_block_on_accumulated_usage(self):
+        budget = TokenBudget(max_tokens_per_call=100)
+        client = LLMClient(api_key="sk-test", model="deepseek-v4-flash", budget=budget)
+        budget.record(150)
+
+        mock_response = AsyncMock()
+        mock_response.choices = [AsyncMock()]
+        mock_response.choices[0].message.content = "ok"
+        mock_response.usage = None
+
+        mock_create = AsyncMock(return_value=mock_response)
+        with patch.object(client.client.chat.completions, "create", mock_create):
+            result = await client.chat(
+                messages=[{"role": "user", "content": "hi"}],
+                max_tokens=50,
+                estimated_tokens=20,
+            )
+            assert result == "ok"
+
+    @pytest.mark.asyncio
+    async def test_estimated_tokens_defaults_to_message_length(self):
         client = LLMClient(api_key="sk-test", model="deepseek-v4-flash")
 
-        with pytest.raises(ValueError, match="estimated_tokens"):
+        mock_response = AsyncMock()
+        mock_response.choices = [AsyncMock()]
+        mock_response.choices[0].message.content = "ok"
+        mock_response.usage = None
+
+        mock_create = AsyncMock(return_value=mock_response)
+        with patch.object(client.client.chat.completions, "create", mock_create):
+            result = await client.chat(
+                messages=[{"role": "user", "content": "hi"}],
+                max_tokens=100,
+            )
+            assert result == "ok"
+
+    @pytest.mark.asyncio
+    async def test_default_temperature_is_deterministic(self):
+        client = LLMClient(api_key="sk-test", model="deepseek-v4-flash")
+
+        mock_response = AsyncMock()
+        mock_response.choices = [AsyncMock()]
+        mock_response.choices[0].message.content = "ok"
+        mock_response.usage = None
+
+        mock_create = AsyncMock(return_value=mock_response)
+        with patch.object(client.client.chat.completions, "create", mock_create):
             await client.chat(
                 messages=[{"role": "user", "content": "hi"}],
                 max_tokens=100,
             )
+
+        assert mock_create.await_args.kwargs["temperature"] == 0.0
 
     @pytest.mark.asyncio
     async def test_no_budget_no_estimated_tokens_required(self):

@@ -10,16 +10,21 @@ def _finding(
     confidence: float = 0.9,
     category: str = "security",
     evidence: list[str] | None = None,
+    impact_type: str | None = "runtime_error",
+    impact_statement: str | None = "deterministic failure",
+    description: str | None = None,
 ) -> FindingSchema:
     return FindingSchema(
         file=file,
         line=line,
         title=title,
-        description=f"desc for {title}",
+        description=description or f"desc for {title}",
         severity=severity,
         confidence=confidence,
         category=category,
         evidence=evidence or [f"{file}:{line}"],
+        impact_type=impact_type,
+        impact_statement=impact_statement,
     )
 
 
@@ -105,6 +110,355 @@ class TestNoiseReduction:
         judge = JudgeAgent(api_key="sk-test")
         result = judge.reduce_noise([], min_confidence=0.6)
         assert result == []
+
+
+class TestImpactGate:
+    def test_style_only_discarded_even_when_warning_high_confidence(self):
+        f = _finding("a.ts", 10, "Naming style", "WARNING", 0.95, "quality", impact_type="style_only")
+        judge = JudgeAgent(api_key="sk-test")
+        result = judge.reduce_noise([f], min_confidence=0.6)
+        assert result == []
+
+    def test_info_only_discarded_even_when_error(self):
+        f = _finding("a.ts", 10, "Doc suggestion", "ERROR", 0.95, "quality", impact_type="info_only")
+        judge = JudgeAgent(api_key="sk-test")
+        result = judge.reduce_noise([f], min_confidence=0.6)
+        assert result == []
+
+    def test_actionable_impact_types_are_kept(self):
+        findings = [
+            _finding("a.ts", 10, "Type check fails", "WARNING", 0.9, "quality", impact_type="type_check_failure"),
+            _finding("b.ts", 20, "API break", "WARNING", 0.9, "quality", impact_type="api_breakage"),
+            _finding("c.ts", 30, "Runtime bug", "WARNING", 0.9, "quality", impact_type="runtime_error"),
+        ]
+        judge = JudgeAgent(api_key="sk-test")
+        result = judge.reduce_noise(findings, min_confidence=0.6)
+        assert result == findings
+
+    def test_actionable_impact_type_kept_despite_style_words(self):
+        f = _finding(
+            "a.ts",
+            10,
+            "Type annotation style breaks mypy",
+            "WARNING",
+            0.9,
+            "quality",
+            impact_type="type_check_failure",
+        )
+        judge = JudgeAgent(api_key="sk-test")
+        result = judge.reduce_noise([f], min_confidence=0.6)
+        assert result == [f]
+
+    def test_actionable_impact_requires_impact_statement(self):
+        f = _finding(
+            "a.ts",
+            10,
+            "Runtime bug",
+            "WARNING",
+            0.9,
+            "quality",
+            impact_type="runtime_error",
+            impact_statement="",
+        )
+        judge = JudgeAgent(api_key="sk-test")
+        result = judge.reduce_noise([f], min_confidence=0.6)
+        assert result == []
+
+    def test_missing_impact_type_uses_legacy_noise_filter(self):
+        f = _finding("a.ts", 10, "Runtime bug", "WARNING", 0.9, "quality", impact_type=None)
+        judge = JudgeAgent(api_key="sk-test")
+        result = judge.reduce_noise([f], min_confidence=0.6)
+        assert result == [f]
+
+    def test_frontend_idor_from_client_param_discarded_without_backend_evidence(self):
+        f = _finding(
+            "src/feature/homework/hooks/useCommonReplaceModal.ts",
+            149,
+            "缺少对 recommend_id 的权限校验（IDOR）",
+            "WARNING",
+            0.95,
+            "security",
+            impact_type="security_risk",
+            impact_statement="攻击者可通过修改前端状态或直接发送 API 请求，在其他用户的题单中添加题目。",
+            description="handleAppendCommonQuestion 直接使用推荐 ID 调用后端新增接口，未验证当前用户是否拥有该推荐的操作权限。",
+        )
+        judge = JudgeAgent(api_key="sk-test")
+        result = judge.reduce_noise([f], min_confidence=0.6)
+        assert result == []
+
+    def test_frontend_ssrf_from_url_param_discarded_without_server_sink(self):
+        f = _finding(
+            "src/pages/trace/TracePage.tsx",
+            36,
+            "未经验证的URL参数直接用于客户端导航",
+            "WARNING",
+            0.9,
+            "security",
+            impact_type="security_risk",
+            impact_statement="攻击者可以构造包含特殊字符的 exam_id/grading_id 参数，可能导致服务器端请求伪造。",
+            description="从 URL 查询参数中直接获取 exam_id 和 grading_id，并用于客户端导航。",
+        )
+        judge = JudgeAgent(api_key="sk-test")
+        result = judge.reduce_noise([f], min_confidence=0.6)
+        assert result == []
+
+    def test_frontend_xss_finding_kept(self):
+        f = _finding(
+            "src/components/Preview.tsx",
+            20,
+            "XSS via dangerouslySetInnerHTML",
+            "ERROR",
+            0.95,
+            "security",
+            impact_type="security_risk",
+            impact_statement="Attacker-controlled script can execute in the browser.",
+            description="User-controlled HTML is rendered with dangerouslySetInnerHTML.",
+        )
+        judge = JudgeAgent(api_key="sk-test")
+        result = judge.reduce_noise([f], min_confidence=0.6)
+        assert result == [f]
+
+    def test_backend_auth_finding_kept(self):
+        f = _finding(
+            "backend/app/routers/users.py",
+            42,
+            "Authorization check missing",
+            "ERROR",
+            0.95,
+            "security",
+            impact_type="security_risk",
+            impact_statement="Authenticated users can query another user's database record.",
+            description="API route handler uses user_id without permission check before database query.",
+        )
+        judge = JudgeAgent(api_key="sk-test")
+        result = judge.reduce_noise([f], min_confidence=0.6)
+        assert result == [f]
+
+    def test_performance_warning_micro_optimization_discarded_without_hard_evidence(self):
+        f = _finding(
+            "src/components/Button.tsx",
+            18,
+            "Memoize inline handler",
+            "WARNING",
+            0.9,
+            "performance",
+            impact_type="performance_regression",
+            impact_statement="May be slightly slower.",
+            description="useCallback could avoid unnecessary re-render and make this slightly faster.",
+        )
+        judge = JudgeAgent(api_key="sk-test")
+        result = judge.reduce_noise([f], min_confidence=0.6)
+        assert result == []
+
+    def test_performance_warning_numeric_estimate_is_not_hard_evidence(self):
+        f = _finding(
+            "src/feature/design-exam/panel/SectionOutlineSidebar.tsx",
+            271,
+            "editingTitle 引用变化导致所有列表项不必要的重新渲染",
+            "WARNING",
+            0.95,
+            "performance",
+            impact_type="performance_regression",
+            impact_statement="若列表项为 50 个，每次键盘输入会触发约 50 次子组件重新渲染，可能导致输入响应延迟增加 30~50ms。",
+            description="ExpandedSortableItem 组件使用了 React.memo，但父组件中 editingTitle 状态变化会导致不必要的重新渲染。",
+        )
+        judge = JudgeAgent(api_key="sk-test")
+        result = judge.reduce_noise([f], min_confidence=0.6)
+        assert result == []
+
+    def test_performance_warning_kept_with_hard_evidence(self):
+        f = _finding(
+            "backend/app/services/orders.py",
+            88,
+            "N+1 database query",
+            "WARNING",
+            0.9,
+            "performance",
+            impact_type="performance_regression",
+            impact_statement="1000 rows produce 1000 SQL queries and increase p95 latency.",
+            description="Loop issues one database query per row; 1000 rows produce 1000 SQL queries.",
+        )
+        judge = JudgeAgent(api_key="sk-test")
+        result = judge.reduce_noise([f], min_confidence=0.6)
+        assert result == [f]
+
+    async def test_verified_existing_package_discards_missing_dependency_finding(self):
+        f = _finding(
+            "src/App.tsx",
+            1,
+            "Missing dependency lucide-react",
+            "ERROR",
+            0.95,
+            "quality",
+            evidence=["import { Search } from 'lucide-react'"],
+            impact_type="runtime_error",
+            impact_statement="Build fails because lucide-react is not installed.",
+            description="The new import references lucide-react, but the package is not declared.",
+        )
+        r = AgentResult(status=AgentStatus.SUCCESS, findings=[f])
+        verification = {
+            "imports": [
+                {
+                    "file": "src/App.tsx",
+                    "line": 1,
+                    "module": "lucide-react",
+                    "status": "pass",
+                    "detail": "dependencies",
+                }
+            ]
+        }
+
+        judge = JudgeAgent(api_key="sk-test")
+        result = await judge.run(
+            [r],
+            diff="+import { Search } from 'lucide-react'",
+            verification=verification,
+        )
+
+        assert result["findings"] == []
+
+    async def test_verified_missing_package_keeps_missing_dependency_finding(self):
+        f = _finding(
+            "src/App.tsx",
+            1,
+            "Missing dependency lucide-react",
+            "ERROR",
+            0.95,
+            "quality",
+            evidence=["import { Search } from 'lucide-react'"],
+            impact_type="runtime_error",
+            impact_statement="Build fails because lucide-react is not installed.",
+            description="The new import references lucide-react, but the package is not declared.",
+        )
+        r = AgentResult(status=AgentStatus.SUCCESS, findings=[f])
+        verification = {
+            "imports": [
+                {
+                    "file": "src/App.tsx",
+                    "line": 1,
+                    "module": "lucide-react",
+                    "status": "fail",
+                    "detail": "lucide-react not declared in package.json",
+                }
+            ]
+        }
+
+        judge = JudgeAgent(api_key="sk-test")
+        result = await judge.run(
+            [r],
+            diff="+import { Search } from 'lucide-react'",
+            verification=verification,
+        )
+
+        assert len(result["findings"]) == 1
+
+    async def test_verified_existing_export_discards_missing_export_finding(self):
+        f = _finding(
+            "src/App.tsx",
+            1,
+            "MarketingNavbar is not exported",
+            "ERROR",
+            0.95,
+            "quality",
+            evidence=["import { MarketingNavbar } from './components'"],
+            impact_type="runtime_error",
+            impact_statement="Build fails because MarketingNavbar is not exported.",
+            description="The import references MarketingNavbar, but ./components does not export it.",
+        )
+        r = AgentResult(status=AgentStatus.SUCCESS, findings=[f])
+        verification = {
+            "exports": [
+                {
+                    "file": "src/App.tsx",
+                    "line": 1,
+                    "module": "./components",
+                    "symbol": "MarketingNavbar",
+                    "status": "pass",
+                    "detail": "named export found",
+                }
+            ]
+        }
+
+        judge = JudgeAgent(api_key="sk-test")
+        result = await judge.run(
+            [r],
+            diff="+import { MarketingNavbar } from './components'",
+            verification=verification,
+        )
+
+        assert result["findings"] == []
+
+    async def test_verified_missing_export_keeps_missing_export_finding(self):
+        f = _finding(
+            "src/App.tsx",
+            1,
+            "MarketingNavbar is not exported",
+            "ERROR",
+            0.95,
+            "quality",
+            evidence=["import { MarketingNavbar } from './components'"],
+            impact_type="runtime_error",
+            impact_statement="Build fails because MarketingNavbar is not exported.",
+            description="The import references MarketingNavbar, but ./components does not export it.",
+        )
+        r = AgentResult(status=AgentStatus.SUCCESS, findings=[f])
+        verification = {
+            "exports": [
+                {
+                    "file": "src/App.tsx",
+                    "line": 1,
+                    "module": "./components",
+                    "symbol": "MarketingNavbar",
+                    "status": "fail",
+                    "detail": "MarketingNavbar is not exported by src/components/index.ts",
+                }
+            ]
+        }
+
+        judge = JudgeAgent(api_key="sk-test")
+        result = await judge.run(
+            [r],
+            diff="+import { MarketingNavbar } from './components'",
+            verification=verification,
+        )
+
+        assert len(result["findings"]) == 1
+
+    async def test_verified_existing_export_does_not_discard_behavior_finding(self):
+        f = _finding(
+            "src/App.tsx",
+            1,
+            "MarketingNavbar missing required prop",
+            "ERROR",
+            0.95,
+            "quality",
+            evidence=["import { MarketingNavbar } from './components'"],
+            impact_type="runtime_error",
+            impact_statement="Rendering fails because required props are omitted.",
+            description="MarketingNavbar exists, but this call site omits a required prop.",
+        )
+        r = AgentResult(status=AgentStatus.SUCCESS, findings=[f])
+        verification = {
+            "exports": [
+                {
+                    "file": "src/App.tsx",
+                    "line": 1,
+                    "module": "./components",
+                    "symbol": "MarketingNavbar",
+                    "status": "pass",
+                    "detail": "named export found",
+                }
+            ]
+        }
+
+        judge = JudgeAgent(api_key="sk-test")
+        result = await judge.run(
+            [r],
+            diff="+import { MarketingNavbar } from './components'",
+            verification=verification,
+        )
+
+        assert len(result["findings"]) == 1
 
 
 class TestMergeRecommendation:

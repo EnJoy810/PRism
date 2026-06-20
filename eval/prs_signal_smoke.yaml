@@ -1,0 +1,15 @@
+- id: fastapi-12000
+  repo: fastapi/fastapi
+  url: https://github.com/fastapi/fastapi/pull/12000
+  kind: public-config-change
+  notes: Prior eval produced labeler config findings.
+- id: pydantic-10500
+  repo: pydantic/pydantic
+  url: https://github.com/pydantic/pydantic/pull/10500
+  kind: public-python-change
+  notes: Prior eval produced schema/type behavior finding.
+- id: encode-httpx-3300
+  repo: encode/httpx
+  url: https://github.com/encode/httpx/pull/3300
+  kind: public-python-api-change
+  notes: Prior eval produced export/type/API findings.

@@ -7,6 +7,8 @@ Usage:
 
 import argparse
 import asyncio
+import logging
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -15,12 +17,27 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 
 from app.graph import ReviewGraph  # noqa: E402
 
+DEFAULT_REVIEW_TIMEOUT_SECONDS = 300
 
-async def review(pr_url: str, token: str | None = None):
+
+async def review(
+    pr_url: str,
+    token: str | None = None,
+    timeout_seconds: int = DEFAULT_REVIEW_TIMEOUT_SECONDS,
+):
     print(f"Reviewing {pr_url}...\n")
 
     graph = ReviewGraph()
-    result = await graph.run(pr_url=pr_url)
+    try:
+        result = await asyncio.wait_for(
+            graph.run(pr_url=pr_url, github_token=token),
+            timeout=timeout_seconds,
+        )
+    except TimeoutError as e:
+        raise RuntimeError(
+            f"Review timed out after {timeout_seconds}s. "
+            "Check stage logs above for the last completed step."
+        ) from e
 
     issues = result.get("issues", [])
     stats = result.get("stats", {})
@@ -51,24 +68,38 @@ async def review(pr_url: str, token: str | None = None):
 
     skipped = result.get("skipped_agents", [])
     if skipped:
-        print(f"\n**跳过的 Agent**: {', '.join(skipped)}")
+        print(f"\n⚠️  **部分 Agent 失败，结果可能不完整**: {', '.join(skipped)}")
 
     print("\n---")
     print("Review complete.")
 
 
 def main():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
     parser = argparse.ArgumentParser(description="PRism CLI — local PR review")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     review_parser = subparsers.add_parser("review", help="Review a PR")
     review_parser.add_argument("pr_url", help="GitHub PR URL")
     review_parser.add_argument("--token", help="GitHub token (optional, falls back to env)")
+    review_parser.add_argument(
+        "--timeout",
+        type=int,
+        default=DEFAULT_REVIEW_TIMEOUT_SECONDS,
+        help="Review timeout in seconds",
+    )
 
     args = parser.parse_args()
 
     if args.command == "review":
-        asyncio.run(review(args.pr_url, args.token))
+        try:
+            asyncio.run(review(args.pr_url, args.token, args.timeout))
+        except RuntimeError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            raise SystemExit(1) from e
 
 
 if __name__ == "__main__":

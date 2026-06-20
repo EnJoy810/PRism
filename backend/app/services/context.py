@@ -5,7 +5,6 @@ definitions via GitHub Search API. Respects token budget:
 definition context <= 50% of diff token count.
 """
 
-import asyncio
 import logging
 import os
 import re
@@ -23,7 +22,28 @@ _IMPORT_PATTERNS = [
 
 _CALL_PATTERN = re.compile(r"^\+.*?\b(\w+)\s*\(")
 
+# Python/JS 内置和标准库符号，搜了没有意义，浪费 Code Search 配额
+_BUILTIN_SYMBOLS = {
+    # Python builtins
+    "len", "str", "int", "float", "bool", "list", "dict", "set", "tuple",
+    "type", "isinstance", "issubclass", "hasattr", "getattr", "setattr",
+    "print", "range", "enumerate", "zip", "map", "filter", "sorted",
+    "min", "max", "sum", "abs", "round", "open", "super", "object",
+    "property", "classmethod", "staticmethod", "next", "iter",
+    "any", "all", "not", "and", "or", "in", "is",
+    # asyncio
+    "gather", "create_task", "sleep", "run",
+    # logging
+    "debug", "info", "warning", "error", "critical", "getLogger",
+    # common stdlib
+    "json", "os", "re", "sys", "time", "math", "Path", "datetime",
+    # JS builtins
+    "console", "Promise", "Array", "Object", "JSON", "Math",
+    "setTimeout", "setInterval", "clearTimeout", "clearInterval",
+}
+
 _SYMBOL_CACHE: dict[str, str] = {}  # symbol_name -> definition_snippet
+_RATE_LIMITED = object()  # sentinel：区分"没找到"和"被限速"
 
 
 def _extract_symbols_from_diff(diff: str) -> list[str]:
@@ -36,20 +56,22 @@ def _extract_symbols_from_diff(diff: str) -> list[str]:
         for pat in _IMPORT_PATTERNS:
             m = pat.search(line)
             if m:
-                symbols.add(m.group(1))
+                name = m.group(1)
+                if name not in _BUILTIN_SYMBOLS:
+                    symbols.add(name)
 
     # Also extract function calls from added lines
+    _KEYWORD_SKIP = {"if", "for", "while", "switch", "return", "import",
+                     "from", "throw", "await", "yield", "case", "catch",
+                     "new", "this", "typeof", "describe", "it", "test",
+                     "expect", "assert", "true", "false", "null", "undefined"}
     for line in diff.split("\n"):
         if not line.startswith("+"):
             continue
         m = _CALL_PATTERN.search(line)
         if m:
             name = m.group(1)
-            if name not in {"if", "for", "while", "switch", "return",
-                            "import", "from", "throw", "await", "yield",
-                            "case", "catch", "new", "this", "typeof",
-                            "console", "describe", "it", "test", "expect",
-                            "assert", "true", "false", "null", "undefined"}:
+            if name not in _KEYWORD_SKIP and name not in _BUILTIN_SYMBOLS:
                 symbols.add(name)
 
     return list(symbols)
@@ -61,7 +83,7 @@ async def _fetch_symbol_definition(
     repo: str,
     symbol: str,
     headers: dict,
-) -> str | None:
+):
     cached = _SYMBOL_CACHE.get(symbol)
     if cached:
         return cached
@@ -75,6 +97,9 @@ async def _fetch_symbol_definition(
             },
             headers=headers,
         )
+        if resp.status_code in (403, 429):
+            logger.debug("symbol context: rate limited on '%s' (%d)", symbol, resp.status_code)
+            return _RATE_LIMITED
         resp.raise_for_status()
         data = resp.json()
 
@@ -142,17 +167,20 @@ async def fetch_symbol_context(
     max_definition_tokens = diff_token_estimate // 2
 
     async with httpx.AsyncClient() as client:
-        tasks = [
-            _fetch_symbol_definition(client, owner, repo, sym, headers)
-            for sym in symbols[:10]
-        ]
-        results = await asyncio.gather(*tasks)
+        # 串行搜索，遇到速率限制立刻停，避免把配额全打光
+        results = []
+        for sym in symbols[:10]:
+            result = await _fetch_symbol_definition(client, owner, repo, sym, headers)
+            results.append(result)
+            if result is _RATE_LIMITED:
+                logger.debug("symbol context: rate limited, stopping early")
+                break
 
     definitions: dict[str, str] = {}
     total_tokens = 0
 
     for symbol, snippet in zip(symbols[:10], results):
-        if snippet is None:
+        if snippet is None or snippet is _RATE_LIMITED:
             continue
         snippet_tokens = len(snippet) // 4
         if total_tokens + snippet_tokens > max_definition_tokens:

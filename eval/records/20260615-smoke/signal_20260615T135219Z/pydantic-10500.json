@@ -1,0 +1,73 @@
+{
+  "sample": {
+    "id": "pydantic-10500",
+    "repo": "pydantic/pydantic",
+    "url": "https://github.com/pydantic/pydantic/pull/10500",
+    "kind": "public-python-change",
+    "notes": "Prior eval produced schema/type behavior finding."
+  },
+  "ran_at": "2026-06-15T13:53:52.465305+00:00",
+  "result": {
+    "summary": "Support constraints for `Base64Bytes` with core schema fix",
+    "risk_level": "HIGH",
+    "issues": [
+      {
+        "file": "tests/test_types.py",
+        "line": 7020,
+        "title": "重复的测试函数名导致原有参数化测试被覆盖",
+        "description": "新增的 `test_base64_with_invalid_min_length` 函数与同一文件中已存在的同名函数（定义于约 7219 行）冲突。Python 允许后定义的函数覆盖前一个，导致原有的参数化测试（覆盖 `Base64Bytes`、`Base64Str`、`Base64UrlBytes`、`Base64UrlStr` 四种类型）被完全替换，`Base64Str` 和 `Base64UrlStr` 的约束验证不再被执行。后果是在未来重构时，这两个类型的 `min_length`/`max_length` 异常路径将失去测试覆盖，可能出现行为回归而无法被及时发现。",
+        "severity": "ERROR",
+        "confidence": 0.95,
+        "category": "quality",
+        "impact_type": "behavior_regression",
+        "impact_statement": "原有的参数化测试被覆盖，`Base64Str` 和 `Base64UrlStr` 的 `min_length`/`max_length` 验证不再被测试覆盖，可能导致未检测到的行为回归。",
+        "diff_snippet": null,
+        "evidence": [
+          "def test_base64_with_invalid_min_length() -> None:",
+          "    \"\"\"Check that an error is raised when the length of the base64",
+          "    value is less or more than the min_length and max_length\"\"\"",
+          "",
+          "    class Model(BaseModel):",
+          "        base64_value: Base64Bytes = Field(min_length=3, max_length=5)",
+          "",
+          "    with pytest.raises(ValidationError):",
+          "        Model(**{'base64_value': b''})",
+          "",
+          "    with pytest.raises(ValidationError):",
+          "        Model(**{'base64_value': b'123456'})"
+        ],
+        "token_cost": 0.0
+      },
+      {
+        "file": "pydantic/types.py",
+        "line": 2481,
+        "title": "调用 `handler(source)` 可能引发无限递归（当 source 为 `EncodedBytes` 子类时）",
+        "description": "在 `EncodedBytes.__get_pydantic_core_schema__` 中，新增的 `schema = handler(source)` 语句会触发对当前类型的 core schema 获取。如果 `source` 是 `EncodedBytes` 的非重写子类（如 `Base64Bytes`、`Base64UrlBytes` 等），`handler` 可能会再次调用当前方法，导致递归调用栈溢出（RuntimeError: maximum recursion depth exceeded）。虽然 Pydantic 内部可能有递归检测机制，但此修改将原本直接返回 `core_schema.bytes_schema()` 的安全路径改为依赖外部处理器，增加了递归风险。一旦递归发生，验证过程会崩溃，且难以调试。",
+        "severity": "WARNING",
+        "confidence": 0.7,
+        "category": "quality",
+        "impact_type": "runtime_error",
+        "impact_statement": "当 `EncodedBytes` 子类（如 `Base64Bytes`）作为类型注解被首次 schema 生成时，`handler(source)` 可能触发无限递归，导致栈溢出异常并使应用崩溃。",
+        "diff_snippet": null,
+        "evidence": [
+          "        schema = handler(source)",
+          "        if (schema_type := schema['type']) not in ('bytes', 'str'):",
+          "            raise PydanticUserError(f\"'EncodedBytes' cannot annotate '{schema_type}'.\", code='invalid-annotated-type')"
+        ],
+        "token_cost": 0.0
+      }
+    ],
+    "stats": {
+      "files_changed": 2,
+      "additions": 32,
+      "deletions": 1,
+      "issues_by_severity": {
+        "ERROR": 1,
+        "WARNING": 1,
+        "INFO": 0
+      }
+    },
+    "merge_recommendation": "REQUEST_CHANGES",
+    "skipped_agents": []
+  }
+}

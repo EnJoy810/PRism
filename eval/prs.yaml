@@ -1,0 +1,25 @@
+- id: fastapi-12000
+  repo: fastapi/fastapi
+  url: https://github.com/fastapi/fastapi/pull/12000
+  kind: public-python
+  notes: Initial smoke sample; replace if diff is too large or unavailable.
+- id: pydantic-10500
+  repo: pydantic/pydantic
+  url: https://github.com/pydantic/pydantic/pull/10500
+  kind: public-python
+  notes: Initial smoke sample; replace if diff is too large or unavailable.
+- id: encode-httpx-3300
+  repo: encode/httpx
+  url: https://github.com/encode/httpx/pull/3300
+  kind: public-python
+  notes: Initial smoke sample; replace if diff is too large or unavailable.
+- id: celery-9000
+  repo: celery/celery
+  url: https://github.com/celery/celery/pull/9000
+  kind: public-python
+  notes: Initial smoke sample; replace if diff is too large or unavailable.
+- id: sqlalchemy-11500
+  repo: sqlalchemy/sqlalchemy
+  url: https://github.com/sqlalchemy/sqlalchemy/pull/11500
+  kind: public-python
+  notes: Initial smoke sample; replace if diff is too large or unavailable.

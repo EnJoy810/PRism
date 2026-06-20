@@ -44,6 +44,22 @@ async def test_agent_parses_findings():
         assert result.findings[0].severity == "ERROR"
 
 
+async def test_agent_parses_impact_type():
+    agent = _TestAgent(api_key="sk-test")
+    mock_response = (
+        "<think>Found an issue</think>\n"
+        '{"findings": ['
+        '  {"file": "a.ts", "line": 5, "title": "Bug", "description": "desc",'
+        '   "severity": "ERROR", "confidence": 0.9, "category": "test",'
+        '   "impact_type": "api_breakage"}'
+        "]}"
+    )
+
+    with patch.object(agent.client, "chat", AsyncMock(return_value=mock_response)):
+        result = await agent.run(diff="+ const x = 1")
+        assert result.findings[0].impact_type == "api_breakage"
+
+
 async def test_agent_format_error_on_bad_json():
     agent = _TestAgent(api_key="sk-test")
     mock_response = "<think>Something</think>\nnot json at all"
@@ -52,6 +68,22 @@ async def test_agent_format_error_on_bad_json():
         result = await agent.run(diff="+ const x = 1")
         assert result.status == AgentStatus.FORMAT_ERROR
         assert result.findings == []
+
+
+async def test_agent_extracts_json_from_markdown_text():
+    agent = _TestAgent(api_key="sk-test")
+    mock_response = (
+        "## 分析过程\n发现一个问题。\n"
+        '{"findings": ['
+        '  {"file": "a.ts", "line": 5, "title": "Bug", "description": "desc",'
+        '   "severity": "ERROR", "confidence": 0.9, "category": "test"}'
+        "]}"
+    )
+
+    with patch.object(agent.client, "chat", AsyncMock(return_value=mock_response)):
+        result = await agent.run(diff="+ const x = 1")
+        assert result.status == AgentStatus.SUCCESS
+        assert result.findings[0].title == "Bug"
 
 
 async def test_agent_empty_findings():

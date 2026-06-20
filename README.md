@@ -1,285 +1,370 @@
 <div align="center">
-  <h1>🔷 PRism</h1>
-  <p><strong>AI 驱动的 Pull Request 代码审查助手</strong></p>
-  <p>粘贴 PR 链接，数秒内获得结构化、可执行的 Review 反馈</p>
 
-  <p>
-    <img src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react" />
-    <img src="https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square&logo=fastapi" />
-    <img src="https://img.shields.io/badge/DeepSeek-V4_Flash-4A90D9?style=flat-square" />
-    <img src="https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript" />
-    <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" />
-  </p>
+<img src="https://img.shields.io/badge/PRism-AI_PR_Review-6366f1?style=for-the-badge" alt="PRism" />
+
+**开源自部署 · 少报但准 · 每条有据可查**
+
+[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![License](https://img.shields.io/badge/license-MIT-22c55e?style=flat-square)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-239_passed-22c55e?style=flat-square)](#开发验证)
+
+[快速开始](#快速开始) · [工作原理](#工作原理) · [与竞品对比](#与竞品对比) · [部署](#github-app-自动审查) · [配置](#配置)
+
 </div>
 
 ---
 
-## 项目简介
+## 是什么
 
-PRism 是一款 AI 辅助代码审查工具，基于 DeepSeek V4 分析 GitHub Pull Request。用户只需粘贴 PR 链接，即可获得严重程度分级的 Review 反馈、PR 级别风险评估和可操作修改建议。
+PRism 是一个开源自部署的 AI PR 审查工具。安装到 GitHub 仓库后，每次 PR 打开或更新时自动运行，把审查结果以 inline comment + summary comment 的形式写回 PR 评论区。
 
-> 多 Agent 架构：3 个专家 Agent（安全/性能/代码规范）并行审查，裁判 Agent 汇总去重降噪。
+**核心设计原则：宁可漏报，不能误报。**
+
+每条 finding 必须引用 diff 中真实存在的代码行作为证据，程序验证后才输出。没有证据的 finding 直接丢弃。
+
+```
+PR opened / synchronized
+        │
+        ▼
+┌───────────────────────────────────────────┐
+│              ReviewGraph                  │
+│                                           │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐  │
+│  │ Security │ │ Quality  │ │  Perf    │  │  ← 三 Agent 并行
+│  └────┬─────┘ └────┬─────┘ └────┬─────┘  │
+│       │             │            │        │
+│       └─────────────┴────────────┘        │
+│                     │                     │
+│              ┌──────▼──────┐              │
+│              │  Judge 去重  │              │  ← 规则去重 + 语义去重
+│              └──────┬──────┘              │
+│                     │                     │
+│           ┌─────────▼──────────┐          │
+│           │  Evidence 验证门控  │          │  ← 行号必须真实存在
+│           └─────────┬──────────┘          │
+│                     │                     │
+│         ┌───────────▼───────────┐         │
+│         │   Blast Radius 补充   │         │  ← 跨文件调用方分析
+│         └───────────┬───────────┘         │
+└─────────────────────┼─────────────────────┘
+                      │
+                      ▼
+          GitHub PR inline comments
+              + summary comment
+```
 
 ---
 
-## 核心功能
+## 与竞品对比
 
-| 功能 | 描述 |
-|------|------|
-| **智能上下文获取** | 不止拉取 diff，还获取 PR 元数据、commit 信息和文件列表 |
-| **严重程度分级门控** | 确定性三级分类（ERROR / WARNING / INFO），低质量问题默认过滤 |
-| **流式 Review 输出** | SSE 实时流式传输，一边分析一边展示思考过程和结果 |
-| **误报控制** | System prompt 强制执行 85%+ 置信度阈值，要求每个问题附带具体代码位置和触发场景 |
-| **风险评估** | PR 整体风险等级（HIGH / MEDIUM / LOW），高风险文件标注 |
-| **合并建议** | 基于 review 结果给出 APPROVE / REQUEST_CHANGES / COMMENT 建议 |
+|  | **PR-Agent** | **CodeRabbit** | **GitHub Copilot** | **PRism** |
+|--|:--:|:--:|:--:|:--:|
+| 部署方式 | 云服务 / 自部署 | 云服务 | 云服务 | **开源自部署** |
+| 定价 | 按用量 | credits 制，耗尽阻塞 merge | 订阅制 | **免费** |
+| 重复评论 | ❌ 高频投诉 #1 | ⚠️ 不可控 | ✅ | ✅ dismiss 旧评论 |
+| 幻觉控制 | 依赖模型自评 | ⚠️ 误报率最高 | ✅ 低置信度抑制 | ✅ **程序验证行号** |
+| 跨文件分析 | diff-only | 向量语义兜底 | agentic grep | ✅ **tree-sitter 调用图** |
+| 动态调用 | ❌ | ❌ | ⚠️ 慢且贵 | ❌ 诚实声明边界 |
+| 可审计 | ⚠️ | ❌ 闭源 | ❌ 闭源 | ✅ **每条 finding 有 evidence** |
 
----
-
-## 系统架构
-
-```
-┌──────────────────────────────────────────────────────┐
-│                      PRism                            │
-│                                                        │
-│  ┌──────────────┐   REST / SSE   ┌────────────────┐  │
-│  │  React SPA   │◄──────────────►│  FastAPI 后端   │  │
-│  │              │                │                │  │
-│  │  • PR URL    │                │  ┌──────────┐  │  │
-│  │  • 文件树    │                │  │  GitHub   │  │  │
-│  │  • 流式渲染  │                │  │  Service  │  │  │
-│  │  • 问题卡片  │                │  └─────┬────┘  │  │
-│  │              │                │        │       │  │
-│  └──────────────┘                │  ┌─────▼────┐  │  │
-│                                  │  │  LLM     │  │  │
-│                                  │  │  Service │  │  │
-│                                  │  │ DeepSeek │  │  │
-│                                  │  └──────────┘  │  │
-│                                  └────────────────┘  │
-└──────────────────────────────────────────────────────┘
-```
+> **PR-Agent 最高频投诉**（GitHub issue #2037、#1833、#2402）：每次 push 重复发同样的评论。  
+> **CodeRabbit 被横评点名**：highest false-positive rate，credits 耗尽后 PR status check 变红阻塞 merge queue。
 
 ---
 
 ## 快速开始
 
-### 环境要求
-
-- Node.js 20+ 和 pnpm
-- Python 3.12+
-- [DeepSeek API Key](https://platform.deepseek.com/api_keys)
-- GitHub Personal Access Token（访问私有仓库时需要）
-
-### 一键启动
+### CLI 模式（30 秒上手）
 
 ```bash
 git clone https://github.com/EnJoy810/PRism.git
-cd PRism
-bash dev.sh
+cd PRism/backend
+pip install -r requirements.txt
+cp .env.example .env
 ```
 
-`dev.sh` 会自动创建虚拟环境、安装依赖、从 `.env.example` 复制配置文件。启动后编辑 `backend/.env`，填入 DeepSeek API Key 和 GitHub Token：
-
-```
-DEEPSEEK_API_KEY=sk-your_deepseek_api_key
-GITHUB_TOKEN=github_pat_your_token
-```
-
-重新运行 `bash dev.sh` 即可。
-
-### 手动启动
+编辑 `.env`，填入 LLM API Key：
 
 ```bash
-# 后端
-cd backend
-cp .env.example .env
-# 在 .env 中填写 DEEPSEEK_API_KEY
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
-
-# 前端
-cd frontend
-pnpm install
-pnpm dev
+LLM_API_KEY=your_api_key
+LLM_BASE_URL=https://api.deepseek.com   # 任何 OpenAI-compatible 接口
+LLM_MODEL=deepseek-v4-flash
 ```
 
-API Key 和 GitHub Token 也可在页面右上角 Settings 面板中配置，优先级高于环境变量。
+运行：
 
-打开 [http://localhost:5173](http://localhost:5173) 使用。
+```bash
+python -m app.cli review https://github.com/owner/repo/pull/42
 
-### Docker 一键启动
+# 私有仓库
+python -m app.cli review https://github.com/owner/repo/pull/42 --token ghp_xxx
+```
+
+**输出示例：**
+
+```
+## PRism Review: fix: update token validation logic
+
+**风险等级**: HIGH
+**推荐**: REQUEST_CHANGES
+**文件变更**: 3 | +47 -12
+**问题数**: 2
+
+### 1. [🔴 ERROR] verify_token 新增 strict 参数无默认值，破坏所有调用方
+
+- **文件**: `auth/token.py:23`
+- **描述**: 函数签名从 verify_token(token, user_id) 改为
+  verify_token(token, user_id, strict)，strict 无默认值。
+  b.py:6 和 c.py:14 的调用方未更新，运行时 TypeError。
+- **置信度**: 0.95
+- **证据**: `def verify_token(token: str, user_id: int, strict: bool) -> bool:`
+```
+
+### Docker 模式（GitHub App 自动审查）
+
+```bash
+cp backend/.env.example backend/.env
+# 填入完整配置（见下方 GitHub App 配置节）
+docker compose up --build
+```
+
+启动三个服务：FastAPI webhook server（:8000）、ARQ worker、Redis。
+
+---
+
+## 工作原理
+
+### 三 Agent 并行
+
+每次 PR 审查启动三个独立 Agent，各有侧重：
+
+| Agent | 关注点 | 典型 finding |
+|-------|--------|-------------|
+| **Security** | 权限绕过、注入、认证削弱 | 删除了校验逻辑、新增了未过滤的输入路径 |
+| **Quality** | 接口破坏、空指针、行为回归 | 函数签名变更导致调用方 TypeError |
+| **Performance** | N+1 查询、内存泄漏、阻塞 IO | 循环内新增了 DB 查询 |
+
+三 Agent 输出合并后经过两轮去重：**规则去重**（相同文件+行号+类别）→ **Judge 语义去重**（LLM 判断描述相似的 finding 是否是同一个问题）。
+
+### Evidence 验证
+
+每条 finding 必须提供 `evidence` 字段，引用 diff 中的具体代码片段。验证逻辑：
+
+1. 检查引用的行号是否在 diff 的新增行范围内
+2. 检查引用的代码片段是否真实出现在 diff 中
+3. 验证失败 → finding 丢弃，不输出
+
+这是 PRism 误报率控制的核心机制。LLM 的 confidence 是 soft gate，程序验证是 hard gate。
+
+### 跨文件调用图（Blast Radius）
+
+```
+PR diff 中识别被修改的函数
+        │
+        ▼
+tree-sitter 解析仓库 Python/JS/TS 文件
+        │
+        ▼
+SQLite 存储调用关系（nodes + edges）
+        │
+        ▼
+BFS depth=2 找到所有调用方
+        │
+        ▼
+调用方代码作为 [CROSS-FILE CONTEXT] 注入 Agent prompt
+        │
+        ▼
+Agent 分析调用方是否因接口变更受影响
+```
+
+clone 失败或 index 失败时自动降级为 diff-only，主链路不依赖跨文件分析成功。
+
+---
+
+## GitHub App 自动审查
+
+### 1. 创建 GitHub App
+
+进入 GitHub **Settings → Developer settings → GitHub Apps → New GitHub App**：
+
+- **Webhook URL**: `https://your-domain.com/api/webhook`
+- **Webhook secret**: 生成一个随机字符串，稍后填入配置
+- **Repository permissions**:
+  - Contents: `Read-only`
+  - Metadata: `Read-only`
+  - Pull requests: `Read and write`
+  - Issues: `Read and write`（用于权限错误通知）
+- **Subscribe to events**: `Pull requests`、`Issue comments`
+
+生成私钥（`.pem` 文件），记录 App ID。
+
+### 2. 配置环境变量
+
+```bash
+# LLM（任何 OpenAI-compatible 接口）
+LLM_API_KEY=your_llm_api_key
+LLM_BASE_URL=https://api.deepseek.com
+LLM_MODEL=deepseek-v4-flash
+
+# GitHub App
+GITHUB_APP_ID=123456
+GITHUB_APP_PRIVATE_KEY_FILE=/run/secrets/github-app-private-key.pem
+GITHUB_WEBHOOK_SECRET=your_webhook_secret
+
+# Redis
+REDIS_URL=redis://localhost:6379/0
+```
+
+### 3. 启动服务
 
 ```bash
 docker compose up --build
 ```
 
-启动 API（8000）+ Worker + Redis 三服务。需在 `backend/.env` 中配置 `DEEPSEEK_API_KEY`。
+本地调试时用 [ngrok](https://ngrok.com) 或 [smee.io](https://smee.io) 将 GitHub webhook 转发到 `http://localhost:8000/api/webhook`。
 
-### GitHub App 自动审查（Webhook 模式）
+### 4. 安装到仓库
 
-1. 在 GitHub 上创建 GitHub App：Settings → Developer settings → GitHub Apps → New GitHub App
-2. 设置 Webhook URL：`https://your-domain.com/api/webhook`
-3. 订阅事件：`Pull requests`、`Issue comments`
-4. 生成私钥，在 GitHub App 设置页面安装到目标仓库
-5. 配置环境变量：
-   ```
-   GITHUB_WEBHOOK_SECRET=your_webhook_secret
-   GITHUB_TOKEN=ghp_your_pat
-   ```
-6. 启动 Worker：`python -m app.worker`
+在 GitHub App 页面 → Install App → 选择目标仓库。
 
-Webhook 自动处理 `pull_request.opened/synchronize` 和 `issue_comment`（含 `@prism-bot`）事件。
+安装完成后，目标仓库的每次 PR `opened` 或 `synchronize` 事件会自动触发审查。
 
-### LangSmith 可观测性
+---
+
+## 配置
+
+### 完整环境变量
+
+| 变量 | 必需 | 说明 |
+|------|------|------|
+| `LLM_API_KEY` | ✅ | OpenAI-compatible LLM API key |
+| `LLM_BASE_URL` | 否 | API endpoint，默认 DeepSeek |
+| `LLM_MODEL` | 否 | 模型名称，默认 `deepseek-v4-flash` |
+| `GITHUB_TOKEN` | CLI 私有仓库 | Personal access token |
+| `GITHUB_APP_ID` | GitHub App 模式 | App ID |
+| `GITHUB_APP_PRIVATE_KEY` | GitHub App 模式 | 私钥内容（或用 `_FILE` 指定路径） |
+| `GITHUB_APP_PRIVATE_KEY_FILE` | GitHub App 模式 | 私钥文件路径（推荐） |
+| `GITHUB_WEBHOOK_SECRET` | GitHub App 模式 | Webhook 签名密钥 |
+| `REDIS_URL` | Worker 模式 | 默认 `redis://localhost:6379/0` |
+
+### prism.yaml
+
+```yaml
+llm:
+  api_key: ""                        # 优先使用 LLM_API_KEY 环境变量
+  base_url: https://api.deepseek.com
+  model: deepseek-v4-flash
+
+review:
+  budget:
+    max_per_review_usd: 0.50         # 单次 review 费用上限
+    max_tokens_per_call: 16384
+  agents:
+    expert_model: deepseek-v4-flash  # 三 Agent 使用的模型
+    judge_model: deepseek-v4-pro     # Judge 去重使用的模型
+  filters:
+    min_confidence: 0.7              # 低于此置信度的 finding 过滤
+    severity_threshold: WARNING      # INFO 级别默认不输出
+  skip:
+    - "*.lock"
+    - "*.snap"
+    - "*.min.js"
+    - "dist/**"
+    - "vendor/**"
+```
+
+---
+
+## 项目结构
+
+```
+PRism/
+├── backend/
+│   ├── app/
+│   │   ├── main.py              # FastAPI 入口，health check + webhook 路由
+│   │   ├── worker.py            # ARQ worker，消费审查队列
+│   │   ├── graph.py             # ReviewGraph，编排全流程
+│   │   ├── cli.py               # CLI 入口
+│   │   ├── auth.py              # GitHub App JWT + installation token
+│   │   ├── config.py            # prism.yaml + 环境变量配置
+│   │   ├── agents/
+│   │   │   ├── security.py      # Security Agent
+│   │   │   ├── quality.py       # Quality Agent
+│   │   │   ├── performance.py   # Performance Agent
+│   │   │   ├── judge.py         # Judge 去重 Agent
+│   │   │   └── base.py          # BaseAgent，LLM 调用 + response 解析
+│   │   ├── models/              # Pydantic schema
+│   │   ├── routers/
+│   │   │   └── webhook.py       # webhook 入口，签名验证 + 幂等去重
+│   │   └── services/
+│   │       ├── github.py        # GitHub API 数据获取
+│   │       ├── github_review.py # PR 评论写回，dismiss 旧评论
+│   │       ├── llm.py           # OpenAI-compatible 调用，重试 + token 预算
+│   │       ├── context.py       # 符号定义检索
+│   │       ├── repo.py          # shallow clone + LRU 缓存
+│   │       ├── indexer.py       # tree-sitter → SQLite 调用图
+│   │       ├── blast_radius.py  # BFS 调用方查找
+│   │       └── sast.py          # Semgrep wrapper（可选）
+│   ├── tests/                   # 239 个测试
+│   ├── Dockerfile
+│   └── requirements.txt
+├── docker-compose.yml
+└── prism.yaml
+```
+
+---
+
+## 开发验证
 
 ```bash
-LANGSMITH_TRACING=true
-LANGSMITH_API_KEY=lsv2_your_key
+cd backend
+
+# Lint
+.venv/bin/ruff check app/ tests/
+
+# 测试（239 个，约 20s）
+.venv/bin/python -m pytest tests/ -v
+
+# 本地 CLI 测试
+python -m app.cli review https://github.com/owner/repo/pull/42
 ```
 
-如已安装 `langsmith` SDK，OpenAI 调用自动追踪。graph.py 各阶段耗时日志在 Worker 日志中可见。
+---
+
+## 架构决策
+
+几个关键的技术选型，每个都有具体依据：
+
+**为什么用调用图而不是向量 RAG？**  
+向量搜索的是"语义相似的代码"，不是"实际调用了这个函数的代码"。"谁调用了 `verify_token`"用向量找，会返回所有处理 token 的代码，大量误报。调用图是精确匹配，没有语义噪声。（参考：Greptile 也选择了图而非向量，但用 Neo4j；PRism 用 SQLite，更轻量）
+
+**为什么不用 LSP？**  
+LSP 启动慢（需要热身）、有状态（难并发）、多语言要启多个进程。工程成本远超收益，当前场景 tree-sitter 静态解析够用。
+
+**为什么 evidence 用程序验证而不是 LLM 自评？**  
+LLM 对幻觉的 confidence 也很高。一个根本不存在的函数调用，LLM 会给 0.9 confidence。程序验证行号是否真实存在于 diff 新增行，是 hard gate，不依赖模型自评。
+
+**为什么只做 BFS depth=2？**  
+"When More Retrieval Hurts"（SWE-PRBench）：上下文越多，模型表现反而更差。depth=3 的 token 量可能超出 context 上限且噪声指数级增加。接受 depth=2 的边界，不假装能解决更深的链路。
 
 ---
 
-## 使用方式
+## 路线图
 
-1. 在左侧输入框粘贴 GitHub PR 链接（支持 `pull/` 和 `pulls/` 格式）
-2. 如需访问私有仓库，在同一输入框下方填入 GitHub Token
-3. 点击「开始 AI 审查」，等待流式输出
-4. Review 完成后可查看：AI 摘要、风险分析、问题列表（支持按严重程度筛选）、合并建议
-5. 结果可导出为 Markdown 报告或一键提交评论到 GitHub PR
-
----
-
-## API 文档
-
-### `GET /api/pr/meta`
-
-获取 PR 元数据。
-
-**参数：**
-- `pr_url` — PR 链接
-- `github_token` — （可选）GitHub Token
-
-### `POST /api/review`
-
-分析 PR 并返回结构化 JSON Review 结果。
-
-**请求体：**
-```json
-{
-  "pr_url": "https://github.com/owner/repo/pull/123",
-  "github_token": "ghp_...",
-  "api_key": "sk-...",
-  "model": "deepseek-v4-flash",
-  "options": {
-    "include_style": false
-  }
-}
-```
-
-**响应：**
-```json
-{
-  "code": "0",
-  "data": {
-    "summary": "本 PR 对用户鉴权模块进行了重构，整体质量良好。",
-    "risk_level": "LOW",
-    "issues": [
-      {
-        "severity": "WARNING",
-        "file": "src/auth.ts",
-        "line": 42,
-        "title": "缺少输入校验",
-        "description": "用户 ID 直接用于数据库查询，未做格式校验",
-        "suggestion": "使用 Zod 或类似库对 userId 进行格式校验"
-      }
-    ],
-    "stats": { "files_changed": 3, "additions": 120, "deletions": 45 }
-  }
-}
-```
-
-### `POST /api/review/stream`
-
-请求体同上，返回 SSE 流式输出。事件类型：
-- `diff` — PR diff 片段 + 元数据
-- `thinking` — AI 思考过程（逐 token 推送）
-- `result` — 增量结果片段
-
----
-
-## 技术栈
-
-**前端**
-- React 18 + Vite 7 + TypeScript（strict 模式）
-- Ant Design 5 + Tailwind CSS 3
-- TanStack Query 5 + Zustand 5
-
-**后端**
-- FastAPI 0.115 + Python 3.12
-- OpenAI SDK（DeepSeek V4 系列，OpenAI 兼容接口）
-- httpx 异步调用 GitHub REST API
-- Pydantic v2 数据校验
-
----
-
-## 设计决策
-
-### 为什么选择 DeepSeek V4？
-
-DeepSeek V4 拥有 1M token 上下文窗口（Flash 型号），在代码理解和多文件审查任务上表现出色。使用 OpenAI 兼容接口，迁移成本极低，同时推理成本远低于同级别闭源模型。
-
-### 为什么用确定性门控而不是让 LLM 判断严重程度？
-
-LLM 自行分配严重级别不可靠——模型倾向于过度上报警告。PRism 使用确定性门控：只有当模型能给出具体代码位置和可操作建议时，该问题才通过 ERROR/WARNING 阈值。INFO 级别默认过滤，可通过 `include_style: true` 手动开启。
-
-### 上下文获取策略
-
-| 层级 | 获取内容 | 现状 |
-|------|---------|------|
-| L1 | 仅 PR diff | 大多数工具止步于此 |
-| L2 | diff + 元数据 + 文件列表 | PRism（当前） |
-| L3 | L2 + GitHub GraphQL 调用链分析 | PRism（规划中） |
-
----
-
-## 视频演示
-
-Demo 视频见百度网盘：
-
-> 链接：https://pan.baidu.com/s/1fqYmnMlSW5qCqZ6ln8AFQg
-> 提取码：1234
-
-演示内容：
-- 输入 GitHub PR 链接并获取 Review 结果
-- 流式输出实时渲染效果
-- 严重程度分级展示（ERROR / WARNING）
-- 风险评估总览与合并建议
-
----
-
-## 第三方依赖说明
-
-| 依赖 | 用途 | 原创功能 |
-|------|------|---------|
-| `openai` SDK | 调用 DeepSeek V4 OpenAI 兼容接口 | Severity Gating、ReAct 提示词设计 |
-| `httpx` | 异步调用 GitHub REST API | PR 上下文多层级获取策略 |
-| `fastapi` | HTTP 服务框架 | SSE 流式输出端点 |
-| `@tanstack/react-query` | 服务端状态管理 | — |
-| `antd` | UI 组件库 | Review 结果可视化卡片 |
-| `zustand` | 前端 UI 状态管理 | — |
-
----
-
-## 后续规划
-
-- [ ] 通过 GitHub GraphQL 获取调用链上下文（Level 3）
-- [ ] PR 历史学习——识别仓库内的重复缺陷模式
-- [ ] GitHub Actions 集成，支持 CI 自动 Review
-- [ ] 团队规则自定义（`.prism.yml` 配置文件）
+- [x] 三 Agent 并行 + Judge 去重
+- [x] Evidence 程序验证
+- [x] GitHub App 全链路（webhook → ARQ → worker → PR 评论）
+- [x] tree-sitter 调用图跨文件分析
+- [x] Webhook 幂等 + 重复评论去重
+- [x] post_comment 重试 + 失败 fallback
+- [ ] JS/TS 跨文件分析（当前仅 Python）
+- [ ] Linter + LLM 混合（Bandit/Semgrep 先扫，LLM 补逻辑漏洞）
+- [ ] Map-Reduce per-caller 分析（解决多调用方 position bias）
+- [ ] 多语言支持（Go、Java）
 
 ---
 
 ## 开源协议
 
-MIT © 2026 enjoy810
+MIT © 2026 [enjoy810](https://github.com/EnJoy810)
