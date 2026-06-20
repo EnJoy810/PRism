@@ -5,6 +5,8 @@ import httpx
 
 from app.models.review import ReviewIssue, ReviewResult
 
+_BOT_SIGNATURE = "## PRism Review"
+
 logger = logging.getLogger(__name__)
 
 _MAX_RETRIES = 3
@@ -69,6 +71,36 @@ def _build_review_body(
         lines.append("")
 
     return "\n".join(lines)
+
+
+async def dismiss_old_reviews(
+    owner: str,
+    repo: str,
+    pr_number: int,
+    github_token: str,
+) -> None:
+    headers = {
+        "Authorization": f"token {github_token}",
+        "Accept": "application/vnd.github.v3+json",
+    }
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(
+            f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/reviews",
+            headers=headers,
+        )
+        resp.raise_for_status()
+        for review in resp.json():
+            if not review.get("body", "").startswith(_BOT_SIGNATURE):
+                continue
+            try:
+                await client.put(
+                    f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/reviews/{review['id']}/dismissals",
+                    headers=headers,
+                    json={"message": "Superseded by updated review"},
+                )
+                logger.info("Dismissed old review %s for %s/%s#%d", review["id"], owner, repo, pr_number)
+            except httpx.HTTPStatusError as e:
+                logger.warning("Failed to dismiss review %s: %s", review["id"], e)
 
 
 async def post_review_to_github(

@@ -42,6 +42,15 @@ async def handle_webhook(request: Request):
                 status_code=401, content={"error": "Invalid signature"}
             )
 
+    delivery_id = request.headers.get("X-GitHub-Delivery", "")
+    if delivery_id:
+        dedup_key = f"prism:webhook:delivery:{delivery_id}"
+        redis = request.app.state.redis
+        if await redis.exists(dedup_key):
+            logger.info("Duplicate delivery ignored: %s", delivery_id)
+            return JSONResponse(status_code=200, content={"status": "duplicate"})
+        await redis.setex(dedup_key, 3600, "1")
+
     payload = json.loads(body)
     event = request.headers.get("X-GitHub-Event", "unknown")
 

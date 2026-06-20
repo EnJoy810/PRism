@@ -147,7 +147,8 @@ def build_index(repo_path: Path, db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path))
     conn.execute("PRAGMA journal_mode=WAL")
-    conn.executescript("""
+    try:
+        conn.executescript("""
         CREATE TABLE IF NOT EXISTS nodes (
             id         INTEGER PRIMARY KEY,
             file       TEXT NOT NULL,
@@ -169,37 +170,37 @@ def build_index(repo_path: Path, db_path: Path) -> None:
             hash TEXT NOT NULL
         );
     """)
-    needs_full_reindex = _ensure_edges_callee_id(conn)
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_edges_callee_id ON edges(callee_id)")
-    if needs_full_reindex:
-        conn.execute("DELETE FROM file_hashes")
-    conn.commit()
 
-    parsers = {}
-    for lang in ("python", "javascript", "typescript"):
-        result = _get_parser(lang)
-        if result:
-            parsers[lang] = result
+        needs_full_reindex = _ensure_edges_callee_id(conn)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_edges_callee_id ON edges(callee_id)")
+        if needs_full_reindex:
+            conn.execute("DELETE FROM file_hashes")
+        conn.commit()
 
-    if not parsers:
-        logger.warning("no tree-sitter parsers available, skipping index")
+        parsers = {}
+        for lang in ("python", "javascript", "typescript"):
+            result = _get_parser(lang)
+            if result:
+                parsers[lang] = result
+
+        if not parsers:
+            logger.warning("no tree-sitter parsers available, skipping index")
+            return
+
+        ext_to_lang = {}
+        for lang, exts in _LANG_EXTENSIONS.items():
+            if lang in parsers:
+                for ext in exts:
+                    ext_to_lang[ext] = lang
+
+        for path in _iter_files(repo_path, ext_to_lang):
+            rel = str(path.relative_to(repo_path))
+            try:
+                _index_file(conn, path, rel, ext_to_lang, parsers)
+            except Exception as e:
+                logger.debug("skip %s: %s", rel, e)
+    finally:
         conn.close()
-        return
-
-    ext_to_lang = {}
-    for lang, exts in _LANG_EXTENSIONS.items():
-        if lang in parsers:
-            for ext in exts:
-                ext_to_lang[ext] = lang
-
-    for path in _iter_files(repo_path, ext_to_lang):
-        rel = str(path.relative_to(repo_path))
-        try:
-            _index_file(conn, path, rel, ext_to_lang, parsers)
-        except Exception as e:
-            logger.debug("skip %s: %s", rel, e)
-
-    conn.close()
     logger.info("index built: %s", db_path)
 
 

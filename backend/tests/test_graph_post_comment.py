@@ -26,13 +26,11 @@ async def test_post_comment_calls_github_review():
         "stats": {"files_changed": 3, "additions": 50, "deletions": 10, "issues_by_severity": {"ERROR": 1, "WARNING": 0, "INFO": 0}},
         "merge_recommendation": "REQUEST_CHANGES",
         "skipped_agents": [],
+        "diff": "+ const x = 1\n- const y = 2",
+        "event": "",
     }
 
-    with (
-        patch.object(graph, "_fetch_pr_context", new_callable=AsyncMock) as mock_fetch,
-        patch("app.services.github_review.post_review_to_github", new_callable=AsyncMock) as mock_github,
-    ):
-        mock_fetch.return_value = {"diff": "+ const x = 1\n- const y = 2", "title": "", "description": "", "files": []}
+    with patch("app.services.github_review.post_review_to_github", new_callable=AsyncMock) as mock_github:
         mock_github.return_value = {"html_url": "https://github.com/owner/repo/pull/1#pullrequestreview-123", "inline_count": 1}
 
         result = await graph.post_comment(
@@ -43,8 +41,4 @@ async def test_post_comment_calls_github_review():
 
         assert result["html_url"] == "https://github.com/owner/repo/pull/1#pullrequestreview-123"
         assert result["inline_count"] == 1
-        mock_fetch.assert_awaited_once_with(
-            "https://github.com/owner/repo/pull/1",
-            "ghp_test",
-        )
         mock_github.assert_awaited_once()

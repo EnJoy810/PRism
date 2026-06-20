@@ -79,6 +79,7 @@ class ReviewGraph:
         pr_url: str,
         context: dict | None = None,
         github_token: str | None = None,
+        event: str = "",
     ) -> dict:
         t0 = time.monotonic()
         if context is None:
@@ -116,10 +117,11 @@ class ReviewGraph:
             or len(context.get("files", [])) > _BATCH_SIZE
             or _estimated_tokens(context.get("diff", "")) > _max_tokens_per_call()
         )
+        context["_event"] = event
         if not needs_batching:
-            return await self._run_single(context, pr_url, t0)
+            return await self._run_single(context, pr_url, t0, event=event)
 
-        return await self._run_multi(context, pr_url, t0)
+        return await self._run_multi(context, pr_url, t0, event=event)
 
     async def _fetch_symbol_context(self, context: dict, pr_url: str) -> dict[str, str]:
         try:
@@ -267,12 +269,12 @@ class ReviewGraph:
             logger.debug("verification fetch failed: %s", e)
             return {}
 
-    async def _run_single(self, context: dict, pr_url: str, t0: float) -> dict:
+    async def _run_single(self, context: dict, pr_url: str, t0: float, event: str = "") -> dict:
         diff = context.get("diff", "")
         agent_results = await self._run_agents(diff, context)
-        return await self._assemble_result(agent_results, context, pr_url, t0, diff)
+        return await self._assemble_result(agent_results, context, pr_url, t0, diff, event=event)
 
-    async def _run_multi(self, context: dict, pr_url: str, t0: float) -> dict:
+    async def _run_multi(self, context: dict, pr_url: str, t0: float, event: str = "") -> dict:
         batches = _split_into_batches(context, _BATCH_SIZE)
         logger.info(
             "multi-round: %d batches for %d files", len(batches), len(context.get("files", []))
@@ -292,7 +294,7 @@ class ReviewGraph:
             all_agent_results.extend(agent_results)
 
         return await self._assemble_result(
-            all_agent_results, context, pr_url, t0, context.get("diff", ""),
+            all_agent_results, context, pr_url, t0, context.get("diff", ""), event=event,
         )
 
     async def _run_agents(self, diff: str, context: dict) -> list[AgentResult]:
@@ -358,6 +360,7 @@ class ReviewGraph:
         pr_url: str,
         t0: float,
         diff: str | None = None,
+        event: str = "",
     ) -> dict:
         tj = time.monotonic()
         sast_findings = _sast_findings(context.get("sast_findings", {}))
@@ -423,6 +426,8 @@ class ReviewGraph:
             },
             "merge_recommendation": decision,
             "skipped_agents": skipped,
+            "diff": diff or "",
+            "event": event,
         }
 
     async def post_comment(
@@ -430,10 +435,10 @@ class ReviewGraph:
         result: dict,
         pr_url: str,
         github_token: str,
-    ) -> dict:
+    ) -> dict | None:
         from app.models.review import ReviewIssue, ReviewResult, ReviewStats
         from app.services.github import parse_pr_url
-        from app.services.github_review import post_review_to_github
+        from app.services.github_review import dismiss_old_reviews, post_review_to_github
 
         owner, repo, pr_number = parse_pr_url(pr_url)
 
@@ -450,18 +455,55 @@ class ReviewGraph:
             stats=stats,
         )
 
-        pr_context = await self._fetch_pr_context(pr_url, github_token)
-        position_map = _build_position_map(pr_context.get("diff", ""))
+        event = result.get("event", "")
+        diff = result.get("diff", "")
+        position_map = _build_position_map(diff) if diff else {}
 
-        data = await post_review_to_github(
-            owner, repo, pr_number, github_token, review_result, position_map
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            try:
+                data = await post_review_to_github(
+                    owner, repo, pr_number, github_token, review_result, position_map
+                )
+                if "synchronize" in event:
+                    await dismiss_old_reviews(owner, repo, pr_number, github_token)
+                return data
+            except Exception as e:
+                last_exc = e
+                if attempt < 2:
+                    delay = 2 ** attempt
+                    logger.warning(
+                        "post_comment attempt %d/3 failed: %s — retrying in %ds",
+                        attempt + 1, e, delay,
+                    )
+                    await asyncio.sleep(delay)
+
+        logger.error(
+            "post_comment failed after 3 attempts for %s: %s\n%s",
+            pr_url, last_exc, _result_fallback_text(result),
         )
-        return data
+        return None
 
 
 def _build_position_map(diff: str) -> dict[str, dict[int, int]]:
     from app.services.diff import build_position_map as _bpm
     return _bpm(diff)
+
+
+def _result_fallback_text(result: dict) -> str:
+    issues = result.get("issues", [])
+    lines = [
+        f"--- fallback review result for {result.get('summary', 'N/A')} ---",
+        f"risk_level={result.get('risk_level', 'N/A')}",
+        f"issues={len(issues)}",
+    ]
+    for i, issue in enumerate(issues[:10]):
+        sev = issue.get("severity", "?")
+        loc = f"{issue.get('file','?')}:{issue.get('line','?')}"
+        lines.append(f"  [{i}] {sev} {loc} {issue.get('title','?')}")
+    if len(issues) > 10:
+        lines.append(f"  ... and {len(issues) - 10} more")
+    return "\n".join(lines)
 
 
 def _risk_level(findings: list[FindingSchema]) -> str:
