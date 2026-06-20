@@ -358,7 +358,7 @@ LLM 对幻觉的 confidence 也很高。一个根本不存在的函数调用，L
 - [x] tree-sitter 调用图跨文件分析
 - [x] Webhook 幂等 + 重复评论去重
 - [x] post_comment 重试 + 失败 fallback
-- [ ] JS/TS 跨文件分析（当前仅 Python）
+- [ ] Go / Java 跨文件分析（当前支持 Python / JS / TS）
 - [ ] Linter + LLM 混合（Bandit/Semgrep 先扫，LLM 补逻辑漏洞）
 - [ ] Map-Reduce per-caller 分析（解决多调用方 position bias）
 - [ ] 多语言支持（Go、Java）
