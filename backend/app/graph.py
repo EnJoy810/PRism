@@ -427,6 +427,7 @@ class ReviewGraph:
             "merge_recommendation": decision,
             "skipped_agents": skipped,
             "diff": diff or "",
+            "diff_truncated": context.get("diff_truncated", False),
             "event": event,
         }
 
@@ -453,6 +454,7 @@ class ReviewGraph:
             risk_level=result.get("risk_level", "LOW"),
             issues=issues,
             stats=stats,
+            diff_truncated=result.get("diff_truncated", False),
         )
 
         event = result.get("event", "")
@@ -709,7 +711,7 @@ def _changed_node_ids_from_diff(db_path: Path, diff: str) -> set[int]:
         return set()
 
     ids: set[int] = set()
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), timeout=30)
     try:
         for file, lines in added_lines.items():
             for line in sorted(lines):

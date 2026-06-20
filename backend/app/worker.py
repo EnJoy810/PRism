@@ -2,9 +2,12 @@
 
 import logging
 
+import httpx
+
 from app.auth import get_installation_token
 from app.config import load_config
 from app.graph import ReviewGraph
+from app.services.github import parse_pr_url
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +36,31 @@ async def _resolve_token(config, installation_id: int | None) -> str | None:
     if token:
         return token
     return None
+
+
+async def _post_access_denied_comment(pr_url: str, token: str) -> None:
+    owner, repo, pr_number = parse_pr_url(pr_url)
+    body = (
+        "## PRism Review\n\n"
+        "PRism 无法访问此仓库的代码。可能原因：\n\n"
+        "1. PRism App 未安装到此仓库\n"
+        "2. 仓库为私有且未被授权\n"
+        "3. Token 无此仓库的读取权限\n\n"
+        "请确认 [PRism App](https://github.com/apps/prism) 已安装并授权到此仓库。"
+    )
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(
+            f"https://api.github.com/repos/{owner}/{repo}/issues/{pr_number}/comments",
+            headers={
+                "Authorization": f"token {token}",
+                "Accept": "application/vnd.github.v3+json",
+            },
+            json={"body": body},
+        )
+        if resp.status_code == 201:
+            logger.info("Posted access-denied notice for %s", pr_url)
+        else:
+            logger.warning("Failed to post access-denied notice for %s: %s", pr_url, resp.status_code)
 
 
 async def review_job(ctx, pr_url: str, event: str, installation_id: int | None = None):
@@ -65,6 +93,13 @@ async def review_job(ctx, pr_url: str, event: str, installation_id: int | None =
             result.get("risk_level", "N/A"),
             result.get("merge_recommendation", "N/A"),
         )
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code in (403, 404):
+            logger.error("No access to %s: %s", pr_url, e)
+            if token:
+                await _post_access_denied_comment(pr_url, token)
+        else:
+            logger.error("Review failed for %s: %s", pr_url, e)
     except Exception as e:
         logger.error("Review failed for %s: %s", pr_url, e)
 
@@ -74,6 +109,7 @@ class WorkerSettings:
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = None
+    max_tries = 3
 
     @classmethod
     def from_url(cls, redis_url: str):

@@ -27,10 +27,24 @@ async def test_ensure_repo_returns_none_on_clone_failure():
 
 
 @pytest.mark.asyncio
+async def test_ensure_repo_skips_incomplete_clone():
+    sha = "cafebabe"
+    cache = _cache_path("o", "r", sha)
+    cache.mkdir(parents=True, exist_ok=True)
+    try:
+        result = await ensure_repo("o", "r", sha, "token")
+        assert result is None
+    finally:
+        import shutil
+        shutil.rmtree(cache, ignore_errors=True)
+
+
+@pytest.mark.asyncio
 async def test_ensure_repo_cache_hit():
     sha = "deadbeef"
     cache = _cache_path("o", "r", sha)
     cache.mkdir(parents=True, exist_ok=True)
+    (cache / ".done").touch()
     try:
         result = await ensure_repo("o", "r", sha, "token")
         assert result == cache

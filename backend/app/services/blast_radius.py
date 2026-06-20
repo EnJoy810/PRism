@@ -31,7 +31,7 @@ def compute_blast_radius(
         from app.services.indexer import ensure_index_schema
 
         ensure_index_schema(db_path)
-        conn = sqlite3.connect(str(db_path), check_same_thread=False)
+        conn = sqlite3.connect(str(db_path), check_same_thread=False, timeout=30)
         conn.row_factory = sqlite3.Row
 
         changed_nodes = _resolve_changed_nodes(conn, changed_fn_names, changed_node_ids)

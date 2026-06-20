@@ -7,6 +7,7 @@ Scans a local repository and builds a SQLite call graph:
 Dynamic calls (getattr, reflection) are NOT tracked — accepted limitation.
 """
 
+import concurrent.futures
 import hashlib
 import logging
 import sqlite3
@@ -145,7 +146,7 @@ def _extract_js_ts(source: bytes, tree) -> tuple[list[dict], list[dict]]:
 
 def build_index(repo_path: Path, db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), timeout=30)
     conn.execute("PRAGMA journal_mode=WAL")
     try:
         conn.executescript("""
@@ -207,7 +208,7 @@ def build_index(repo_path: Path, db_path: Path) -> None:
 def ensure_index_schema(db_path: Path) -> None:
     if not db_path.exists():
         return
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), timeout=30)
     try:
         _ensure_edges_callee_id(conn)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_edges_callee_id ON edges(callee_id)")
@@ -258,7 +259,11 @@ def _index_file(
     source = path.read_bytes()
 
     try:
-        tree = parser.parse(source)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(parser.parse, source)
+            tree = future.result(timeout=30)
+    except concurrent.futures.TimeoutError:
+        raise RuntimeError("parse timeout (>30s)") from None
     except Exception as e:
         raise RuntimeError(f"parse error: {e}") from e
 

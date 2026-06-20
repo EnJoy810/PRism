@@ -58,6 +58,7 @@ class ReviewResult(BaseModel):
     priority_files: list[str] = []
     risk_areas: list[RiskArea] = []
     merge_recommendation: MergeRecommendation | None = None
+    diff_truncated: bool = False
 
 
 class ReviewRequest(BaseModel):

@@ -58,6 +58,12 @@ def _build_review_body(
             lines.append(f"| `{path}` | {summary} |")
         lines.append("")
 
+    if result.diff_truncated:
+        lines += [
+            "> ⚠️ diff 超过 100KB，仅分析了前 100KB 的变更，部分文件未覆盖。",
+            "",
+        ]
+
     # fallback 问题汇总（无法定位到具体行的问题）
     if fallback_issues:
         lines += [
