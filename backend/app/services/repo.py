@@ -88,7 +88,7 @@ async def _clone_by_fetch(
     # GitHub does not allow fetching arbitrary SHAs by default.
     # Clone the default branch first (shallow), then fetch the exact SHA.
     proc = await asyncio.create_subprocess_exec(
-        "git", "clone", "--depth=1", "--filter=blob:none", url, str(dest),
+        "git", "clone", "--depth=1", url, str(dest),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         env=env,

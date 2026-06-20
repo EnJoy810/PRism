@@ -70,18 +70,21 @@ class PerformanceAgent(BaseAgent):
         if blast_section:
             parts.append(blast_section)
             parts.append(
-                "\n---\n注意：[CROSS-FILE CONTEXT] 部分是调用了被改函数的其他文件代码，"
-                "仅供判断影响范围，不要对这部分代码本身报问题。\n"
+                "\n---\n[CROSS-FILE CONTEXT] 是调用了被改函数的其他文件代码。"
+                "如果发现调用方因接口变更引入性能问题（如循环调用、资源泄漏），"
+                "可以报告，但必须将 evidence_source 设为 \"CONTEXT\"，"
+                "并在 evidence 里引用 [CROSS-FILE CONTEXT] 中的具体代码片段。\n"
             )
         parts.append(f"\n变更代码：\n{diff[:40000]}")
         parts.append(
             "\n\n请先写 <think> 分析过程，再输出 JSON：\n"
-            '{"findings": [{"file": "路径", "line": 行号, "title": "标题", '
+            '{"findings": [{"file": "路径", "line": 行号或null, "title": "标题", '
             '"description": "变更导致了什么性能问题，在什么数据量下触发，后果是什么", '
             '"severity": "ERROR|WARNING|INFO", '
             '"confidence": 0.0~1.0, "category": "performance", '
             '"impact_type": "performance_regression|resource_leak|complexity_increase|info_only", '
             '"impact_statement": "具体数据规模下的性能/资源后果", '
-            '"evidence": ["引用的相关代码片段（可以是新增行、删除行或上下文行）"]}]}'
+            '"evidence_source": "DIFF|CONTEXT", '
+            '"evidence": ["引用的相关代码片段；CONTEXT 来源必须引用 [CROSS-FILE CONTEXT] 里的实际代码"]}]}'
         )
         return "\n".join(parts)

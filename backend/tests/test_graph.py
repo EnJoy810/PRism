@@ -669,6 +669,48 @@ class TestPublicationGate:
         assert gated[0].severity == "ERROR"
         assert gated[0].confidence == 0.9
 
+    def test_context_source_bypasses_line_check_with_evidence(self):
+        """evidence_source=CONTEXT 的 finding 不受行号门控限制，但 evidence 不能为空。"""
+        from app.models.agent import FindingSchema
+
+        diff = """diff --git a/a.py b/a.py
+--- a/a.py
++++ b/a.py
+@@ -1,1 +1,1 @@
+-def foo(x): return x
++def foo(): return 0
+"""
+        # 跨文件调用方，file 不在 diff 里，行号也不在 diff 里
+        context_finding = FindingSchema(
+            file="b.py",
+            line=10,
+            title="Caller passes arg that no longer exists",
+            description="b.py calls foo(x) but foo() now takes no args",
+            severity="ERROR",
+            confidence=0.9,
+            category="quality",
+            evidence_source="CONTEXT",
+            evidence=["result = foo(user_input)"],
+        )
+        # CONTEXT 来源但 evidence 为空，应被过滤
+        context_no_evidence = FindingSchema(
+            file="b.py",
+            line=10,
+            title="Hallucinated context finding",
+            description="no evidence",
+            severity="ERROR",
+            confidence=0.9,
+            category="quality",
+            evidence_source="CONTEXT",
+            evidence=[],
+        )
+
+        gated = publication_gate([context_finding, context_no_evidence], diff)
+        titles = [f.title for f in gated]
+
+        assert "Caller passes arg that no longer exists" in titles
+        assert "Hallucinated context finding" not in titles
+
 
 class TestSastIntegration:
     @pytest.mark.asyncio

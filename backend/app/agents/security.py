@@ -69,18 +69,21 @@ class SecurityAgent(BaseAgent):
         if blast_section:
             parts.append(blast_section)
             parts.append(
-                "\n---\n注意：[CROSS-FILE CONTEXT] 部分是调用了被改函数的其他文件代码，"
-                "仅供判断影响范围，不要对这部分代码本身报问题。\n"
+                "\n---\n[CROSS-FILE CONTEXT] 是调用了被改函数的其他文件代码。"
+                "如果发现调用方因接口变更产生安全风险（如参数校验缺失、权限绕过），"
+                "可以报告，但必须将 evidence_source 设为 \"CONTEXT\"，"
+                "并在 evidence 里引用 [CROSS-FILE CONTEXT] 中的具体代码片段。\n"
             )
         parts.append(f"\n变更代码：\n{diff[:40000]}")
         parts.append(
             "\n\n请先写 <think> 分析过程，再输出 JSON：\n"
-            '{"findings": [{"file": "路径", "line": 行号, "title": "标题", '
+            '{"findings": [{"file": "路径", "line": 行号或null, "title": "标题", '
             '"description": "变更导致了什么安全风险，攻击路径是什么，后果是什么", '
             '"severity": "ERROR|WARNING|INFO", '
             '"confidence": 0.0~1.0, "category": "security", '
             '"impact_type": "injection|auth_bypass|info_disclosure|security_regression|info_only", '
             '"impact_statement": "具体攻击场景和后果", '
-            '"evidence": ["引用的相关代码片段（可以是新增行、删除行或上下文行）"]}]}'
+            '"evidence_source": "DIFF|CONTEXT", '
+            '"evidence": ["引用的相关代码片段；CONTEXT 来源必须引用 [CROSS-FILE CONTEXT] 里的实际代码"]}]}'
         )
         return "\n".join(parts)

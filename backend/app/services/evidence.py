@@ -87,10 +87,14 @@ def publication_gate(findings: list[FindingSchema], diff: str) -> list[FindingSc
     for finding in findings:
         if severity(finding) == "INFO":
             continue
-        if not finding_targets_added_line(finding, diff):
-            continue
-        # evidence 字面匹配已禁用——LLM 输出的 evidence 经常有细微差异导致合法 findings 被静默丢弃
-        # 保留行号检查作为唯一硬性门控，后续视 eval 结果决定是否恢复
+        # CONTEXT 来源引用 blast radius 跨文件代码，不在 diff 里，
+        # 跳过行号门控但要求 evidence 非空，防止纯幻觉
+        if finding.evidence_source == "CONTEXT":
+            if not finding.evidence:
+                continue
+        else:
+            if not finding_targets_added_line(finding, diff):
+                continue
 
         key = (finding.file, finding.line, finding.title)
         existing = kept.get(key)

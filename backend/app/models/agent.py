@@ -23,6 +23,7 @@ class FindingSchema(BaseModel):
     impact_statement: str | None = None
     diff_snippet: str | None = None
     evidence: list[str] | None = None  # 引用的代码行号/片段，为空则丢弃
+    evidence_source: str = "DIFF"  # "DIFF" | "CONTEXT" — CONTEXT 表示来自 blast radius 跨文件上下文
     token_cost: float = 0.0  # estimated LLM token cost attributed to this finding
 
 
