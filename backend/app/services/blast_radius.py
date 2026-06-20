@@ -15,8 +15,8 @@ DEFAULT_DEPTH = 2
 
 def compute_blast_radius(
     db_path: Path,
-    diff_token_estimate: int,
     changed_fn_names: set[str],
+    diff_token_estimate: int,
     depth: int = DEFAULT_DEPTH,
     changed_node_ids: set[int] | None = None,
 ) -> list[dict]:
