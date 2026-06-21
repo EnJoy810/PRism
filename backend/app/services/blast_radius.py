@@ -2,10 +2,17 @@
 
 Given a set of changed function names, finds all callers up to depth=2.
 Respects a token budget: total context <= 50% of diff token count.
+
+Supports two backends:
+- "builtin": tree-sitter + SQLite BFS (default)
+- "codegraph": subprocess call to `codegraph callers --json`
 """
 
+import json
 import logging
+import shutil
 import sqlite3
+import subprocess
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -151,6 +158,101 @@ def _bfs_callers(
     return result
 
 
+def compute_blast_radius_codegraph(
+    repo_path: Path,
+    changed_fn_names: set[str],
+    diff_token_estimate: int,
+) -> list[dict]:
+    """CodeGraph backend: subprocess `codegraph callers --json`.
+
+    Falls back to empty list if codegraph CLI is not installed or init fails.
+    """
+    if not shutil.which("codegraph"):
+        logger.warning("codegraph CLI not found, skipping codegraph backend")
+        return []
+
+    if not changed_fn_names:
+        return []
+
+    # initialise index if not already done
+    codegraph_dir = repo_path / ".codegraph"
+    if not codegraph_dir.exists():
+        try:
+            subprocess.run(
+                ["codegraph", "init", str(repo_path)],
+                capture_output=True, text=True, timeout=120, check=True,
+            )
+            logger.info("codegraph init complete: %s", repo_path)
+        except subprocess.CalledProcessError as e:
+            logger.warning("codegraph init failed: %s", e.stderr[:500])
+            return []
+        except subprocess.TimeoutExpired:
+            logger.warning("codegraph init timed out")
+            return []
+
+    token_budget = diff_token_estimate // 2
+    used_tokens = 0
+    results = []
+
+    for fn_name in sorted(changed_fn_names):
+        if used_tokens >= token_budget:
+            break
+        try:
+            proc = subprocess.run(
+                ["codegraph", "callers", fn_name, "--json", "--limit", "50",
+                 "--path", str(repo_path)],
+                capture_output=True, text=True, timeout=30,
+            )
+            if proc.returncode != 0 or not proc.stdout.strip():
+                continue
+            data = json.loads(proc.stdout)
+            callers_raw = data.get("callers", [])
+            if not callers_raw:
+                continue
+
+            caller_list = []
+            for c in callers_raw:
+                file_path = c.get("filePath", "")
+                # read code snippet from file
+                code = _read_snippet(Path(file_path), c.get("startLine", 1))
+                snippet_tokens = len(code) // 4
+                if used_tokens + snippet_tokens > token_budget:
+                    break
+                caller_list.append({
+                    "file": file_path,
+                    "fn": c.get("name", ""),
+                    "start_line": c.get("startLine", 0),
+                    "code": code,
+                })
+                used_tokens += snippet_tokens
+
+            if caller_list:
+                results.append({
+                    "changed_fn": fn_name,
+                    "callers": caller_list,
+                })
+        except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError) as e:
+            logger.warning("codegraph callers failed for %s: %s", fn_name, e)
+            continue
+
+    logger.info(
+        "codegraph blast radius: %d changed fns, %d caller groups found",
+        len(changed_fn_names), len(results),
+    )
+    return results
+
+
+def _read_snippet(file_path: Path, start_line: int, context_lines: int = 20) -> str:
+    """Read up to context_lines lines starting from start_line."""
+    try:
+        lines = file_path.read_text(errors="replace").splitlines()
+        start = max(0, start_line - 1)
+        end = min(len(lines), start + context_lines)
+        return "\n".join(lines[start:end])
+    except OSError:
+        return ""
+
+
 def _caller_rows(conn: sqlite3.Connection, callee_id: int, callee_name: str) -> list[sqlite3.Row]:
     columns = {row[1] for row in conn.execute("PRAGMA table_info(edges)").fetchall()}
     if "callee_id" in columns:
@@ -167,7 +269,7 @@ def _caller_rows(conn: sqlite3.Connection, callee_id: int, callee_name: str) -> 
         if rows:
             return rows
 
-    return conn.execute(
+    rows = conn.execute(
         """
         SELECT n.id, n.file, n.name, n.start_line, n.code
         FROM edges e
@@ -177,3 +279,18 @@ def _caller_rows(conn: sqlite3.Connection, callee_id: int, callee_name: str) -> 
         """,
         (callee_name,),
     ).fetchall()
+    if rows:
+        return rows
+
+    if "callee_short_name" in columns:
+        return conn.execute(
+            """
+            SELECT n.id, n.file, n.name, n.start_line, n.code
+            FROM edges e
+            JOIN nodes n ON n.id = e.caller_id
+            WHERE e.callee_short_name = ?
+            ORDER BY n.file, n.start_line, n.name
+            """,
+            (callee_name,),
+        ).fetchall()
+    return []

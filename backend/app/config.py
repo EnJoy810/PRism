@@ -32,6 +32,7 @@ class ReviewConfig(BaseModel):
     agents: AgentConfig = AgentConfig()
     filters: FilterConfig = FilterConfig()
     skip: list[str] = Field(default_factory=lambda: ["*.lock", "*.snap", "*.min.js"])
+    callgraph_backend: Literal["builtin", "codegraph"] = "builtin"
 
 
 class GithubConfig(BaseModel):
@@ -102,6 +103,7 @@ def load_config(path: str | Path | None = None) -> PrismConfig:
             agents=AgentConfig(**(review_data.get("agents", {}))),
             filters=FilterConfig(**(review_data.get("filters", {}))),
             skip=review_data.get("skip", ["*.lock", "*.snap", "*.min.js"]),
+            callgraph_backend=review_data.get("callgraph_backend", "builtin"),
         ),
         github=GithubConfig(
             webhook_secret=_env_or(

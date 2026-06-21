@@ -147,7 +147,10 @@ class ReviewGraph:
     async def _fetch_blast_radius(self, context: dict, pr_url: str) -> list:
         try:
             from app.config import load_config
-            from app.services.blast_radius import compute_blast_radius
+            from app.services.blast_radius import (
+                compute_blast_radius,
+                compute_blast_radius_codegraph,
+            )
             from app.services.github import parse_pr_url
             from app.services.indexer import build_index, ensure_index_schema
             from app.services.repo import ensure_repo
@@ -169,18 +172,34 @@ class ReviewGraph:
             if repo_path is None:
                 return []
 
+            diff = context.get("diff", "")
+            changed_fns = _extract_changed_functions(diff)
+            diff_tokens = len(diff) // 4
+
+            backend = cfg.review.callgraph_backend
+            if backend == "codegraph":
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(
+                    None,
+                    compute_blast_radius_codegraph,
+                    repo_path, changed_fns, diff_tokens,
+                )
+                logger.info(
+                    "blast radius [codegraph]: %d changed fns, %d caller groups found",
+                    len(changed_fns), len(result),
+                )
+                return result
+
+            # builtin backend (default)
             db_path = repo_path.parent / f"{repo_path.name}.db"
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, build_index, repo_path, db_path)
             await loop.run_in_executor(None, ensure_index_schema, db_path)
 
-            diff = context.get("diff", "")
-            changed_fns = _extract_changed_functions(diff)
             changed_node_ids = _changed_node_ids_from_diff(db_path, diff)
             if not changed_fns and not changed_node_ids:
                 return []
 
-            diff_tokens = len(diff) // 4
             result = compute_blast_radius(
                 db_path,
                 changed_fns,
@@ -188,7 +207,7 @@ class ReviewGraph:
                 changed_node_ids=changed_node_ids,
             )
             logger.info(
-                "blast radius: %d changed fns, %d changed nodes, %d caller groups found",
+                "blast radius [builtin]: %d changed fns, %d changed nodes, %d caller groups found",
                 len(changed_fns), len(changed_node_ids), len(result),
             )
             return result

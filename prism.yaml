@@ -20,6 +20,8 @@ review:
     - "*.lock"
     - "*.snap"
     - "*.min.js"
+  # callgraph backend: "builtin" (tree-sitter SQLite BFS) or "codegraph" (npm @colbymchenry/codegraph)
+  callgraph_backend: builtin
 
 github:
   # Secrets go in .env: GITHUB_WEBHOOK_SECRET, GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY
