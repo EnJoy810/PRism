@@ -117,6 +117,7 @@ def test_build_index_migrates_old_edges_schema(python_repo, tmp_path):
     conn.close()
 
     assert "callee_id" in columns
+    assert "callee_short_name" in columns
     assert edge[0] == bar_id
 
 
@@ -140,6 +141,7 @@ def test_ensure_index_schema_migrates_old_edges_schema(tmp_path):
     conn.close()
 
     assert "callee_id" in columns
+    assert "callee_short_name" in columns
     assert "idx_edges_callee_id" in indexes
 
 
@@ -158,6 +160,167 @@ def test_incremental_index_skips_unchanged(python_repo, tmp_path):
     conn.close()
 
     assert count_before == count_after
+
+
+def test_object_call_stores_full_and_short_name(tmp_path):
+    src = tmp_path / "app.py"
+    src.write_text("""
+class Cache:
+    def get(self):
+        return 1
+
+class Db:
+    def get(self):
+        return 2
+
+def handler():
+    c = Cache()
+    d = Db()
+    return c.get() + d.get()
+""")
+    db = tmp_path / "test.db"
+    build_index(tmp_path, db)
+    conn = sqlite3.connect(str(db))
+    edges = conn.execute(
+        "SELECT callee_name, callee_short_name FROM edges ORDER BY callee_name"
+    ).fetchall()
+    conn.close()
+    assert ("c.get", "get") in edges
+    assert ("d.get", "get") in edges
+
+
+def test_cross_file_callee_id_resolved(tmp_path):
+    a = tmp_path / "a.py"
+    a.write_text("""
+def foo():
+    return 1
+""")
+    b = tmp_path / "b.py"
+    b.write_text("""
+from a import foo
+
+def bar():
+    return foo()
+""")
+    db = tmp_path / "test.db"
+    build_index(tmp_path, db)
+    conn = sqlite3.connect(str(db))
+    edge = conn.execute(
+        """
+        SELECT e.callee_id
+        FROM edges e
+        JOIN nodes caller ON caller.id = e.caller_id
+        WHERE caller.name = 'bar' AND e.callee_name = 'foo'
+        """
+    ).fetchone()
+    foo_id = conn.execute("SELECT id FROM nodes WHERE name = 'foo' AND file = 'a.py'").fetchone()[0]
+    conn.close()
+    assert edge is not None
+    assert edge[0] == foo_id
+
+
+def test_import_resolves_cross_file_callee_precisely(tmp_path):
+    a = tmp_path / "a.py"
+    a.write_text("""
+def get():
+    return 1
+""")
+    d = tmp_path / "d.py"
+    d.write_text("""
+def get():
+    return 2
+""")
+    b = tmp_path / "b.py"
+    b.write_text("""
+from a import get
+
+def handler():
+    return get()
+""")
+    db = tmp_path / "test.db"
+    build_index(tmp_path, db)
+    conn = sqlite3.connect(str(db))
+    edge = conn.execute(
+        """
+        SELECT e.callee_id
+        FROM edges e
+        JOIN nodes caller ON caller.id = e.caller_id
+        WHERE caller.name = 'handler' AND e.callee_name = 'get'
+        """
+    ).fetchone()
+    a_get_id = conn.execute(
+        "SELECT id FROM nodes WHERE name = 'get' AND file = 'a.py'"
+    ).fetchone()[0]
+    conn.close()
+    assert edge is not None
+    assert edge[0] == a_get_id
+
+
+def test_import_dotted_prefix_resolves_correctly(tmp_path):
+    a = tmp_path / "a.py"
+    a.write_text("""
+def helper():
+    return 1
+""")
+    b = tmp_path / "b.py"
+    b.write_text("""
+import a
+
+def handler():
+    return a.helper()
+""")
+    db = tmp_path / "test.db"
+    build_index(tmp_path, db)
+    conn = sqlite3.connect(str(db))
+    edge = conn.execute(
+        """
+        SELECT e.callee_id
+        FROM edges e
+        JOIN nodes caller ON caller.id = e.caller_id
+        WHERE caller.name = 'handler' AND e.callee_name = 'a.helper'
+        """
+    ).fetchone()
+    a_helper_id = conn.execute(
+        "SELECT id FROM nodes WHERE name = 'helper' AND file = 'a.py'"
+    ).fetchone()[0]
+    conn.close()
+    assert edge is not None
+    assert edge[0] == a_helper_id
+
+
+def test_import_relative_from_dot(tmp_path):
+    pkg = tmp_path / "mypkg"
+    pkg.mkdir()
+    a = pkg / "utils.py"
+    a.write_text("""
+def work():
+    return 1
+""")
+    b = pkg / "main.py"
+    b.write_text("""
+from . import utils
+
+def run():
+    return utils.work()
+""")
+    db = tmp_path / "test.db"
+    build_index(tmp_path, db)
+    conn = sqlite3.connect(str(db))
+    edge = conn.execute(
+        """
+        SELECT e.callee_id
+        FROM edges e
+        JOIN nodes caller ON caller.id = e.caller_id
+        WHERE caller.name = 'run' AND e.callee_name = 'utils.work'
+        """
+    ).fetchone()
+    work_id = conn.execute(
+        "SELECT id FROM nodes WHERE name = 'work' AND file = ?",
+        ("mypkg/utils.py",),
+    ).fetchone()[0]
+    conn.close()
+    assert edge is not None
+    assert edge[0] == work_id
 
 
 def test_skip_node_modules(tmp_path):

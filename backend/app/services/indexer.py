@@ -31,6 +31,67 @@ _LANG_EXTENSIONS: dict[str, list[str]] = {
 }
 
 
+def _resolve_import_path(rel: str, module_text: str) -> str | None:
+    dots = 0
+    while dots < len(module_text) and module_text[dots] == ".":
+        dots += 1
+    rest = module_text[dots:]
+    parts = Path(rel).parts
+    dir_parts = parts[:-1]
+    if dots > 0:
+        up = dots - 1
+        if up > len(dir_parts):
+            return None
+        if up > 0:
+            dir_parts = dir_parts[:-up]
+    if rest:
+        module_parts = rest.split(".")
+        return "/".join(dir_parts + tuple(module_parts)) + ".py"
+    return None
+
+
+def _extract_python_imports(source: bytes, rel: str, parser, lang) -> list[dict]:
+    imports = []
+    import re
+    text = source.decode("utf-8", errors="replace")
+    for m in re.finditer(r'^from\s+(\S+)\s+import\s+(.+)$', text, re.MULTILINE):
+        module = m.group(1)
+        has_dots = module.startswith(".")
+        if has_dots:
+            base = _resolve_import_path(rel, module)
+            if base is None:
+                continue
+        else:
+            base = module.replace(".", "/") + ".py"
+        imports_str = m.group(2).strip()
+        if imports_str.startswith("("):
+            imports_str = imports_str[1:]
+        for part in imports_str.split(","):
+            part = part.strip().strip(")").strip()
+            if not part:
+                continue
+            alias_match = re.match(r'(.+?)\s+as\s+(\S+)', part)
+            if alias_match:
+                name = alias_match.group(2).strip()
+            else:
+                name = part.strip()
+            imports.append({"name": name, "source_file": base})
+    for m in re.finditer(r'^import\s+(.+)$', text, re.MULTILINE):
+        for part in m.group(1).split(","):
+            part = part.strip()
+            if not part:
+                continue
+            alias_match = re.match(r'(.+?)\s+as\s+(\S+)', part)
+            if alias_match:
+                name = alias_match.group(2).strip()
+                source_file = alias_match.group(1).strip().replace(".", "/") + ".py"
+            else:
+                name = part.strip()
+                source_file = name.replace(".", "/") + ".py"
+            imports.append({"name": name, "source_file": source_file})
+    return imports
+
+
 def _get_parser(lang: str):
     try:
         from tree_sitter import Language, Parser
@@ -89,9 +150,8 @@ def _extract_python(source: bytes, tree) -> tuple[list[dict], list[dict]]:
             fn_node = node.child_by_field_name("function")
             if fn_node:
                 callee = fn_node.text.decode()
-                if "." in callee:
-                    callee = callee.rsplit(".", 1)[-1]
-                calls.append({"caller_name": current_fn, "callee_name": callee})
+                short = callee.rsplit(".", 1)[-1]
+                calls.append({"caller_name": current_fn, "callee_name": callee, "callee_short_name": short})
         else:
             for child in node.children:
                 visit(child, current_fn)
@@ -131,9 +191,8 @@ def _extract_js_ts(source: bytes, tree) -> tuple[list[dict], list[dict]]:
             fn_node = node.child_by_field_name("function")
             if fn_node:
                 callee = fn_node.text.decode()
-                if "." in callee:
-                    callee = callee.rsplit(".", 1)[-1]
-                calls.append({"caller_name": current_fn, "callee_name": callee})
+                short = callee.rsplit(".", 1)[-1]
+                calls.append({"caller_name": current_fn, "callee_name": callee, "callee_short_name": short})
             for child in node.children:
                 visit(child, current_fn)
         else:
@@ -161,19 +220,29 @@ def build_index(repo_path: Path, db_path: Path) -> None:
         );
         CREATE UNIQUE INDEX IF NOT EXISTS idx_nodes_file_name ON nodes(file, name);
         CREATE TABLE IF NOT EXISTS edges (
-            caller_id   INTEGER NOT NULL,
-            callee_name TEXT NOT NULL,
-            callee_id   INTEGER
+            caller_id        INTEGER NOT NULL,
+            callee_name      TEXT NOT NULL,
+            callee_short_name TEXT,
+            callee_id        INTEGER
         );
         CREATE INDEX IF NOT EXISTS idx_edges_callee ON edges(callee_name);
+        CREATE TABLE IF NOT EXISTS imports (
+            file        TEXT NOT NULL,
+            name        TEXT NOT NULL,
+            source_file TEXT NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS file_hashes (
             file TEXT PRIMARY KEY,
             hash TEXT NOT NULL
         );
     """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_imports_file ON imports(file)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_imports_name ON imports(name)")
 
         needs_full_reindex = _ensure_edges_callee_id(conn)
+        _ensure_edges_callee_short_name(conn)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_edges_callee_id ON edges(callee_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_edges_callee_short ON edges(callee_short_name)")
         if needs_full_reindex:
             conn.execute("DELETE FROM file_hashes")
         conn.commit()
@@ -200,6 +269,8 @@ def build_index(repo_path: Path, db_path: Path) -> None:
                 _index_file(conn, path, rel, ext_to_lang, parsers)
             except Exception as e:
                 logger.debug("skip %s: %s", rel, e)
+
+        _resolve_callee_ids(conn)
     finally:
         conn.close()
     logger.info("index built: %s", db_path)
@@ -211,7 +282,9 @@ def ensure_index_schema(db_path: Path) -> None:
     conn = sqlite3.connect(str(db_path), timeout=30)
     try:
         _ensure_edges_callee_id(conn)
+        _ensure_edges_callee_short_name(conn)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_edges_callee_id ON edges(callee_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_edges_callee_short ON edges(callee_short_name)")
         conn.commit()
     finally:
         conn.close()
@@ -269,6 +342,13 @@ def _index_file(
 
     if lang == "python":
         functions, calls = _extract_python(source, tree)
+        import_rows = _extract_python_imports(source, rel, parser, lang)
+        conn.execute("DELETE FROM imports WHERE file = ?", (rel,))
+        for ir in import_rows:
+            conn.execute(
+                "INSERT INTO imports (file, name, source_file) VALUES (?, ?, ?)",
+                (rel, ir["name"], ir["source_file"]),
+            )
     else:
         functions, calls = _extract_js_ts(source, tree)
 
@@ -288,9 +368,11 @@ def _index_file(
         caller_id = fn_name_to_id.get(call["caller_name"])
         if caller_id:
             callee_id = fn_name_to_id.get(call["callee_name"])
+            if callee_id is None:
+                callee_id = fn_name_to_id.get(call["callee_short_name"])
             conn.execute(
-                "INSERT INTO edges (caller_id, callee_name, callee_id) VALUES (?, ?, ?)",
-                (caller_id, call["callee_name"], callee_id),
+                "INSERT INTO edges (caller_id, callee_name, callee_short_name, callee_id) VALUES (?, ?, ?, ?)",
+                (caller_id, call["callee_name"], call["callee_short_name"], callee_id),
             )
 
     conn.execute(
@@ -298,6 +380,84 @@ def _index_file(
         (rel, fhash),
     )
     conn.commit()
+
+
+def _resolve_callee_ids(conn: sqlite3.Connection) -> None:
+    conn.execute("""
+        UPDATE edges
+        SET callee_id = (
+            SELECT n.id
+            FROM nodes n
+            JOIN imports i ON i.source_file = n.file AND i.name = edges.callee_name
+            JOIN nodes caller ON caller.id = edges.caller_id
+            WHERE i.file = caller.file AND n.name = edges.callee_name
+        )
+        WHERE callee_id IS NULL
+        AND EXISTS (
+            SELECT 1
+            FROM nodes n
+            JOIN imports i ON i.source_file = n.file AND i.name = edges.callee_name
+            JOIN nodes caller ON caller.id = edges.caller_id
+            WHERE i.file = caller.file AND n.name = edges.callee_name
+        )
+    """)
+    _resolve_callee_ids_dotted_prefix(conn)
+    conn.execute("""
+        UPDATE edges
+        SET callee_id = (
+            SELECT id FROM nodes WHERE name = edges.callee_name
+        )
+        WHERE callee_id IS NULL
+        AND (SELECT COUNT(*) FROM nodes WHERE name = edges.callee_name) = 1
+    """)
+    conn.execute("""
+        UPDATE edges
+        SET callee_id = (
+            SELECT id FROM nodes WHERE name = edges.callee_short_name
+        )
+        WHERE callee_id IS NULL
+        AND callee_short_name IS NOT NULL
+        AND (SELECT COUNT(*) FROM nodes WHERE name = edges.callee_short_name) = 1
+    """)
+    conn.commit()
+
+
+def _resolve_callee_ids_dotted_prefix(conn: sqlite3.Connection) -> None:
+    rows = conn.execute("""
+        SELECT e.rowid, e.callee_name, e.callee_short_name, caller.file
+        FROM edges e
+        JOIN nodes caller ON caller.id = e.caller_id
+        WHERE e.callee_id IS NULL
+        AND e.callee_short_name IS NOT NULL
+        AND instr(e.callee_name, '.') > 0
+    """).fetchall()
+    for rowid, callee_name, callee_short_name, caller_file in rows:
+        prefix = callee_name.rsplit(".", 1)[0]
+        imp = conn.execute(
+            "SELECT source_file FROM imports WHERE file = ? AND name = ?",
+            (caller_file, prefix),
+        ).fetchone()
+        if imp is None:
+            continue
+        node = conn.execute(
+            "SELECT id FROM nodes WHERE file = ? AND name = ?",
+            (imp[0], callee_short_name),
+        ).fetchone()
+        if node is None:
+            continue
+        if conn.execute(
+            "SELECT COUNT(*) FROM nodes WHERE file = ? AND name = ?",
+            (imp[0], callee_short_name),
+        ).fetchone()[0] == 1:
+            conn.execute("UPDATE edges SET callee_id = ? WHERE rowid = ?", (node[0], rowid))
+
+
+def _ensure_edges_callee_short_name(conn: sqlite3.Connection) -> None:
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(edges)").fetchall()}
+    if "callee_short_name" not in columns:
+        conn.execute("ALTER TABLE edges ADD COLUMN callee_short_name TEXT")
+        conn.execute("UPDATE edges SET callee_short_name = callee_name WHERE callee_short_name IS NULL")
+        conn.commit()
 
 
 def _ensure_edges_callee_id(conn: sqlite3.Connection) -> bool:
