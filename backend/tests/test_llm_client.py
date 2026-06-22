@@ -2,7 +2,13 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
-from openai import APIError, APITimeoutError, AuthenticationError, RateLimitError
+from openai import (
+    APIError,
+    APITimeoutError,
+    AuthenticationError,
+    BadRequestError,
+    RateLimitError,
+)
 
 from app.services.llm import BudgetExceededError, LLMClient, TokenBudget
 
@@ -83,7 +89,7 @@ class TestLLMClient:
                     max_tokens=100,
                     estimated_tokens=15,
                 )
-            assert mock_create.call_count == 3
+            assert mock_create.call_count == 5
 
     @pytest.mark.asyncio
     async def test_no_retry_on_auth_error(self):
@@ -210,3 +216,73 @@ class TestLLMClient:
                     estimated_tokens=15,
                 )
             assert mock_create.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_retry_on_empty_response(self):
+        client = LLMClient(api_key="sk-test", model="deepseek-v4-flash")
+        mock_ok = AsyncMock()
+        mock_ok.choices = [AsyncMock()]
+        mock_ok.choices[0].message.content = "hello"
+        mock_ok.usage = None
+
+        mock_empty = AsyncMock()
+        mock_empty.choices = [AsyncMock()]
+        mock_empty.choices[0].message.content = ""
+        mock_empty.usage = None
+
+        mock_create = AsyncMock(side_effect=[mock_empty, mock_empty, mock_ok])
+
+        with patch.object(client.client.chat.completions, "create", mock_create):
+            result = await client.chat(
+                messages=[{"role": "user", "content": "hi"}],
+                max_tokens=100,
+                estimated_tokens=15,
+            )
+            assert result == "hello"
+            assert mock_create.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_no_retry_on_400(self):
+        client = LLMClient(api_key="sk-test", model="deepseek-v4-flash")
+
+        mock_create = AsyncMock(
+            side_effect=BadRequestError(
+                "bad request",
+                response=AsyncMock(status_code=400),
+                body={},
+            )
+        )
+
+        with patch.object(client.client.chat.completions, "create", mock_create):
+            with pytest.raises(BadRequestError):
+                await client.chat(
+                    messages=[{"role": "user", "content": "hi"}],
+                    max_tokens=100,
+                    estimated_tokens=15,
+                )
+            assert mock_create.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_retry_on_429_then_succeed(self):
+        client = LLMClient(api_key="sk-test", model="deepseek-v4-flash")
+        mock_ok = AsyncMock()
+        mock_ok.choices = [AsyncMock()]
+        mock_ok.choices[0].message.content = "hello"
+        mock_ok.usage = None
+
+        mock_create = AsyncMock(
+            side_effect=[
+                RateLimitError("rate limited", response=AsyncMock(status_code=429), body={}),
+                RateLimitError("rate limited", response=AsyncMock(status_code=429), body={}),
+                mock_ok,
+            ]
+        )
+
+        with patch.object(client.client.chat.completions, "create", mock_create):
+            result = await client.chat(
+                messages=[{"role": "user", "content": "hi"}],
+                max_tokens=100,
+                estimated_tokens=15,
+            )
+            assert result == "hello"
+            assert mock_create.call_count == 3

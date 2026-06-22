@@ -332,7 +332,7 @@ class TestMultiRoundBatching:
         assert result["merge_recommendation"] == "APPROVE"
 
     @pytest.mark.asyncio
-    async def test_large_diff_uses_multi_round_even_with_few_files(self):
+    async def test_large_diff_uses_per_file(self):
         graph = ReviewGraph()
         ctx = {
             "title": "large diff",
@@ -345,6 +345,28 @@ class TestMultiRoundBatching:
         with (
             patch.object(graph, "_run_single", AsyncMock(return_value={"mode": "single"})),
             patch.object(graph, "_run_multi", AsyncMock(return_value={"mode": "multi"})),
+            patch.object(graph, "_run_per_file", AsyncMock(return_value={"mode": "per-file"})),
+        ):
+            result = await graph.run(pr_url="", context=ctx)
+
+        assert result == {"mode": "per-file"}
+
+    @pytest.mark.asyncio
+    async def test_small_diff_within_8000_uses_multi_round_when_batching_needed(self):
+        graph = ReviewGraph()
+        # 36 files triggers batch (BATCH_SIZE=30), diff ~3000 tokens
+        ctx = {
+            "title": "big",
+            "description": "",
+            "diff": SAMPLE_DIFF,
+            "files": [f"f{i}.ts" for i in range(36)],
+            "stats": None,
+        }
+
+        with (
+            patch.object(graph, "_run_single", AsyncMock(return_value={"mode": "single"})),
+            patch.object(graph, "_run_multi", AsyncMock(return_value={"mode": "multi"})),
+            patch.object(graph, "_run_per_file", AsyncMock(return_value={"mode": "per-file"})),
         ):
             result = await graph.run(pr_url="", context=ctx)
 
@@ -885,3 +907,268 @@ class TestSastIntegration:
             item.findings and item.findings[0].title == "subprocess-shell-true"
             for item in captured_results
         )
+
+
+class TestPerFileSplitting:
+    @staticmethod
+    def _make_multifile_diff(file_count: int = 4) -> str:
+        chunks = []
+        for i in range(file_count):
+            chunks.append(
+                f"diff --git a/f{i}.py b/f{i}.py\n"
+                f"--- a/f{i}.py\n"
+                f"+++ b/f{i}.py\n"
+                f"@@ -0,0 +1,1 @@\n+ x = {i}\n"
+            )
+        return "\n".join(chunks)
+
+    def test_should_skip_diff_file_vendor(self):
+        from app.graph import _should_skip_diff_file
+
+        assert _should_skip_diff_file("vendor/lib/c.py")
+        assert _should_skip_diff_file("node_modules/pkg/index.js")
+        assert _should_skip_diff_file("dist/bundle.js")
+        assert _should_skip_diff_file(".git/config")
+
+    def test_should_skip_diff_file_lock(self):
+        from app.graph import _should_skip_diff_file
+
+        assert _should_skip_diff_file("package-lock.json")
+        assert _should_skip_diff_file("yarn.lock")
+        assert _should_skip_diff_file("Cargo.lock")
+        assert _should_skip_diff_file("go.sum")
+
+    def test_should_skip_diff_file_test_files(self):
+        from app.graph import _should_skip_diff_file
+
+        assert _should_skip_diff_file("tests/test_a.py")
+        assert _should_skip_diff_file("src/app.test.ts")
+        assert _should_skip_diff_file("src/util.spec.ts")
+        assert _should_skip_diff_file("src/foo_test.py")
+        assert _should_skip_diff_file("src/bar.test.js")
+
+    def test_should_skip_diff_file_normal_files(self):
+        from app.graph import _should_skip_diff_file
+
+        assert not _should_skip_diff_file("src/app.py")
+        assert not _should_skip_diff_file("src/util.ts")
+        assert not _should_skip_diff_file("README.md")
+        assert not _should_skip_diff_file("docker-compose.yml")
+        assert not _should_skip_diff_file("Dockerfile")
+        assert not _should_skip_diff_file("src/components/Button.tsx")
+
+    def test_split_diff_by_file_empty(self):
+        from app.graph import split_diff_by_file
+
+        assert split_diff_by_file("") == {}
+
+    def test_split_diff_by_file_single(self):
+        from app.graph import split_diff_by_file
+
+        diff = "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -0,0 +1,1 @@\n+ x = 1"
+        result = split_diff_by_file(diff)
+        assert result == {"a.py": diff}
+
+    def test_split_diff_by_file_multiple(self):
+        from app.graph import split_diff_by_file
+
+        diff = self._make_multifile_diff(3)
+        result = split_diff_by_file(diff)
+        assert set(result.keys()) == {"f0.py", "f1.py", "f2.py"}
+
+
+class TestPerFileExecution:
+    @pytest.mark.asyncio
+    async def test_per_file_routes_security_findings_through_judge(self):
+        from app.graph import ReviewGraph
+        from app.models.agent import AgentResult, AgentStatus, FindingSchema
+
+        graph = ReviewGraph()
+
+        diff_parts = [
+            "diff --git a/f0.py b/f0.py\n--- a/f0.py\n+++ b/f0.py\n@@ -0,0 +1,1 @@\n+ x = 1",
+            "diff --git a/f1.py b/f1.py\n--- a/f1.py\n+++ b/f1.py\n@@ -0,0 +1,1 @@\n+ y = 2",
+        ]
+        diff = "\n".join(diff_parts)
+
+        ctx = {
+            "title": "per-file test",
+            "description": "",
+            "diff": diff,
+            "files": ["f0.py", "f1.py"],
+            "stats": None,
+        }
+
+        call_order = []
+
+        async def mock_agent(file: str, *args, **kwargs):
+            call_order.append(file)
+            return AgentResult(
+                status=AgentStatus.SUCCESS,
+                findings=[
+                    FindingSchema(
+                        file=file,
+                        line=1,
+                        title="Test finding",
+                        description=f"Finding in {file}",
+                        severity="WARNING",
+                        confidence=0.5,
+                        category="quality",
+                        evidence=["x = 1"],
+                    )
+                ],
+            )
+
+        file_side_effects = {"f0.py": mock_agent, "f1.py": mock_agent}
+
+        async def side_effect_run(diff, context):
+            files = context.get("files", [])
+            file = files[0] if files else "unknown"
+            return await file_side_effects[file](file, diff, context)
+
+        captured_judge_input: list = []
+
+        async def mock_judge(results, **kwargs):
+            captured_judge_input.extend(results)
+            return {"findings": [], "merge_recommendation": "APPROVE", "skipped_agents": []}
+
+        with (
+            patch.object(graph, "_fetch_verification", AsyncMock(return_value={})),
+            patch.object(graph.security_agent, "run", side_effect_run),
+            patch.object(graph.performance_agent, "run", side_effect_run),
+            patch.object(graph.quality_agent, "run", side_effect_run),
+            patch.object(graph.judge, "run", mock_judge),
+        ):
+            result = await graph._run_per_file(ctx, "", 0.0)
+
+        assert result["merge_recommendation"] == "APPROVE"
+        # Each file → 3 agents → 6 total results
+        assert len(captured_judge_input) == 6
+
+    @pytest.mark.asyncio
+    async def test_per_file_single_file_failure_does_not_abort(self):
+        from app.graph import ReviewGraph
+        from app.models.agent import AgentResult, AgentStatus, FindingSchema
+
+        graph = ReviewGraph()
+
+        diff = (
+            "diff --git a/f0.py b/f0.py\n--- a/f0.py\n+++ b/f0.py\n@@ -0,0 +1,1 @@\n+ x = 1\n"
+            "diff --git a/f1.py b/f1.py\n--- a/f1.py\n+++ b/f1.py\n@@ -0,0 +1,2 @@\n+ y = 2\n+ z = 3\n"
+        )
+        ctx = {
+            "title": "fails on f0",
+            "description": "",
+            "diff": diff,
+            "files": ["f0.py", "f1.py"],
+            "stats": None,
+        }
+
+        call_count = 0
+
+        async def mock_run(diff_inner, context):
+            nonlocal call_count
+            files = context.get("files", [])
+            file = files[0] if files else "unknown"
+            if file == "f0.py":
+                call_count += 1
+                raise RuntimeError("agent crashed on f0")
+            call_count += 1
+            return AgentResult(
+                status=AgentStatus.SUCCESS,
+                findings=[
+                    FindingSchema(
+                        file=file,
+                        line=1,
+                        title="OK finding",
+                        description="",
+                        severity="WARNING",
+                        confidence=0.5,
+                        category="quality",
+                        evidence=["y = 2"],
+                    )
+                ],
+            )
+
+        async def mock_judge(results, **kwargs):
+            findings = []
+            for r in results:
+                if r.status == AgentStatus.SUCCESS:
+                    findings.extend(r.findings)
+            return {
+                "findings": [
+                    {"file": f.file, "line": f.line, "title": f.title,
+                     "description": f.description, "severity": f.severity,
+                     "confidence": f.confidence, "category": f.category,
+                     "evidence": f.evidence}
+                    for f in findings
+                ],
+                "merge_recommendation": "COMMENT",
+                "skipped_agents": [],
+            }
+
+        with (
+            patch.object(graph, "_fetch_verification", AsyncMock(return_value={})),
+            patch.object(graph.security_agent, "run", mock_run),
+            patch.object(graph.performance_agent, "run", mock_run),
+            patch.object(graph.quality_agent, "run", mock_run),
+            patch.object(graph.judge, "run", mock_judge),
+            patch("app.graph.split_diff_by_file") as mock_split,
+        ):
+            mock_split.return_value = {
+                "f0.py": "diff --git a/f0.py b/f0.py\n",
+                "f1.py": "diff --git a/f1.py b/f1.py\n",
+            }
+            result = await graph._run_per_file(ctx, "", 0.0)
+
+        assert result["merge_recommendation"] == "COMMENT"
+        # f0 agents fail (3 calls), f1 agents succeed (3 calls) = 6 total
+        assert call_count == 6
+
+    @pytest.mark.asyncio
+    async def test_per_file_all_fail_falls_back_to_single(self):
+        from app.graph import ReviewGraph
+
+        graph = ReviewGraph()
+
+        diff = "diff --git a/a.py b/a.py\n--- a/a.py\n+++ a/a.py\n@@ -0,0 +1,1 @@\n+ x = 1"
+        ctx = {
+            "title": "all fail",
+            "description": "",
+            "diff": diff,
+            "files": ["a.py"],
+            "stats": None,
+        }
+
+        with (
+            patch.object(graph, "_run_single", AsyncMock(return_value={"mode": "single"})),
+            patch.object(graph.security_agent, "run", AsyncMock(side_effect=RuntimeError("boom"))),
+            patch.object(graph.performance_agent, "run", AsyncMock(side_effect=RuntimeError("boom"))),
+            patch.object(graph.quality_agent, "run", AsyncMock(side_effect=RuntimeError("boom"))),
+            patch.object(graph, "_fetch_verification", AsyncMock(return_value={})),
+        ):
+            result = await graph._run_per_file(ctx, "", 0.0)
+
+        assert result == {"mode": "single"}
+
+    @pytest.mark.asyncio
+    async def test_per_file_empty_after_filter_falls_back_to_single(self):
+        from app.graph import ReviewGraph
+
+        graph = ReviewGraph()
+
+        diff = "diff --git a/node_modules/pkg.js b/node_modules/pkg.js\n--- a/node_modules/pkg.js\n+++ b/node_modules/pkg.js\n@@ -0,0 +1,1 @@\n+ x = 1"
+        ctx = {
+            "title": "all skip",
+            "description": "",
+            "diff": diff,
+            "files": ["node_modules/pkg.js"],
+            "stats": None,
+        }
+
+        with (
+            patch.object(graph, "_run_single", AsyncMock(return_value={"mode": "single"})),
+        ):
+            result = await graph._run_per_file(ctx, "", 0.0)
+
+        assert result == {"mode": "single"}

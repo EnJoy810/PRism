@@ -1,11 +1,15 @@
-import asyncio
 import json
 import logging
 import os
-import random
 import re
 
-from openai import APIError, APITimeoutError, AsyncOpenAI, AuthenticationError, RateLimitError
+import stamina
+from openai import (
+    APIStatusError,
+    APITimeoutError,
+    AsyncOpenAI,
+    RateLimitError,
+)
 
 from app.config import load_config
 from app.models.review import (
@@ -29,13 +33,16 @@ _UNSET = object()
 MODEL = "deepseek-v4-flash"
 BASE_URL = "https://api.deepseek.com"
 
-RETRYABLE_STATUSES = {429, 500, 502, 503}
-MAX_RETRIES = 3
-BASE_DELAY = 1.0
+
 
 
 class BudgetExceededError(Exception):
     pass
+
+
+class _SkipRetry(Exception):
+    def __init__(self, original: Exception):
+        self.original = original
 
 
 class TokenBudget:
@@ -81,6 +88,7 @@ class LLMClient:
         raw_client = AsyncOpenAI(
             api_key=resolved_key,
             base_url=resolved_base,
+            max_retries=0,
         )
         if wrap_openai is not None:
             self.client = wrap_openai(raw_client)
@@ -113,62 +121,43 @@ class LLMClient:
                     f"{self.budget.max_tokens_per_call}"
                 )
 
-        last_error: Exception | None = None
-        for attempt in range(MAX_RETRIES):
-            try:
-                create_kwargs: dict = dict(
-                    model=model or self.model,
-                    messages=messages,
-                    temperature=temperature,
-                    top_p=top_p,
-                    stream=stream,
-                )
-                if max_tokens is not None:
-                    create_kwargs["max_tokens"] = max_tokens
-                response = await self.client.chat.completions.create(**create_kwargs)
+        create_kwargs: dict = dict(
+            model=model or self.model,
+            messages=messages,
+            temperature=temperature,
+            top_p=top_p,
+            stream=stream,
+        )
+        if max_tokens is not None:
+            create_kwargs["max_tokens"] = max_tokens
 
-                if stream:
-                    full = await self._handle_stream(response)
-                    return full
-                else:
-                    content = response.choices[0].message.content or ""
-                    self._track_usage(response)
-                    return content
+        if stream:
+            response = await self.client.chat.completions.create(**create_kwargs)
+            return await self._handle_stream(response)
 
-            except AuthenticationError:
-                raise
-            except RateLimitError as e:
-                last_error = e
-                if attempt < MAX_RETRIES - 1:
-                    delay = BASE_DELAY * (2**attempt) + random.uniform(0, 0.5)
-                    logger.warning(
-                        "Rate limited, retrying in %.1fs (attempt %d/3)",
-                        delay, attempt + 1,
-                    )
-                    await asyncio.sleep(delay)
-            except APITimeoutError as e:
-                last_error = e
-                if attempt < MAX_RETRIES - 1:
-                    delay = BASE_DELAY * (2**attempt) + random.uniform(0, 0.5)
-                    logger.warning(
-                        "Timeout, retrying in %.1fs (attempt %d/3)",
-                        delay, attempt + 1,
-                    )
-                    await asyncio.sleep(delay)
-            except APIError as e:
-                status = getattr(e, "status_code", None)
-                if status in RETRYABLE_STATUSES and attempt < MAX_RETRIES - 1:
-                    last_error = e
-                    delay = BASE_DELAY * (2**attempt) + random.uniform(0, 0.5)
-                    logger.warning(
-                        "API error %s, retrying in %.1fs (attempt %d/3)",
-                        status, delay, attempt + 1,
-                    )
-                    await asyncio.sleep(delay)
-                else:
-                    raise
+        try:
+            content = await self._call_llm(create_kwargs)
+            return content
+        except _SkipRetry as e:
+            raise e.original  # type: ignore[misc]
 
-        raise last_error  # type: ignore[misc]
+    @stamina.retry(
+        on=(RateLimitError, APIStatusError, APITimeoutError, ValueError),
+        attempts=5,
+        timeout=45.0,
+    )
+    async def _call_llm(self, create_kwargs: dict) -> str:
+        try:
+            response = await self.client.chat.completions.create(**create_kwargs)
+        except APIStatusError as e:
+            if e.status_code is not None and 400 <= e.status_code < 500 and e.status_code != 429:
+                raise _SkipRetry(e) from e
+            raise
+        content = response.choices[0].message.content
+        if not content or not content.strip():
+            raise ValueError("empty response")
+        self._track_usage(response)
+        return content
 
     def _track_usage(self, response) -> None:
         if usage := getattr(response, "usage", None):
@@ -410,6 +399,7 @@ def _make_client(api_key: str | None = None, base_url: str | None = None) -> Asy
     raw = AsyncOpenAI(
         api_key=resolved_key,
         base_url=resolved_base,
+        max_retries=0,
     )
     if wrap_openai is not None:
         return wrap_openai(raw)

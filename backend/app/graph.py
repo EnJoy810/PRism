@@ -18,6 +18,36 @@ logger = logging.getLogger(__name__)
 
 _BATCH_SIZE = 30
 _TOKEN_CHARS = 4
+_PER_FILE_TOKEN_THRESHOLD = 8000
+_PER_FILE_CONCURRENCY = 5
+
+_SKIP_DIFF_FILE_PARTS = {"node_modules", "vendor", "dist", ".git"}
+_SKIP_DIFF_FILE_SUFFIXES = {".lock", ".sum", ".lockb"}
+_SKIP_DIFF_FULL_NAMES = {
+    "package-lock.json", "pnpm-lock.yaml", "poetry.lock",
+    "Gemfile.lock", "requirements.txt", "Makefile",
+}
+_SKIP_DIFF_FILE_NAMES_START = {"test_"}
+_SKIP_DIFF_FILE_NAMES_END = {
+    ".test.ts", ".spec.ts", ".test.js", ".spec.js",
+    "_test.py", ".test.py",
+}
+
+
+def _should_skip_diff_file(filepath: str) -> bool:
+    parts = filepath.split("/")
+    if any(p in _SKIP_DIFF_FILE_PARTS for p in parts):
+        return True
+    if any(filepath.endswith(s) for s in _SKIP_DIFF_FILE_SUFFIXES):
+        return True
+    if Path(filepath).name in _SKIP_DIFF_FULL_NAMES:
+        return True
+    name = Path(filepath).name
+    if any(name.startswith(s) for s in _SKIP_DIFF_FILE_NAMES_START):
+        return True
+    if any(name.endswith(s) for s in _SKIP_DIFF_FILE_NAMES_END):
+        return True
+    return False
 
 
 class ReviewGraph:
@@ -112,12 +142,19 @@ class ReviewGraph:
             time.monotonic() - investigate_start,
         )
 
+        diff = context.get("diff", "")
+        diff_tokens = _estimated_tokens(diff)
+        context["_event"] = event
+
+        if diff_tokens > _PER_FILE_TOKEN_THRESHOLD:
+            logger.info("diff tokens %d > %d — per-file parallel", diff_tokens, _PER_FILE_TOKEN_THRESHOLD)
+            return await self._run_per_file(context, pr_url, t0, event=event)
+
         needs_batching = (
             context.get("diff_truncated", False)
             or len(context.get("files", [])) > _BATCH_SIZE
-            or _estimated_tokens(context.get("diff", "")) > _max_tokens_per_call()
+            or diff_tokens > _max_tokens_per_call()
         )
-        context["_event"] = event
         if not needs_batching:
             return await self._run_single(context, pr_url, t0, event=event)
 
@@ -314,6 +351,55 @@ class ReviewGraph:
 
         return await self._assemble_result(
             all_agent_results, context, pr_url, t0, context.get("diff", ""), event=event,
+        )
+
+    async def _run_per_file(self, context: dict, pr_url: str, t0: float, event: str = "") -> dict:
+        diff = context.get("diff", "")
+        file_diffs = split_diff_by_file(diff)
+        file_items = [
+            {"file": f, "diff": d}
+            for f, d in file_diffs.items()
+            if not _should_skip_diff_file(f)
+        ]
+        logger.info(
+            "per-file: %d files after filtering (skipped %d)",
+            len(file_items), len(file_diffs) - len(file_items),
+        )
+
+        if not file_items:
+            logger.warning("per-file: no files remain after filtering — falling back to full-diff")
+            return await self._run_single(context, pr_url, t0, event=event)
+
+        sem = asyncio.Semaphore(_PER_FILE_CONCURRENCY)
+
+        async def _process_file(item: dict) -> list[AgentResult]:
+            async with sem:
+                file_ctx = {
+                    **context,
+                    "diff": item["diff"],
+                    "files": [item["file"]],
+                }
+                return await self._run_agents(item["diff"], file_ctx)
+
+        tasks = [_process_file(item) for item in file_items]
+        all_agent_results: list[AgentResult] = []
+        for coro in asyncio.as_completed(tasks):
+            try:
+                results = await coro
+                all_agent_results.extend(results)
+            except Exception as e:
+                logger.warning("unexpected per-file error: %s", e)
+
+        if not all_agent_results:
+            logger.warning("per-file: no agent results — falling back to full-diff")
+            return await self._run_single(context, pr_url, t0, event=event)
+
+        logger.info(
+            "per-file done: %d files, %d agent results",
+            len(file_items), len(all_agent_results),
+        )
+        return await self._assemble_result(
+            all_agent_results, context, pr_url, t0, diff, event=event,
         )
 
     async def _run_agents(self, diff: str, context: dict) -> list[AgentResult]:
