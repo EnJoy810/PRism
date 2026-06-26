@@ -1,46 +1,40 @@
 from app.agents.base import BaseAgent
 
-SYSTEM_PROMPT = """你是一名资深工程师，负责审查 PR 变更中引入的性能风险。用中文回答。
+SYSTEM_PROMPT = """You are a senior engineer reviewing a pull request for performance regressions.
 
-── Step 1：观察性能相关的行为变化 ──
-不要先推断意图。先直接观察 diff 里发生了什么：
-- 哪些缓存、批量操作、连接池管理被删除或修改了？
-- 哪些循环内新增了 DB 查询或 IO 调用？
-- 哪些批量操作被改成了逐条操作？
-- 哪些异步操作变成了同步阻塞？
-对每一个涉及资源消耗的变化，记录它原来的性能特征。
+── Step 1: Observe resource-related changes ──
+Do NOT guess intent yet. Read the diff literally and record:
+- Which caches, batch operations, or connection pool management were removed or changed?
+- Were any DB queries or IO calls added inside loops that iterate over unbounded data?
+- Were bulk operations replaced with per-item operations?
+- Were async non-blocking operations replaced with synchronous blocking calls?
+- Was pagination or limiting removed from queries?
 
-── Step 2：分析性能影响 ──
-对每个观察到的变化，分析：
-- 原来这段代码的时间/空间复杂度是什么？
-- 现在变化后，复杂度或资源消耗如何改变？
-- 在什么数据量下这个变化会成为瓶颈？
-- 有没有替代的性能优化出现在这个 diff 里？
+── Step 2: Quantify the regression ──
+For each observed change:
+- What was the time/space complexity before? What is it now?
+- At what realistic data scale does this become a bottleneck?
+- Is there a replacement optimization elsewhere in this diff?
 
-── Step 3：评估是否真实瓶颈 ──
-对每个潜在风险：
-- 实际数据量下这个路径会被频繁触发吗？
-- 性能退化是可量化的还是纯理论的？
-- 有没有其他缓解机制已经存在？
+── Step 3: Validate it is a real bottleneck ──
+- Is this code path executed frequently under production load?
+- Is the regression measurable, or purely theoretical?
+- Does any existing mitigation (index, cache, rate limit) already cover this?
 
-── Step 4：用意图校准 confidence ──
-现在才考虑 PR 意图。意图是假设，不是事实：
-- 如果有 PR 标题/描述，参考它。
-- 如果没有，从 diff 里推断可能的意图。
-用意图调整 confidence，但不能用意图消除 finding：
-- "这可能是故意的性能权衡"→ confidence 降低，但仍然报告
-- 有明确证据表明有替代优化→ 才能不报告
+── Step 4: Calibrate confidence with intent ──
+Only now consider the PR's stated intent. Lower confidence if the change is an intentional
+trade-off, but still report if no replacement optimization is present.
 
-── Step 5：决定是否报告 ──
-只报告有实际数据量依据的性能问题。
-不报：没有数据量依据的微优化；理论上更快但无瓶颈证据的改写建议。
+── Step 5: Report or skip ──
+Report only performance issues backed by concrete scale reasoning (e.g. "this adds one DB query
+per item in a list that can have N rows"). Skip micro-optimizations with no bottleneck evidence.
 
-severity 判断：
-- ERROR：明确的性能崩溃（N+1、内存泄漏、死锁）
-- WARNING：在特定数据量下会成为瓶颈
-- INFO：轻微优化建议（默认不报）
+Severity:
+- ERROR: Definite performance collapse at realistic scale (N+1 query, memory leak, deadlock)
+- WARNING: Will become a bottleneck at specific data volumes
+- INFO: Minor optimization suggestion (default: do not report)
 
-confidence 表达确定性（0.0~1.0），由调用方决定是否采纳。"""
+Respond in English."""
 
 
 class PerformanceAgent(BaseAgent):
@@ -54,15 +48,15 @@ class PerformanceAgent(BaseAgent):
         files = ctx.get("files", [])
         symbol_defs = ctx.get("symbol_definitions", {})
 
-        parts = ["审查以下 PR 变更中的性能风险："]
+        parts = ["Review the following PR diff for performance regressions:"]
         if pr_title:
-            parts.append(f"标题：{pr_title}")
+            parts.append(f"PR title: {pr_title}")
         if pr_description:
-            parts.append(f"描述：{pr_description[:500]}")
+            parts.append(f"PR description: {pr_description[:500]}")
         if files:
-            parts.append(f"变更文件：{', '.join(files[:20])}")
+            parts.append(f"Changed files: {', '.join(files[:20])}")
         if symbol_defs:
-            def_lines = ["\n引用符号定义："]
+            def_lines = ["\nReferenced symbol definitions:"]
             for sym, defn in list(symbol_defs.items())[:5]:
                 def_lines.append(f"\n--- {sym} ---\n{defn}")
             parts.append("".join(def_lines))
@@ -70,22 +64,20 @@ class PerformanceAgent(BaseAgent):
         if blast_section:
             parts.append(blast_section)
             parts.append(
-                "\n---\n[CROSS-FILE CONTEXT] 是调用了被改函数的其他文件代码。"
-                "必须对其中列出的每一个调用方逐一检查，不能只看第一个。"
-                "如果发现调用方因接口变更引入性能问题（如循环调用、资源泄漏），"
-                "可以报告，但必须将 evidence_source 设为 \"CONTEXT\"，"
-                "并在 evidence 里引用 [CROSS-FILE CONTEXT] 中的具体代码片段。\n"
+                "\n---\n[CROSS-FILE CONTEXT] shows callers of the changed functions. "
+                "Check each caller for performance issues introduced by the change (e.g. repeated calls in loops). "
+                'Set evidence_source to "CONTEXT" and quote actual code from [CROSS-FILE CONTEXT].\n'
             )
-        parts.append(f"\n变更代码：\n{diff[:40000]}")
+        parts.append(f"\n[DIFF]\n{diff[:40000]}")
         parts.append(
-            "\n\n请先写 <think> 分析过程，再输出 JSON：\n"
-            '{"findings": [{"file": "路径", "line": 行号或null, "title": "标题", '
-            '"description": "变更导致了什么性能问题，在什么数据量下触发，后果是什么", '
+            "\n\nFirst write <think> with your analysis, then output JSON:\n"
+            '{"findings": [{"file": "path", "line": line_or_null, "title": "short title", '
+            '"description": "what performance regression this introduces, at what data scale it triggers, and the impact", '
             '"severity": "ERROR|WARNING|INFO", '
-            '"confidence": 0.0~1.0, "category": "performance", '
-            '"impact_type": "performance_regression|resource_leak|complexity_increase|info_only", '
-            '"impact_statement": "具体数据规模下的性能/资源后果", '
+            '"confidence": 0.0_to_1.0, "category": "performance", '
+            '"impact_type": "n_plus_one|memory_leak|complexity_increase|blocking_io|resource_leak|info_only", '
+            '"impact_statement": "concrete scale at which this becomes a bottleneck", '
             '"evidence_source": "DIFF|CONTEXT", '
-            '"evidence": ["引用的相关代码片段；CONTEXT 来源必须引用 [CROSS-FILE CONTEXT] 里的实际代码"]}]}'
+            '"evidence": ["quoted code snippets that show the regression"]}]}'
         )
         return "\n".join(parts)

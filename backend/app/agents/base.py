@@ -18,7 +18,7 @@ class BaseAgent(ABC):
     def __init__(
         self,
         api_key: str | None = None,
-        model: str = "deepseek-v4-flash",
+        model: str | None = None,
         base_url: str | None = None,
     ):
         self.client = LLMClient(api_key=api_key, model=model, base_url=base_url)
