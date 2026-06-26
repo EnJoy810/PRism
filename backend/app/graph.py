@@ -21,6 +21,9 @@ _TOKEN_CHARS = 4
 _PER_FILE_TOKEN_THRESHOLD = 8000
 _PER_FILE_CONCURRENCY = 5
 
+# 大 PR 主动降级阈值：超过此文件数时过滤掉非代码文件，只 review 核心逻辑
+_LARGE_PR_FILE_THRESHOLD = 30
+
 _SKIP_DIFF_FILE_PARTS = {"node_modules", "vendor", "dist", ".git"}
 _SKIP_DIFF_FILE_SUFFIXES = {".lock", ".sum", ".lockb"}
 _SKIP_DIFF_FULL_NAMES = {
@@ -32,6 +35,34 @@ _SKIP_DIFF_FILE_NAMES_END = {
     ".test.ts", ".spec.ts", ".test.js", ".spec.js",
     "_test.py", ".test.py",
 }
+
+# 大 PR 时额外跳过的非代码文件后缀
+_SKIP_LARGE_PR_SUFFIXES = {
+    ".md", ".mdx", ".txt", ".rst",           # 文档
+    ".json", ".yaml", ".yml", ".toml",        # 配置（lock 文件已在上方处理）
+    ".env", ".env.example",                   # 环境变量
+    ".sh", ".bat", ".ps1",                    # 脚本
+    ".svg", ".png", ".jpg", ".ico", ".gif",  # 图片
+    ".css", ".scss", ".less",                 # 纯样式（无逻辑）
+}
+
+_SKIP_LARGE_PR_FULL_NAMES = {
+    "CHANGELOG.md", "CHANGELOG", "LICENSE", "LICENSE.md",
+    "CLAUDE.md", "AGENTS.md", ".gitignore", ".dockerignore",
+    ".eslintrc", ".prettierrc", "tsconfig.json", "jest.config.js",
+    "vite.config.ts", "vite.config.js",
+}
+
+
+def _should_skip_large_pr_file(filepath: str) -> bool:
+    """大 PR 模式下额外跳过的非核心文件。"""
+    name = Path(filepath).name
+    if name in _SKIP_LARGE_PR_FULL_NAMES:
+        return True
+    suffix = Path(filepath).suffix.lower()
+    if suffix in _SKIP_LARGE_PR_SUFFIXES:
+        return True
+    return False
 
 
 def _should_skip_diff_file(filepath: str) -> bool:
@@ -356,11 +387,21 @@ class ReviewGraph:
     async def _run_per_file(self, context: dict, pr_url: str, t0: float, event: str = "") -> dict:
         diff = context.get("diff", "")
         file_diffs = split_diff_by_file(diff)
-        file_items = [
-            {"file": f, "diff": d}
-            for f, d in file_diffs.items()
-            if not _should_skip_diff_file(f)
-        ]
+
+        # 基础过滤：始终跳过 node_modules / lock 文件等
+        candidates = {f: d for f, d in file_diffs.items() if not _should_skip_diff_file(f)}
+
+        # 大 PR 主动降级：超过阈值时额外过滤文档/配置/图片等非核心文件
+        is_large_pr = len(candidates) > _LARGE_PR_FILE_THRESHOLD
+        if is_large_pr:
+            before = len(candidates)
+            candidates = {f: d for f, d in candidates.items() if not _should_skip_large_pr_file(f)}
+            logger.info(
+                "per-file: large PR (%d files) — degraded mode, skipped %d non-code files, reviewing %d",
+                len(file_diffs), before - len(candidates), len(candidates),
+            )
+
+        file_items = [{"file": f, "diff": d} for f, d in candidates.items()]
         logger.info(
             "per-file: %d files after filtering (skipped %d)",
             len(file_items), len(file_diffs) - len(file_items),
@@ -378,6 +419,10 @@ class ReviewGraph:
                     **context,
                     "diff": item["diff"],
                     "files": [item["file"]],
+                    # per-file 模式下去掉 PR description：
+                    # 每个文件的 agent 只看局部 diff，完整 description 会导致
+                    # "description 和这个文件不匹配"的重复噪声
+                    "pr_description": "",
                 }
                 return await self._run_agents(item["diff"], file_ctx)
 
@@ -528,6 +573,11 @@ class ReviewGraph:
                 "additions": _get_stat(context, "additions"),
                 "deletions": _get_stat(context, "deletions"),
                 "issues_by_severity": severity_counts,
+            },
+            "evidence_gate_stats": {
+                "before_gate": before_gate,
+                "after_gate": len(findings),
+                "filtered": before_gate - len(findings),
             },
             "merge_recommendation": decision,
             "skipped_agents": skipped,

@@ -130,6 +130,11 @@ class LLMClient:
         )
         if max_tokens is not None:
             create_kwargs["max_tokens"] = max_tokens
+        # DeepSeek V4 Flash defaults to thinking mode (reasoning_content only,
+        # content empty). Disable it so responses land in the content field.
+        active_model = model or self.model
+        if "deepseek" in (active_model or "").lower():
+            create_kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
 
         if stream:
             response = await self.client.chat.completions.create(**create_kwargs)

@@ -22,7 +22,7 @@ async def fetch_pr_context(
     if effective_token:
         headers["Authorization"] = f"Bearer {effective_token}"
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(follow_redirects=True) as client:
         pr_resp = await client.get(
             f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}",
             headers=headers,
