@@ -1,0 +1,324 @@
+{
+  "https://github.com/calcom/cal.com/pull/8087": {
+    "pr_title": "Async import of the appStore packages",
+    "tool": "baseline_per_file",
+    "review_comments": [
+      {
+        "path": "packages/app-store/index.ts",
+        "line": 7,
+        "body": "[High] Dynamic imports change type to Promise, breaking consumers\n\nThe appStore object now contains Promises instead of module exports. All code that accesses appStore properties (e.g., appStore.applecalendar) will receive a Promise instead of the module, causing undefined behavior or runtime errors unless consumers are updated to await.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/lib/payment/deletePayment.ts",
+        "line": 16,
+        "body": "[High] Async import not awaited before property check\n\nThe addition of 'await' to appStore[...] makes paymentApp a promise, but the subsequent synchronous check ('.lib', etc.) is performed on the promise object itself, not the resolved value. This causes the condition to always be false (since a promise doesn't have a 'lib' property), making the function always return false and logging a warning. The warning message also incorrectly uses the promise object instead of the resolved app name.",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 2,
+    "elapsed": 121.5,
+    "golden_comments": [
+      {
+        "comment": "Consider adding try-catch around the await to handle import failures gracefully",
+        "severity": "Low"
+      },
+      {
+        "comment": "The code uses forEach with async callbacks, which causes asynchronous operations (e.g., calendar/video event deletions, payment refunds) to run concurrently without being awaited. This 'fire-and-forget' behavior leads to unhandled promise rejections, race conditions, and incomplete cleanup, as surrounding try-catch blocks cannot properly handle errors from these unawaited promises. Replace forEach with for...of loops or Promise.all() with map() to ensure proper sequential execution and error handling.",
+        "severity": "Critical"
+      }
+    ]
+  },
+  "https://github.com/calcom/cal.com/pull/10600": {
+    "pr_title": "feat: 2fa backup codes",
+    "tool": "baseline_per_file",
+    "review_comments": [
+      {
+        "path": "apps/web/components/auth/BackupCode.tsx",
+        "line": 8,
+        "body": "[High] Unsafe useFormContext outside FormProvider\n\nThe component calls useFormContext() which will throw an error if the component is not rendered inside a FormProvider or form context. This causes a runtime crash in any scenario where TwoFactor is used without wrapping form container.",
+        "created_at": ""
+      },
+      {
+        "path": "apps/web/components/auth/BackupCode.tsx",
+        "line": 22,
+        "body": "[Medium] Incorrect minLength validation\n\nThe backup code format is XXXXX-XXXXX (11 characters including dash). Setting minLength=10 allows codes without a dash (10 characters) to pass browser validation, which may accept invalid codes. Should be minLength=11.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/lib/test/builder.ts",
+        "line": 192,
+        "body": "[Medium] backupCodes set to null may cause runtime errors\n\nThe new field `backupCodes` is initialized to `null`. If the codebase expects an array (e.g., for iteration or calling methods like `.length`), this will throw a TypeError. This is likely to cause failures in tests or runtime if not guarded.",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 3,
+    "elapsed": 127.4,
+    "golden_comments": [
+      {
+        "comment": "The exported function TwoFactor handles backup codes and is in BackupCode.tsx. Inconsistent naming.",
+        "severity": "Low"
+      },
+      {
+        "comment": "Error message mentions 'backup code login' but this is a disable endpoint, not login",
+        "severity": "Low"
+      },
+      {
+        "comment": "Backup code validation is case-sensitive due to the use of indexOf(). This causes validation to fail if a user enters uppercase hex characters, as backup codes should be case-insensitive for a better user experience.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "Because backupCodes are decrypted and mutated in memory before being written back, two concurrent login requests using the same backupCode could both pass this check and update, so a single backup code may effectively be accepted more than once if used concurrently, weakening the intended one-time-use semantics.",
+        "severity": "High"
+      }
+    ]
+  },
+  "https://github.com/calcom/cal.com/pull/10967": {
+    "pr_title": "fix: handle collective multiple host on destinationCalendar",
+    "tool": "baseline_per_file",
+    "review_comments": [
+      {
+        "path": "packages/core/builders/CalendarEvent/class.ts",
+        "line": 26,
+        "body": "[High] Type mismatch for destinationCalendar property\n\nChanging destinationCalendar from a single object (DestinationCalendar | null) to an array (DestinationCalendar[] | null) breaks downstream code that expects a single object. Code accessing properties directly (e.g., event.destinationCalendar?.id) will now return undefined for arrays, and code that assigns a single object will fail to match the new type. This can cause runtime errors and data corruption if not all consumers are updated accordingly.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/ee/payments/api/paypal-webhook.ts",
+        "line": 153,
+        "body": "[High] Breaking change: destinationCalendar converted from object to array\n\nThe change wraps `destinationCalendar` in an array (or empty array) instead of returning a single object or null. Downstream code expecting a single object or null/undefined may fail with type errors or incorrect behavior. This affects any access to properties like `.integration` or `.email` directly on the destinationCalendar value.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/lib/CalendarService.ts",
+        "line": 153,
+        "body": "[High] Incorrect destructuring of destinationCalendar\n\nThe code destructures `event.destinationCalendar` as an array (`const [mainHostDestinationCalendar] = event.destinationCalendar ?? []`), but the type suggests it is an object `{ externalId: string }`. This will assign `undefined` to `mainHostDestinationCalendar`, causing the filter condition to always fall back to `true` and potentially creating events on the wrong calendar.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/lib/CalendarService.ts",
+        "line": 506,
+        "body": "[High] Incorrect destructuring of destinationCalendar\n\nSame bug as line 153: destructuring an object as an array sets `mainHostDestinationCalendar` to `undefined`. The `primary` comparison then always evaluates to `false`, breaking the primary calendar detection logic.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/loggedInViewer/deleteCredential.handler.ts",
+        "line": 290,
+        "body": "[High] Type change of destinationCalendar from object to array may break downstream code\n\nThe property `destinationCalendar` was previously a single object or null/undefined. The new code sets it to an array containing the object, or an empty array. This type mismatch will likely cause runtime errors in code that expects a single object (e.g., accessing `.id` on an array returns undefined) and may lead to incorrect cancellation behavior.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/bookings/editLocation.handler.ts",
+        "line": 85,
+        "body": "[High] Double wrapping of destinationCalendar array\n\nThe new code wraps `booking?.destinationCalendar` and `booking?.user?.destinationCalendar` in an array literal. If either of these fields is already an array (e.g., for collective events or multiple hosts), this creates a nested array (e.g., `[existingArray]`). Downstream code that expects a flat array or a single object will break, causing incorrect behavior or runtime errors. The original code returned the value as-is without extra wrapping.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/organizations/create.handler.ts",
+        "line": 151,
+        "body": "[High] Inverted condition for slug on organization creation\n\nThe condition for setting the `slug` field in the organization creation object was inverted from `!IS_TEAM_BILLING_ENABLED` to `IS_TEAM_BILLING_ENABLED`. Previously, slug was set when billing was disabled; now it is set only when billing is enabled. This changes the intended logic and could cause organizations to be created without a slug when billing is disabled, potentially breaking routing or unique constraint requirements.",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 7,
+    "elapsed": 195.8,
+    "golden_comments": [
+      {
+        "comment": "Potential null reference if mainHostDestinationCalendar is undefined if evt.destinationCalendar is null or an empty array ",
+        "severity": "High"
+      },
+      {
+        "comment": "The optional chaining on mainHostDestinationCalendar?.integration is redundant since you already check mainHostDestinationCalendar in the ternary condition.",
+        "severity": "Low"
+      },
+      {
+        "comment": "Logic error: when externalCalendarId is provided, you're searching for a calendar where externalId === externalCalendarId, but this will always fail since you're looking for a calendar that matches itself. Should likely find by credentialId or use different logic.",
+        "severity": "High"
+      },
+      {
+        "comment": "Logic inversion in organization creation: The slug property is now conditionally set when IS_TEAM_BILLING_ENABLED is true, instead of when it's false as originally intended. This change, combined with requestedSlug still being set when IS_TEAM_BILLING_ENABLED is true, results in both properties being set when billing is enabled, and neither when disabled",
+        "severity": "Medium"
+      },
+      {
+        "comment": "The Calendar interface now requires createEvent(event, credentialId), but some implementations (e.g., Lark/Office365) still declare createEvent(event) only—this breaks the interface contract (also applies to other locations in the PR).",
+        "severity": "Low"
+      }
+    ]
+  },
+  "https://github.com/calcom/cal.com/pull/22345": {
+    "pr_title": "feat: convert InsightsBookingService to use Prisma.sql raw queries",
+    "tool": "baseline_per_file",
+    "review_comments": [],
+    "issue_count": 0,
+    "elapsed": 64.1,
+    "golden_comments": [
+      {
+        "comment": "In getBaseConditions(), the else if (filterConditions) and final else branches are unreachable. This is because getAuthorizationConditions() always returns a non-null Prisma.Sql object, making authConditions always truthy, which means only the first two if/else if conditions are ever evaluated.",
+        "severity": "Low"
+      },
+      {
+        "comment": "Fetching userIdsFromOrg only when teamsFromOrg.length > 0 can exclude org-level members for orgs without child teams; consider deriving from teamIds (which includes orgId) or removing the guard so org-only orgs still include member user bookings.",
+        "severity": "Medium"
+      }
+    ]
+  },
+  "https://github.com/calcom/cal.com/pull/7232": {
+    "pr_title": "Fixes that workflow reminders of cancelled and rescheduled bookings are still sent",
+    "tool": "baseline_per_file",
+    "review_comments": [
+      {
+        "path": "packages/features/ee/workflows/components/WorkflowStepContainer.tsx",
+        "line": 387,
+        "body": "[High] Sender ID UI removed when isPhoneNumberNeeded false\n\nThe outer condition was changed from (isPhoneNumberNeeded || isSenderIdNeeded) to just isPhoneNumberNeeded, causing the sender ID configuration UI to be hidden when isPhoneNumberNeeded is false but isSenderIdNeeded is true. This breaks workflow configuration for steps that require sender ID but not custom phone number, potentially causing the original issue (reminders sent for cancelled/rescheduled bookings) to remain unfixed or introducing new configuration failures.",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 1,
+    "elapsed": 120.9,
+    "golden_comments": [
+      {
+        "comment": "Asynchronous functions deleteScheduledEmailReminder and deleteScheduledSMSReminder are called without await inside forEach loops. This occurs during booking rescheduling/cancellation, and workflow/workflow step deletion/updates. Consequently, scheduled workflow reminders may not be reliably cancelled, potentially leaving them active.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "When immediateDelete is true, the deleteScheduledEmailReminder function cancels the SendGrid email but fails to delete the corresponding WorkflowReminder record from the database. This creates orphaned database entries and is inconsistent with the immediateDelete: false path, which marks the record as cancelled. The SendGrid DELETE API call is also omitted in this path.",
+        "severity": "High"
+      }
+    ]
+  },
+  "https://github.com/calcom/cal.com/pull/8330": {
+    "pr_title": "Date override fixes",
+    "tool": "baseline_per_file",
+    "review_comments": [],
+    "issue_count": 0,
+    "elapsed": 63.3,
+    "golden_comments": [
+      {
+        "comment": "Incorrect end time calculation using slotStartTime instead of slotEndTime",
+        "severity": "Medium"
+      },
+      {
+        "comment": "Using === for dayjs object comparison will always return false as it compares object references, not values. Use .isSame() method instead: dayjs(date.start).add(utcOffset, 'minutes').isSame(dayjs(date.end).add(utcOffset, minutes))",
+        "severity": "Medium"
+      }
+    ]
+  },
+  "https://github.com/calcom/cal.com/pull/11059": {
+    "pr_title": "feat: Sync app credentials between Cal.com & self-hosted platforms",
+    "tool": "baseline_per_file",
+    "review_comments": [
+      {
+        "path": "packages/app-store/_utils/oauth/parseRefreshTokenResponse.ts",
+        "line": 7,
+        "body": "[High] Invalid schema definition using computed property keys\n\nThe schema uses 'z.string().toString()' which produces '[object Object]' as the property key instead of allowing any string key. This breaks validation of OAuth token responses when credential sharing is enabled, causing all responses to either fail or pass validation incorrectly.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/app-store/_utils/oauth/parseRefreshTokenResponse.ts",
+        "line": 24,
+        "body": "[High] Hardcoded refresh_token fallback causes invalid token\n\nWhen the parsed response lacks a 'refresh_token' field, the code assigns the literal string 'refresh_token' instead of throwing an error or handling the missing token properly. This will result in using an invalid token, causing authentication failures and potential data corruption.",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 2,
+    "elapsed": 230.4,
+    "golden_comments": [
+      {
+        "comment": "The parseRefreshTokenResponse function incorrectly sets refresh_token to the hardcoded string 'refresh_token' when it's missing from the OAuth refresh token response. This invalidates the token, breaking subsequent token refreshes and causing authentication failures.",
+        "severity": "High"
+      },
+      {
+        "comment": "Invalid Zod schema syntax. Computed property keys like [z.string().toString()] are not valid in Zod object schemas and will cause runtime errors. ",
+        "severity": "High"
+      },
+      {
+        "comment": "parseRefreshTokenResponse returns a Zod safeParse result ({ success, data, error }), not the credential key object. Persisting that as key stores the wrapper instead of the token payload; we should store the parsed data or use schema parse.",
+        "severity": "High"
+      },
+      {
+        "comment": "When APP_CREDENTIAL_SHARING_ENABLED and CALCOM_CREDENTIAL_SYNC_ENDPOINT are set, the refreshFunction helper returns the fetch Response, but several callers (for example GoogleCalendarService.refreshAccessToken expecting res.data, and HubspotCalendarService.refreshAccessToken expecting a HubspotToken) assume it returns the integration-specific token object. That mismatch will cause runtime errors in the sync-enabled path unless the return type or those call sites are adjusted.",
+        "severity": "High"
+      },
+      {
+        "comment": "When the sync endpoint path is used, res is a fetch Response and has no .data; res?.data will be undefined and token.access_token will throw at runtime. This relies on a consistent return shape from refreshOAuthTokens, which isn’t guaranteed currently.",
+        "severity": "High"
+      }
+    ]
+  },
+  "https://github.com/calcom/cal.com/pull/14943": {
+    "pr_title": "fix: add retryCount to workflowReminder",
+    "tool": "baseline_per_file",
+    "review_comments": [],
+    "issue_count": 0,
+    "elapsed": 61.8,
+    "golden_comments": [
+      {
+        "comment": "Using retryCount: reminder.retryCount + 1 reads a possibly stale value and can lose increments under concurrency; consider an atomic increment via Prisma (increment: 1) to avoid race conditions (also applies to the similar update in the catch block).",
+        "severity": "High"
+      },
+      {
+        "comment": "The deletion logic in scheduleSMSReminders.ts incorrectly deletes non-SMS workflow reminders (e.g., Email, WhatsApp) that have retryCount > 1. This occurs because the retryCount condition within the OR clause for deletion lacks a method: WorkflowMethods.SMS filter, causing it to apply to all reminder types instead of only SMS reminders, which is the intended scope of this function.",
+        "severity": "High"
+      }
+    ]
+  },
+  "https://github.com/calcom/cal.com/pull/14740": {
+    "pr_title": "feat: ability to add guests via app.cal.com/bookings",
+    "tool": "baseline_per_file",
+    "review_comments": [
+      {
+        "path": "packages/emails/src/templates/OrganizerAddGuestsEmail.tsx",
+        "line": 9,
+        "body": "[Medium] Props spread overrides explicit default props\n\nThe `{...props}` spread is placed after explicit props (`title`, `headerType`, `subject`, `callToAction`). This means that if the caller passes any of these props, they will override the intended defaults. For instance, if `callToAction` is passed as non-null, it will override the intended `null`, potentially causing an unwanted call-to-action button in the email. The spread should come before the explicit props to ensure defaults are applied.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/emails/templates/organizer-add-guests-email.ts",
+        "line": 24,
+        "body": "[High] Potential undefined access on attendees array\n\nThe subject line accesses `this.calEvent.attendees[0].name` without checking if the attendees array is non-empty. If the event has no attendees, this will throw an error, causing the email sending to fail.",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 2,
+    "elapsed": 114.6,
+    "golden_comments": [
+      {
+        "comment": "Case sensitivity bypass in email blacklist",
+        "severity": "High"
+      },
+      {
+        "comment": "The logic for checking team admin/owner permissions is incorrect. This condition uses AND (&&) which requires both isTeamAdmin AND isTeamOwner to be true, but it should use OR (||) since a user needs to be either an admin OR an owner to have permission.",
+        "severity": "Critical"
+      },
+      {
+        "comment": "This calls the email sender with the original guests, so existing attendees included in the input will be treated as new when sending notifications, leading to incorrect emails.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "uniqueGuests filters out existing attendees and blacklisted emails but does not deduplicate duplicates within the input; createMany can insert duplicate attendee rows if the client submits repeated emails.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "Starting with an array containing an empty string may cause validation issues. Consider starting with an empty array [] and handling the empty state in the MultiEmail component instead.",
+        "severity": "Low"
+      }
+    ]
+  },
+  "https://github.com/calcom/cal.com/pull/22532": {
+    "pr_title": "feat: add calendar cache status and actions",
+    "tool": "baseline_per_file",
+    "review_comments": [],
+    "issue_count": 0,
+    "elapsed": 127.4,
+    "golden_comments": [
+      {
+        "comment": "The updateManyByCredentialId call uses an empty data object, which prevents Prisma's @updatedAt decorator from updating the updatedAt timestamp. This results in inaccurate cache status tracking, as the timestamp isn't updated when the cache is refreshed. To fix this, explicitly set the updatedAt field.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "logic: macOS-specific sed syntax with empty string after -i flag will fail on Linux systems",
+        "severity": "Low"
+      }
+    ]
+  }
+}

@@ -1,0 +1,560 @@
+{
+  "https://github.com/calcom/cal.com/pull/8087": {
+    "pr_title": "Async import of the appStore packages",
+    "golden_comments": [
+      {
+        "comment": "Consider adding try-catch around the await to handle import failures gracefully",
+        "severity": "Low"
+      },
+      {
+        "comment": "The code uses forEach with async callbacks, which causes asynchronous operations (e.g., calendar/video event deletions, payment refunds) to run concurrently without being awaited. This 'fire-and-forget' behavior leads to unhandled promise rejections, race conditions, and incomplete cleanup, as surrounding try-catch blocks cannot properly handle errors from these unawaited promises. Replace forEach with for...of loops or Promise.all() with map() to ensure proper sequential execution and error handling.",
+        "severity": "Critical"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "packages/core/videoClient.ts",
+        "line": null,
+        "body": "[Medium] getVideoAdapters 中动态导入串行化导致冷启动延迟增加\n\ngetVideoAdapters 函数从同步 reduce 改为 async for...of 循环，循环内依次 await 每个 app 的动态导入（appStore[appName]）。原本所有视频模块在启动时同步加载，现在每次调用都按顺序等待模块加载。虽然模块有缓存，但首次请求或用户拥有多个不同视频凭证时，每个视频模块的 import() 会串行执行，增加响应延迟。在用户拥有多个视频服务（如 Zoom + Google Video）的场景下，冷启动时总延迟可达数百毫秒。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/core/CalendarManager.ts",
+        "line": 32,
+        "body": "[Medium] getCalendarCredentials 中未 await getCalendar，导致返回的 calendar 字段为 Promise\n\n在 getCalendarCredentials 函数中，getCalendar(credential) 没有 await，因此 calendar 属性是一个 Promise<Calendar | null> 而不是 Calendar | null。该函数当前被 getConnectedCalendars 调用，后者通过 await item.calendar 正确解包，但其他潜在的调用者（未在本次 diff 中出现）可能直接使用 item.calendar 的同步方法（如 calendar.getAvailability()），导致运行时错误。此外，函数签名没有标记为 async，TypeScript 类型推断不会强制调用者使用 await，增加了误用风险。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/bookings.tsx",
+        "line": 553,
+        "body": "[Medium] forEach 中 async 回调未被等待，可能导致删除事件操作未完成\n\n在 bookings.tsx 中，bookingRefsFiltered.forEach(async (bookingRef) => { ... }) 使用了 async 回调，但 forEach 不会等待 async 函数返回的 Promise。该回调内部调用了 await getCalendar(...) 和 calendar?.deleteEvent(...)，但由于整体不等待，deleteEvent 的 Promise 可能在实际完成前就将响应返回给客户端。类似问题也出现在 vital/lib/reschedule.ts 和 wipemycalother/lib/reschedule.ts 中。虽然原代码也有类似未等待的问题（但那时 getCalendar 是同步），本次 PR 将 getCalendar 变成异步后，回调内部需要 await 才能正确获取 calendar，这暴露了原本就存在的未等待缺陷。在取消/重新安排预订的场景中，这可能导致日历事件未被实际删除，留下脏数据。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 3,
+    "risk_level": "MEDIUM",
+    "evidence_gate_stats": {
+      "before_gate": 3,
+      "after_gate": 3,
+      "filtered": 0
+    },
+    "elapsed": 72.5
+  },
+  "https://github.com/calcom/cal.com/pull/10600": {
+    "pr_title": "feat: 2fa backup codes",
+    "golden_comments": [
+      {
+        "comment": "The exported function TwoFactor handles backup codes and is in BackupCode.tsx. Inconsistent naming.",
+        "severity": "Low"
+      },
+      {
+        "comment": "Error message mentions 'backup code login' but this is a disable endpoint, not login",
+        "severity": "Low"
+      },
+      {
+        "comment": "Backup code validation is case-sensitive due to the use of indexOf(). This causes validation to fail if a user enters uppercase hex characters, as backup codes should be case-insensitive for a better user experience.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "Because backupCodes are decrypted and mutated in memory before being written back, two concurrent login requests using the same backupCode could both pass this check and update, so a single backup code may effectively be accepted more than once if used concurrently, weakening the intended one-time-use semantics.",
+        "severity": "High"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "apps/web/components/settings/EnableTwoFactorModal.tsx",
+        "line": 97,
+        "body": "[Medium] Blob URL 未在组件卸载时释放\n\n在 enable 2FA 流程中，handleSetup 成功后会调用 URL.createObjectURL 创建一个用于下载备份代码的 Blob URL。该 URL 存储在 state 中，并在下次 setup 前通过 revokeObjectURL 释放。但若用户在显示备份代码后直接关闭模态框（或组件卸载），没有对应的 cleanup 逻辑来释放该 URL。虽然 Blob 体积很小，但若用户反复触发 setup 并关闭，可能导致 Blob URL 泄漏，在小规模累积下不会产生明显影响，但在极端场景（例如测试脚本反复操作）下可能造成内存增长。",
+        "created_at": ""
+      },
+      {
+        "path": "apps/web/pages/api/auth/two-factor/totp/disable.ts",
+        "line": 68,
+        "body": "[Medium] 备份码验证缺少大小写规范化\n\n禁用2FA时，用户输入的备份码可能包含大写字母（如从文本文件复制时），但后端使用 indexOf 直接比较字符串，未将输入转为小写，导致验证失败。用户会收到 'incorrect_backup_code' 错误，无法使用备份码禁用2FA。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/auth/lib/next-auth-options.ts",
+        "line": 153,
+        "body": "[Medium] 备份码验证缺少大小写规范化\n\n登录时使用备份码，同样存在大小写问题：用户输入大写字母时 indexOf 返回-1，导致登录失败。且若所有备份码均被消耗（数组全为 null），indexOf 也会返回-1，错误提示为 'incorrect_backup_code' 而非 'missing_backup_codes'，但该场景更罕见。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 3,
+    "risk_level": "MEDIUM",
+    "evidence_gate_stats": {
+      "before_gate": 3,
+      "after_gate": 3,
+      "filtered": 0
+    },
+    "elapsed": 49.1
+  },
+  "https://github.com/calcom/cal.com/pull/10967": {
+    "pr_title": "fix: handle collective multiple host on destinationCalendar",
+    "golden_comments": [
+      {
+        "comment": "Potential null reference if mainHostDestinationCalendar is undefined if evt.destinationCalendar is null or an empty array ",
+        "severity": "High"
+      },
+      {
+        "comment": "The optional chaining on mainHostDestinationCalendar?.integration is redundant since you already check mainHostDestinationCalendar in the ternary condition.",
+        "severity": "Low"
+      },
+      {
+        "comment": "Logic error: when externalCalendarId is provided, you're searching for a calendar where externalId === externalCalendarId, but this will always fail since you're looking for a calendar that matches itself. Should likely find by credentialId or use different logic.",
+        "severity": "High"
+      },
+      {
+        "comment": "Logic inversion in organization creation: The slug property is now conditionally set when IS_TEAM_BILLING_ENABLED is true, instead of when it's false as originally intended. This change, combined with requestedSlug still being set when IS_TEAM_BILLING_ENABLED is true, results in both properties being set when billing is enabled, and neither when disabled",
+        "severity": "Medium"
+      },
+      {
+        "comment": "The Calendar interface now requires createEvent(event, credentialId), but some implementations (e.g., Lark/Office365) still declare createEvent(event) only—this breaks the interface contract (also applies to other locations in the PR).",
+        "severity": "Low"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "packages/core/EventManager.ts",
+        "line": null,
+        "body": "[Medium] createAllCalendarEvents 中循环数据库查询（credential 缺失时）\n\n对每个 destinationCalendar 处理时，若 credential 不在已加载的内存列表 `this.calendarCredentials` 中，会执行单独的 `prisma.credential.findUnique` 查询。在团队事件（COLLECTIVE/ROUND_ROBIN）中，如果每个成员有自己的 destinationCalendar 且 credential 未预加载，会导致 N+1 次数据库查询。随着团队规模增大（10+），此模式会成为明显的性能瓶颈。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/bookings/lib/handleCancelBooking.ts",
+        "line": null,
+        "body": "[Medium] cancelBooking 中循环处理多个日历引用及可能的数据库查询\n\n现在对 booking 的 calendar reference 进行循环（原为单个 reference）。每个 reference 若 credentialId 存在但不在 user.credentials 中，会执行 `prisma.credential.findUnique`。此外，每个 reference 都调用 `getCalendar` 与 `deleteEvent`。在 recurring 取消全部剩余 booking 时，外部循环增大了操作次数。如果 booking 有多个 calendar reference（例如代理或跨团队场景），性能退化与 reference 数量线性相关。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/app-store/office365calendar/lib/CalendarService.ts",
+        "line": null,
+        "body": "[High] Office365CalendarService 的 updateEvent 和 deleteEvent 未适配 destinationCalendar 数组\n\n该文件中只有 createEvent 被修改为从数组中取第一个元素，但 updateEvent 和 deleteEvent 仍使用旧的 `event.destinationCalendar?.externalId` 语法。由于 `destinationCalendar` 现在是数组，该表达式会返回 `undefined`（数组没有 `externalId` 属性），导致日历 ID 始终为 `undefined`，进而回退到默认日历（可能错误）或引发运行时错误。所有调用 updateEvent/deleteEvent 的路径（如 EventManager 更新、取消预订删除事件）均会受影响。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 3,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 3,
+      "after_gate": 3,
+      "filtered": 0
+    },
+    "elapsed": 99.3
+  },
+  "https://github.com/calcom/cal.com/pull/22345": {
+    "pr_title": "feat: convert InsightsBookingService to use Prisma.sql raw queries",
+    "golden_comments": [
+      {
+        "comment": "In getBaseConditions(), the else if (filterConditions) and final else branches are unreachable. This is because getAuthorizationConditions() always returns a non-null Prisma.Sql object, making authConditions always truthy, which means only the first two if/else if conditions are ever evaluated.",
+        "severity": "Low"
+      },
+      {
+        "comment": "Fetching userIdsFromOrg only when teamsFromOrg.length > 0 can exclude org-level members for orgs without child teams; consider deriving from teamIds (which includes orgId) or removing the guard so org-only orgs still include member user bookings.",
+        "severity": "Medium"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "packages/lib/server/service/insightsBooking.ts",
+        "line": null,
+        "body": "[High] findMany 方法被删除，破坏调用方 API\n\n删除了 findMany 方法，该方法之前提供了完整的查询能力。现在需要调用方自行使用 getBaseConditions 获取 SQL 条件并执行原始查询。如果存在其他调用 findMany 的代码（除了测试），会导致编译错误或运行时错误。\n触发条件：任何外部代码调用 service.findMany(...)。后果：编译失败或方法不存在错误。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 1,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 1,
+      "after_gate": 1,
+      "filtered": 0
+    },
+    "elapsed": 67.8
+  },
+  "https://github.com/calcom/cal.com/pull/7232": {
+    "pr_title": "Comprehensive workflow reminder management for booking lifecycle events",
+    "golden_comments": [
+      {
+        "comment": "Asynchronous functions deleteScheduledEmailReminder and deleteScheduledSMSReminder are called without await inside forEach loops. This occurs during booking rescheduling/cancellation, and workflow/workflow step deletion/updates. Consequently, scheduled workflow reminders may not be reliably cancelled, potentially leaving them active.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "When immediateDelete is true, the deleteScheduledEmailReminder function cancels the SendGrid email but fails to delete the corresponding WorkflowReminder record from the database. This creates orphaned database entries and is inconsistent with the immediateDelete: false path, which marks the record as cancelled. The SendGrid DELETE API call is also omitted in this path.",
+        "severity": "High"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "packages/features/ee/workflows/lib/reminders/emailReminderManager.ts",
+        "line": 197,
+        "body": "[Medium] 取消预订后Email提醒仍会发送（安全回归）\n\n变更后的 `deleteScheduledEmailReminder` 在 `immediateDelete` 参数为默认 `false` 时，只将数据库记录的 `cancelled` 字段设为 `true`，不再调用外部 API 取消已调度的邮件。\n在 `handleCancelBooking.ts` 和 `handleNewBooking.ts` 中调用该函数时均未传递 `immediateDelete`（因此默认 `false`），导致用户取消预订后，已安排的邮件提醒仍然会按时发送。攻击者只需正常取消预订即可触发，造成用户收到不应收到的提醒邮件，可能泄露会议链接等敏感信息。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/ee/workflows/lib/reminders/emailReminderManager.ts",
+        "line": null,
+        "body": "[Medium] immediateDelete 模式下数据库记录未删除\n\n当 deleteScheduledEmailReminder 的第三个参数 immediateDelete 为 true 时，只调用 API 取消提醒，但既不更新 cancelled 字段也不删除数据库记录。这会导致该记录永久残留，且 cron 任务不会处理（因 cancelled=false）。在删除工作流步骤等场景中调用此模式，会造成数据库垃圾行。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+        "line": null,
+        "body": "[Medium] 定期任务中串行调用外部API取消提醒可能成为瓶颈\n\n新增代码在每5分钟运行的cron任务中查询所有 cancelled=true 且 scheduledDate 在一小时内的提醒，然后逐个（串行）调用 SendGrid API 取消，再并行删除数据库。如果大量取消提醒积压（例如上千个），串行 API 调用将耗时很长，可能导致任务超时，且额外增加数据库删除压力。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+        "line": null,
+        "body": "[Medium] Cron 任务中单个 API 失败导致后续取消被跳过\n\n新增的取消已标记提醒的循环被一个 try/catch 包裹，如果任何一次 API 取消请求抛出异常，整个循环立即中止，后续提醒不会被处理。应改用每个提醒独立错误处理。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/bookings/lib/handleCancelBooking.ts",
+        "line": null,
+        "body": "[Medium] 未等待异步取消操作可能导致资源泄漏和竞态\n\n遍历 reminders 时调用 deleteScheduledEmailReminder 和 deleteScheduledSMSReminder，这两个函数是 async 但未使用 await，也没有收集 Promise 等待。这些未处理的 Promise 会在后台执行，如果数量多会增加事件循环压力，且错误可能被忽略（虽然内部有 catch）。同时主流程可能先于取消完成，造成数据不一致。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/bookings/lib/handleCancelBooking.ts",
+        "line": null,
+        "body": "[High] 异步工作流提醒取消操作未等待完成\n\n在取消预订的处理函数中，原来使用 Promise.all 等待所有提醒删除操作完成，现在改为直接调用 deleteScheduledEmailReminder / deleteScheduledSMSReminder 但未 await。如果异步操作未完成，随后 cron 任务可能将本应取消的提醒误发送给用户。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/workflows.tsx",
+        "line": null,
+        "body": "[Medium] 删除Workflow时未等待异步取消操作\n\n遍历 scheduledReminders 时调用 deleteScheduledEmailReminder 等但不 await，同样存在未处理 Promise 问题。之前的实现会收集所有删除操作并等待完成，现在直接 forEach 不等待，可能导致数据库操作未完成就返回，资源未释放。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/workflows.tsx",
+        "line": null,
+        "body": "[High] 工作流相关操作中提醒取消未等待完成\n\n在删除工作流、禁用事件类型、修改步骤等操作中，原来使用 await 等待提醒删除，现在改为直接调用异步函数但未 await。这可能导致数据库操作未完成，cron 任务可能错误处理残留记录。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/bookings/lib/handleNewBooking.ts",
+        "line": null,
+        "body": "[Medium] 重新预订时未等待异步取消操作\n\n遍历 originalRescheduledBooking.workflowReminders 时调用 deleteScheduledEmailReminder 但未 await，类似问题。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/bookings/lib/handleNewBooking.ts",
+        "line": null,
+        "body": "[Medium] 重新预订时使用 immediateDelete 导致旧提醒记录残留\n\n对于已重新预订的原预订，代码使用 deleteScheduledEmailReminder(reminder.id, reminder.referenceId, true) 取消 API 但既不标记 cancelled 也不删除记录。新预订会生成新提醒记录，旧记录成为僵尸。建议使用普通模式（不传 third arg）以标记 cancelled 并让 cron 清理，或直接删除。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/bookings.tsx",
+        "line": null,
+        "body": "[High] 重新预订时工作流提醒取消未等待完成\n\n重新预订路由中，对原预订的提醒处理改为直接调用异步函数但未 await。可能造成提醒取消操作未完成，后续操作（如调度新提醒）可能发生冲突或导致提醒泄漏。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 11,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 11,
+      "after_gate": 11,
+      "filtered": 0
+    },
+    "elapsed": 107.2
+  },
+  "https://github.com/calcom/cal.com/pull/8330": {
+    "pr_title": "Advanced date override handling and timezone compatibility improvements",
+    "golden_comments": [
+      {
+        "comment": "Incorrect end time calculation using slotStartTime instead of slotEndTime",
+        "severity": "Medium"
+      },
+      {
+        "comment": "Using === for dayjs object comparison will always return false as it compares object references, not values. Use .isSame() method instead: dayjs(date.start).add(utcOffset, 'minutes').isSame(dayjs(date.end).add(utcOffset, minutes))",
+        "severity": "Medium"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "packages/trpc/server/routers/viewer/slots.ts",
+        "line": 104,
+        "body": "[High] 工作小时检查使用了错误的结束时间变量\n\n在 checkIfIsAvailable 函数中，工作小时检查的结束时间错误地使用了 slotStartTime 计算，而非 slotEndTime。这导致对任何 slot，其“结束时间”与开始时间相同，使得边界条件判断失效。攻击者可以通过构造恰在正常工作时间开始时或结束时的 slot 来绕过检查，预约到不应有的时间段。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/slots.ts",
+        "line": 99,
+        "body": "[High] 日期覆盖内slot忽略busy检查，可能造成double-booking\n\n在checkIfIsAvailable中，当slot落在某个日期覆盖范围内时（dateOverrideExist为true），函数直接返回true，跳过了后续的busy检查。这意味着在日期覆盖日内已存在的booking不会被考虑，可能导致同一时间段被重复预约。触发条件：用户有日期覆盖且该日存在已有booking。后果：slot错误被认为可用，产生冲突。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/slots.ts",
+        "line": 128,
+        "body": "[High] 工作小时检查中end变量错误导致跨越结束时间的slot被误判可用\n\n检查workingHours时，end被赋值为slotStartTime的分钟值（与start相同），而非slotEndTime。这导致任何slot只要开始时间在工作小时结束前，即使结束时间远超工作小时结束，也会被认为在工作小时内。例如工作小时09:00-17:00，slot 16:30-17:30会被错误放行。触发条件：slot结束时间超出workingHour.endTime但开始时间在其内。后果：无效slot被展示给用户。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/lib/slots.ts",
+        "line": 212,
+        "body": "[Medium] 日期覆盖处理中的时区偏移可能引发可用性错误\n\n在 getSlots 函数中处理 activeOverrides 时，引入了基于 invitee 与 organizer 时区偏移的调整。原逻辑直接使用 getUTCHours()，新逻辑通过计算偏移差并 add 到 override 的 start/end 时间后取小时分钟。这可能导致覆盖时间移位，使本应被覆盖的 slot 变为可用，或反之。攻击者可利用此漏洞通过选择时区获取非预期的可用时间段。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/lib/slots.ts",
+        "line": 215,
+        "body": "[Medium] override.timeZone可能未定义导致tz参数异常\n\n计算overrides时使用了override.timeZone，但该字段在TimeRange中为可选。如果override.timeZone为undefined，`dayjs(override.start.toString()).tz(undefined)`可能抛出异常或产生意料之外的时区转换。触发条件：某个dateOverride缺少timeZone字段。后果：getSlots函数运行错误或返回错误slot。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 5,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 5,
+      "after_gate": 5,
+      "filtered": 0
+    },
+    "elapsed": 88.9
+  },
+  "https://github.com/calcom/cal.com/pull/11059": {
+    "pr_title": "OAuth credential sync and app integration enhancements",
+    "golden_comments": [
+      {
+        "comment": "The parseRefreshTokenResponse function incorrectly sets refresh_token to the hardcoded string 'refresh_token' when it's missing from the OAuth refresh token response. This invalidates the token, breaking subsequent token refreshes and causing authentication failures.",
+        "severity": "High"
+      },
+      {
+        "comment": "Invalid Zod schema syntax. Computed property keys like [z.string().toString()] are not valid in Zod object schemas and will cause runtime errors. ",
+        "severity": "High"
+      },
+      {
+        "comment": "parseRefreshTokenResponse returns a Zod safeParse result ({ success, data, error }), not the credential key object. Persisting that as key stores the wrapper instead of the token payload; we should store the parsed data or use schema parse.",
+        "severity": "High"
+      },
+      {
+        "comment": "When APP_CREDENTIAL_SHARING_ENABLED and CALCOM_CREDENTIAL_SYNC_ENDPOINT are set, the refreshFunction helper returns the fetch Response, but several callers (for example GoogleCalendarService.refreshAccessToken expecting res.data, and HubspotCalendarService.refreshAccessToken expecting a HubspotToken) assume it returns the integration-specific token object. That mismatch will cause runtime errors in the sync-enabled path unless the return type or those call sites are adjusted.",
+        "severity": "High"
+      },
+      {
+        "comment": "When the sync endpoint path is used, res is a fetch Response and has no .data; res?.data will be undefined and token.access_token will throw at runtime. This relies on a consistent return shape from refreshOAuthTokens, which isn’t guaranteed currently.",
+        "severity": "High"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "apps/web/pages/api/webhook/app-credential.ts",
+        "line": 43,
+        "body": "[High] Webhook 认证依赖空密钥可能导致认证绕过\n\n新增的 app-credential webhook 端点使用环境变量 `CALCOM_WEBHOOK_SECRET` 进行认证。若未设置该变量（值为空字符串），则认证检查变为 `req.headers[\"calcom-webhook-secret\"] !== \"\"`。攻击者可以发送 header `calcom-webhook-secret: `（空值）通过认证，从而创建或更新任意用户的 OAuth 凭据。结合 `CALCOM_APP_CREDENTIAL_ENCRYPTION_KEY` 也可能为空，攻击者可以用空密钥加密任意凭据数据，实现凭据替换。后果：攻击者可接管目标用户在外部服务（如 Google Calendar）中的账户。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/app-store/_utils/oauth/parseRefreshTokenResponse.ts",
+        "line": 7,
+        "body": "[High] minimumTokenResponseSchema 定义无效，无法实现动态键匹配\n\n使用 `[z.string().toString()]` 作为动态键在 Zod 中是无效的，实际上定义了一个固定名为 'string' 的键。当 APP_CREDENTIAL_SHARING_ENABLED 启用且 CALCOM_CREDENTIAL_SYNC_ENDPOINT 存在时，token 响应无法匹配该 schema，导致 safeParse 总是失败，抛出 'Invalid refreshed tokens were returned' 错误。所有依赖此函数的 refresh 流程在同步模式下均会中断。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/app-store/_utils/oauth/parseRefreshTokenResponse.ts",
+        "line": 29,
+        "body": "[High] 缺失 refresh_token 时硬编码为 'refresh_token' 字符串，导致数据损坏\n\n当 token 响应中不包含 `refresh_token` 时，代码强制设置为字符串 `'refresh_token'`。在 GoogleCalendarService 中使用时，该值直接覆盖了数据库中原本有效的 refresh_token，导致后续所有 token 刷新使用错误的 refresh_token 而失败。其他服务因合并了原有 refresh_token 而安全，但 Google Calendar 受影响严重。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/app-store/salesforce/lib/CalendarService.ts",
+        "line": 74,
+        "body": "[Medium] 每次实例化强制刷新 OAuth token 导致不必要的外部请求和数据库写入\n\n在 SalesforceCalendarService 构造函数中新增了对 login.salesforce.com 的 HTTP POST 请求来刷新 access_token，并执行 prisma.credential.update 将新 token 写入数据库。原始代码仅在刷新 accessToken 函数中按需刷新；现在每次创建 CalendarService 实例（如每次时间槽查询、预约创建）都会触发一次完整刷新。对于高频预约场景（如每天数万次预约），将产生大量额外的网络延迟和数据库负载，可能导致服务降级或超时。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/app-store/googlecalendar/lib/CalendarService.ts",
+        "line": 96,
+        "body": "[High] parseRefreshTokenResponse 返回值被错误地直接存储，导致数据库写入 SafeParseReturnType 对象\n\n`parseRefreshTokenResponse` 返回 `SafeParseReturnType`（包含 success、data、error 属性），但代码将其直接赋值给 `key` 变量并存入 `prisma.credential.update` 的 data.key 中。这会导致数据库存储的是 Zod 验证结果对象而非实际凭证数据，后续所有依赖该凭据的请求都会失败。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/app-store/googlecalendar/lib/CalendarService.ts",
+        "line": 91,
+        "body": "[High] refreshOAuthTokens 返回 Response 但代码期望解析后的数据对象\n\n`refreshOAuthTokens` 在启用同步模式时返回 `Response` 对象，但后续代码 `const token = res?.data;` 试图访问 `Response.data`，该属性不存在，导致 `token` 为 undefined，访问 `token.access_token` 时抛出 TypeError。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/app-store/hubspot/lib/CalendarService.ts",
+        "line": 177,
+        "body": "[High] refreshOAuthTokens 返回 Response 但期望 HubspotToken 对象\n\n`refreshOAuthTokens` 在同步模式下返回 `Response`，而 `hubspotClient.oauth.tokensApi.createToken` 原本返回 `HubspotToken`。后续代码 `hubspotRefreshToken.accessToken` 在 Response 上为 undefined，导致无法设置 newToken.accessToken，刷新失败。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/app-store/zoho-bigin/lib/CalendarService.ts",
+        "line": 84,
+        "body": "[High] refreshOAuthTokens 返回 Response 但期望 AxiosResponse 对象\n\n`refreshOAuthTokens` 在同步模式下返回 `Response`，而原来 `axios.post` 返回 `AxiosResponse`。后续代码 `tokenInfo.data.error` 在 Response 上为 undefined，无法正确判断错误，且 `tokenInfo.data` 不会被解析，token 数据丢失。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/app-store/office365calendar/lib/CalendarService.ts",
+        "line": 265,
+        "body": "[Medium] 原有 token 验证失败时的静默处理被移除，改为抛出异常，导致行为回归\n\n原来 `refreshTokenResponseSchema.safeParse` 失败时仅打印日志并保留原凭据，现在 `parseRefreshTokenResponse` 在验证失败时直接 `throw new Error`，导致整个刷新请求失败并返回 500。虽然新行为可能更安全，但这是一个意外的破坏性变化，且没有同步更新调用方逻辑。此外，错误日志被移除，不利于调试。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/app-store/office365video/lib/VideoApiAdapter.ts",
+        "line": 77,
+        "body": "[Medium] refreshOAuthTokens 返回 Response 但期望解析后的 body\n\n与 Office365CalendarService 类似，`refreshOAuthTokens` 在同步模式下返回 `Response`，但后续代码 `const responseBody = await handleErrorsJson<ITokenResponse>(response);` 中 `handleErrorsJson` 期望一个 Response 对象并调用 `.json()`，且错误处理逻辑依赖 Response 的 status。由于 `refreshOAuthTokens` 返回的 Response 的 body 并未被消费，调用 `handleErrorsJson` 会尝试读取 body 两次（一次在 fetch 中？不，fetch 返回后 body 未被读取），实际上 fetch 的 response body 只能读取一次，但这里没问题。然而关键问题是：同步模式返回的 Response 来自 fetch 到同步端点，该端点的响应格式可能与微软 token 端点不同，`handleErrorsJson` 可能解析失败。且没有对同步端点响应进行任何验证或转换。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 10,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 10,
+      "after_gate": 10,
+      "filtered": 0
+    },
+    "elapsed": 78.5
+  },
+  "https://github.com/calcom/cal.com/pull/14943": {
+    "pr_title": "SMS workflow reminder retry count tracking",
+    "golden_comments": [
+      {
+        "comment": "Using retryCount: reminder.retryCount + 1 reads a possibly stale value and can lose increments under concurrency; consider an atomic increment via Prisma (increment: 1) to avoid race conditions (also applies to the similar update in the catch block).",
+        "severity": "High"
+      },
+      {
+        "comment": "The deletion logic in scheduleSMSReminders.ts incorrectly deletes non-SMS workflow reminders (e.g., Email, WhatsApp) that have retryCount > 1. This occurs because the retryCount condition within the OR clause for deletion lacks a method: WorkflowMethods.SMS filter, causing it to apply to all reminder types instead of only SMS reminders, which is the intended scope of this function.",
+        "severity": "High"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+        "line": 28,
+        "body": "[Medium] 清理条件放宽导致数据意外删除风险\n\n删除条件从仅删除过期的SMS提醒变更为删除过期SMS提醒或retryCount>1的所有提醒。这会导致任何方法的提醒（如EMAIL）只要重试超过1次就会被永久删除，即使其过期时间未到。攻击者可以通过故意触发调度失败来使目标提醒retryCount超过1，利用清理任务删除合法提醒。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+        "line": 29,
+        "body": "[Medium] 批量删除缺少 `retryCount` 索引，可能导致全表扫描\n\ndeleteMany 中新增了 OR 条件 `retryCount: { gt: 1 }`。由于 WorkflowReminder 表上没有 `retryCount` 的索引，该查询无法直接定位到需要删除的行；数据库将执行全表扫描（或顺序扫描），即使实际删除的行数很少。如果该表记录数超过 10 万行，且此 API 被频繁调用（比如每分钟一次），全表扫描将带来显著的 CPU 和 IO 开销，影响数据库整体性能。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+        "line": 178,
+        "body": "[Medium] 发送成功后未重置 retryCount 为 0\n\n当 Twilio 发送成功时（scheduleSMS.sid 存在），只更新了 scheduled 和 referenceId，没有将 retryCount 重置为 0。这导致历史失败计数残留，后续若再失败一次，retryCount 可能达到 2 而触发删除，缩短了实际重试次数。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 3,
+    "risk_level": "MEDIUM",
+    "evidence_gate_stats": {
+      "before_gate": 3,
+      "after_gate": 3,
+      "filtered": 0
+    },
+    "elapsed": 97.6
+  },
+  "https://github.com/calcom/cal.com/pull/14740": {
+    "pr_title": "Add guest management functionality to existing bookings",
+    "golden_comments": [
+      {
+        "comment": "Case sensitivity bypass in email blacklist",
+        "severity": "High"
+      },
+      {
+        "comment": "The logic for checking team admin/owner permissions is incorrect. This condition uses AND (&&) which requires both isTeamAdmin AND isTeamOwner to be true, but it should use OR (||) since a user needs to be either an admin OR an owner to have permission.",
+        "severity": "Critical"
+      },
+      {
+        "comment": "This calls the email sender with the original guests, so existing attendees included in the input will be treated as new when sending notifications, leading to incorrect emails.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "uniqueGuests filters out existing attendees and blacklisted emails but does not deduplicate duplicates within the input; createMany can insert duplicate attendee rows if the client submits repeated emails.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "Starting with an array containing an empty string may cause validation issues. Consider starting with an empty array [] and handling the empty state in the MultiEmail component instead.",
+        "severity": "Low"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts",
+        "line": 128,
+        "body": "[Medium] 对每个 attendee 重复调用 getTranslation 无缓存\n\n在构建 attendeesList 时，对 bookingAttendees.attendees 数组中的每一个 attendee 都调用 getTranslation(attendee.locale ?? \"en\", \"common\")。若 booking 已有较多 attendees（如 100+），且多数使用相同 locale，则会重复加载同一语言资源，导致不必要的 I/O 和内存/CPU 开销，尤其在高频调用此接口时成为瓶颈。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts",
+        "line": 36,
+        "body": "[High] 权限检查逻辑错误：使用 AND 替代 OR\n\n代码使用 `isTeamAdmin(user.id, teamId) && isTeamOwner(user.id, teamId)`（逻辑与）来判定是否为团队管理员或所有者。实际上，用户只需满足其中一项即可。当前逻辑导致仅有管理员（非所有者）或仅有所有者（非管理员）的用户被误判为无权，进而被拒绝执行添加客人操作。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 2,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 2,
+      "after_gate": 2,
+      "filtered": 0
+    },
+    "elapsed": 73.8
+  },
+  "https://github.com/calcom/cal.com/pull/22532": {
+    "pr_title": "feat: add calendar cache status and actions (#22532)",
+    "golden_comments": [
+      {
+        "comment": "The updateManyByCredentialId call uses an empty data object, which prevents Prisma's @updatedAt decorator from updating the updatedAt timestamp. This results in inaccurate cache status tracking, as the timestamp isn't updated when the cache is refreshed. To fix this, explicitly set the updatedAt field.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "logic: macOS-specific sed syntax with empty string after -i flag will fail on Linux systems",
+        "severity": "Low"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "scripts/test-gcal-webhooks.sh",
+        "line": 72,
+        "body": "[Medium] Test script can override production `GOOGLE_WEBHOOK_URL` in `.env` file\n\n`test-gcal-webhooks.sh` 脚本直接使用 `sed -i` 修改 `.env` 文件中的 `GOOGLE_WEBHOOK_URL` 为临时 Tunnelmole 公共 URL。如果该脚本在非开发环境（如 CI/CD、production）意外运行，将把生产环境的 Webhook URL 覆盖为公网隧道地址，导致所有 Google Calendar 推送通知发送到外部不可控端点，可能造成服务中断、敏感数据泄露（通知内容）或虚假回调。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/app-store/googlecalendar/lib/CalendarService.ts",
+        "line": 1022,
+        "body": "[High] SelectedCalendarRepository.updateManyByCredentialId 传入了空 data 对象，可能导致运行时异常\n\n在 fetchAvailability 后调用 updateManyByCredentialId 时，传入的 data 参数为空对象 `{}`。Prisma 的 updateMany 要求 data 至少包含一个非关系字段，否则会抛出错误。这种情况下每次 Google Calendar 可用性请求都会失败，导致功能不可用，并且引发大量错误日志。即使 Prisma 侥幸执行无字段更新，也会产生无意义的写操作，增加数据库负载。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/prisma/migrations/20250715160635_add_calendar_cache_updated_at/migration.sql",
+        "line": 9,
+        "body": "[Medium] ALTER TABLE 使用了易变默认值 NOW()，大表迁移可能长时间阻塞\n\n迁移脚本为 CalendarCache 表添加 updatedAt 列时使用了 `NOT NULL DEFAULT NOW()`。NOW() 是易变函数，PostgreSQL 无法使用仅元数据的优化，必须重写整个表并实际计算每行的默认值。如果 CalendarCache 表很大（例如数百万行），此 ALTER TABLE 可能长时间锁定表，导致写入堵塞，甚至引发连接超时或生产中断。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 3,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 3,
+      "after_gate": 3,
+      "filtered": 0
+    },
+    "elapsed": 74.3
+  }
+}

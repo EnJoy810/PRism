@@ -24,6 +24,7 @@ frontend/dist/
 
 # AI agent worktrees
 .claude/
+.playwright-mcp/
 *.pem
 prism-review-agent.*.private-key.pem
 .omx/

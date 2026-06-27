@@ -1,0 +1,2444 @@
+{
+  "https://github.com/calcom/cal.com/pull/8087": {
+    "pr_title": "Async import of the appStore packages",
+    "golden_comments": [
+      {
+        "comment": "Consider adding try-catch around the await to handle import failures gracefully",
+        "severity": "Low"
+      },
+      {
+        "comment": "The code uses forEach with async callbacks, which causes asynchronous operations (e.g., calendar/video event deletions, payment refunds) to run concurrently without being awaited. This 'fire-and-forget' behavior leads to unhandled promise rejections, race conditions, and incomplete cleanup, as surrounding try-catch blocks cannot properly handle errors from these unawaited promises. Replace forEach with for...of loops or Promise.all() with map() to ensure proper sequential execution and error handling.",
+        "severity": "Critical"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "packages/app-store/vital/lib/reschedule.ts",
+        "line": 125,
+        "body": "[Medium] forEach 循环中的异步操作未等待完成\n\n在 `forEach` 回调中使用了 `async/await`，但 `forEach` 不会等待 Promise 解析。这会导致 `deleteEvent` 和 `deleteMeeting` 等关键清理操作可能无法按预期顺序执行或根本不会执行，尤其是在有多个引用需要处理时。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/app-store/wipemycalother/lib/reschedule.ts",
+        "line": 125,
+        "body": "[Medium] forEach 循环中的异步操作未等待完成\n\n与 vital/lib/reschedule.ts 中的问题相同。在 `forEach` 回调中使用了 `async/await`，但 `forEach` 不会等待 Promise 解析。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/bookings.tsx",
+        "line": 553,
+        "body": "[Medium] forEach 循环中的异步操作未等待完成\n\n与上述文件相同的问题。在 `forEach` 回调中使用了 `async/await`，但 `forEach` 不会等待 Promise 解析。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/core/videoClient.ts",
+        "line": 21,
+        "body": "[Medium] getVideoAdapters 使用串行 for...of 循环加载动态模块\n\n`getVideoAdapters` 函数使用 `for...of` 循环串行地 `await` 每个 `appStore[...]` 的动态导入。如果动态导入本身是异步的（例如，涉及网络请求或文件 I/O），串行执行会显著增加总延迟。应该使用 `Promise.all` 来并行解析所有 app 模块，以最小化等待时间。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/core/CalendarManager.ts",
+        "line": 31,
+        "body": "[Medium] getCalendarCredentials 中未 await 的异步调用导致 Promise 泄漏\n\n`getCalendarCredentials` 函数内部调用了 `getCalendar(credential)`，但该函数已变为异步。由于 `getCalendarCredentials` 本身不是 `async` 函数，`getCalendar` 返回的 `Promise` 被直接赋值给了 `calendar` 字段，而不是被 `await`。这导致 `calendar` 字段的类型是 `Promise<Calendar | null>` 而不是 `Calendar | null`。虽然 `getConnectedCalendars` 中通过 `await item.calendar` 处理了这种情况，但这种模式是不安全的，任何其他直接访问 `item.calendar` 的代码都会得到 Promise 而不是 Calendar 对象，可能导致难以调试的错误。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 5,
+    "risk_level": "MEDIUM",
+    "evidence_gate_stats": {
+      "before_gate": 5,
+      "after_gate": 5,
+      "filtered": 0
+    },
+    "elapsed": 47.5
+  },
+  "https://github.com/calcom/cal.com/pull/10600": {
+    "pr_title": "feat: 2fa backup codes",
+    "golden_comments": [
+      {
+        "comment": "The exported function TwoFactor handles backup codes and is in BackupCode.tsx. Inconsistent naming.",
+        "severity": "Low"
+      },
+      {
+        "comment": "Error message mentions 'backup code login' but this is a disable endpoint, not login",
+        "severity": "Low"
+      },
+      {
+        "comment": "Backup code validation is case-sensitive due to the use of indexOf(). This causes validation to fail if a user enters uppercase hex characters, as backup codes should be case-insensitive for a better user experience.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "Because backupCodes are decrypted and mutated in memory before being written back, two concurrent login requests using the same backupCode could both pass this check and update, so a single backup code may effectively be accepted more than once if used concurrently, weakening the intended one-time-use semantics.",
+        "severity": "High"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "packages/features/auth/lib/next-auth-options.ts",
+        "line": 148,
+        "body": "[High] 备份码登录存在竞态条件，可能导致备份码被重复使用\n\n在登录流程中，验证备份码成功后，会将其在数组中的位置设为 null 并更新数据库。如果两个并发请求使用同一个备份码，它们可能都通过验证，然后都尝试更新数据库。由于数据库更新是原子的，最终只有一个会成功，但另一个请求的用户已经通过了验证。这可能导致一个备份码被使用多次。",
+        "created_at": ""
+      },
+      {
+        "path": "apps/web/components/settings/EnableTwoFactorModal.tsx",
+        "line": 200,
+        "body": "[Medium] 备份码以明文形式展示并提供复制/下载功能，增加泄露风险\n\n在启用 2FA 后，备份码以明文形式显示在屏幕上，并提供了“复制到剪贴板”和“下载为文件”的功能。这增加了备份码被恶意软件、浏览器扩展或屏幕截图窃取的风险。虽然这是功能设计的一部分，但缺乏额外的保护措施（如要求用户确认已安全保存、禁止截图检测等）。",
+        "created_at": ""
+      },
+      {
+        "path": "apps/web/components/settings/EnableTwoFactorModal.tsx",
+        "line": 135,
+        "body": "[Medium] `onEnable` 回调触发时机被延迟，可能导致上游行为回归\n\n在成功验证 TOTP 码后，代码不再立即调用 `onEnable()`，而是进入新的 `DisplayBackupCodes` 步骤。`onEnable()` 现在仅在用户点击“关闭”按钮后才被调用。如果上游组件（如父级弹窗或状态管理）依赖 `onEnable` 的立即执行来刷新状态或关闭当前弹窗，则可能出现用户界面卡住或状态不一致的问题。",
+        "created_at": ""
+      },
+      {
+        "path": "apps/web/pages/api/auth/two-factor/totp/disable.ts",
+        "line": 48,
+        "body": "[Medium] 禁用 2FA 时备份码验证存在竞态条件\n\n与登录流程类似，禁用 2FA 的 API 在处理备份码时也存在竞态条件。虽然最终会清空所有备份码，但在验证通过后、数据库更新前，如果发生并发请求，可能导致同一个备份码被用于多次禁用 2FA 操作。",
+        "created_at": ""
+      },
+      {
+        "path": "apps/web/components/settings/TwoFactorAuthAPI.ts",
+        "line": 22,
+        "body": "[Medium] API 函数签名变更导致潜在的调用方破坏\n\n`TwoFactorAuthAPI.disable` 函数签名从 `(password, code)` 变更为 `(password, code, backupCode)`。任何未在此 PR 中更新的、直接调用此函数的代码（例如，未来的功能、测试或外部脚本）将因缺少参数而失败，导致运行时错误。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 5,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 5,
+      "after_gate": 5,
+      "filtered": 0
+    },
+    "elapsed": 38.5
+  },
+  "https://github.com/calcom/cal.com/pull/10967": {
+    "pr_title": "fix: handle collective multiple host on destinationCalendar",
+    "golden_comments": [
+      {
+        "comment": "Potential null reference if mainHostDestinationCalendar is undefined if evt.destinationCalendar is null or an empty array ",
+        "severity": "High"
+      },
+      {
+        "comment": "The optional chaining on mainHostDestinationCalendar?.integration is redundant since you already check mainHostDestinationCalendar in the ternary condition.",
+        "severity": "Low"
+      },
+      {
+        "comment": "Logic error: when externalCalendarId is provided, you're searching for a calendar where externalId === externalCalendarId, but this will always fail since you're looking for a calendar that matches itself. Should likely find by credentialId or use different logic.",
+        "severity": "High"
+      },
+      {
+        "comment": "Logic inversion in organization creation: The slug property is now conditionally set when IS_TEAM_BILLING_ENABLED is true, instead of when it's false as originally intended. This change, combined with requestedSlug still being set when IS_TEAM_BILLING_ENABLED is true, results in both properties being set when billing is enabled, and neither when disabled",
+        "severity": "Medium"
+      },
+      {
+        "comment": "The Calendar interface now requires createEvent(event, credentialId), but some implementations (e.g., Lark/Office365) still declare createEvent(event) only—this breaks the interface contract (also applies to other locations in the PR).",
+        "severity": "Low"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "packages/core/EventManager.ts",
+        "line": 344,
+        "body": "[High] 凭据动态加载缺乏权限校验导致权限提升\n\n在 `createAllCalendarEvents` 和 `updateAllCalendarEvents` 方法中，当通过 `credentialId` 在内存中找不到凭据时，会直接从数据库查询 (`prisma.credential.findUnique`)。如果攻击者能够控制传入的 `credentialId`（例如，通过 `conferenceCredentialId` 或 `destinationCalendar.credentialId`），他们可以指定任意有效的凭据 ID，从而使用该凭据对应的日历服务（如 Google Calendar）来创建、更新或删除事件。这完全绕过了基于用户或团队的权限检查，导致权限提升。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/core/EventManager.ts",
+        "line": null,
+        "body": "[Medium] 在 createAllCalendarEvents 和 updateAllCalendarEvents 中存在潜在的 N+1 数据库查询\n\n当遍历 destinationCalendar 或 calendarReference 数组时，如果某个元素的 credentialId 不在内存中的 this.calendarCredentials 列表里，代码会执行一次额外的 prisma.credential.findUnique 查询。在团队事件（如 COLLECTIVE）中，这个数组可能包含多个元素，导致一次预订创建或更新操作触发多次额外的数据库查询。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/core/EventManager.ts",
+        "line": 117,
+        "body": "[High] 潜在的空指针异常：访问空数组的第一个元素\n\n在 `handleLocationCreation` 方法中，`const [mainHostDestinationCalendar] = evt.destinationCalendar ?? [];` 之后，直接访问 `mainHostDestinationCalendar.integration`。如果 `evt.destinationCalendar` 是一个空数组 `[]`，`mainHostDestinationCalendar` 将为 `undefined`，访问其 `integration` 属性会抛出 `TypeError: Cannot read properties of undefined (reading 'integration')`。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/bookings/lib/handleNewBooking.ts",
+        "line": 1063,
+        "body": "[Medium] `destinationCalendar` 数组可能被操纵导致信息泄露或权限提升\n\n`destinationCalendar` 字段从单个对象重构为数组。在 `handleNewBooking.ts` 中，`evt.destinationCalendar` 的初始值来自 `eventType.destinationCalendar` 或 `organizerUser.destinationCalendar`。随后，对于集体事件，会将所有团队成员的 `destinationCalendar` 追加到该数组中。如果攻击者能够影响 `eventType.destinationCalendar`、`organizerUser.destinationCalendar` 或 `teamDestinationCalendars` 的构建逻辑（例如，通过修改用户资料或事件类型设置），他们可以将事件同步到非预期的日历。此外，如果 API 允许在请求中直接指定 `destinationCalendar` 数组，攻击者可以将其设置为任意日历 ID，导致事件详情泄露给未授权的第三方。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/bookings/lib/handleNewBooking.ts",
+        "line": 1874,
+        "body": "[Medium] 功能回归：集体事件中只关联了第一个 destination calendar\n\n在创建 booking 时，`destinationCalendar` 的连接逻辑从 `connect: { id: evt.destinationCalendar.id }` 变为 `connect: { id: evt.destinationCalendar[0].id }`。对于集体事件，`evt.destinationCalendar` 数组包含了所有团队成员的日历，但这里只连接了第一个（通常是组织者的）。其他团队成员的 destination calendar 信息丢失，导致后续的更新/删除操作无法正确找到对应的日历事件。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/app-store/larkcalendar/lib/CalendarService.ts",
+        "line": 128,
+        "body": "[Medium] 空 `destinationCalendar` 数组导致服务不可用\n\n在 `LarkCalendarService` 的 `createEvent`、`createAttendees`、`updateEvent` 和 `deleteEvent` 方法中，代码从 `event.destinationCalendar` 数组中取第一个元素。如果数组为空 (`[]`)，`mainHostDestinationCalendar` 将为 `undefined`，导致 `calendarId` 为 `undefined`，进而抛出 `new Error(\"no calendar id\")`。这会导致整个日历同步操作失败，影响用户正常使用。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/bookings/lib/handleCancelBooking.ts",
+        "line": null,
+        "body": "[Medium] 在取消预订逻辑中存在潜在的 N+1 数据库查询\n\n当遍历 bookingCalendarReference 数组时，如果某个 reference 的 credentialId 不在 bookingToDelete.user.credentials 中，代码会执行一次额外的 prisma.credential.findUnique 查询。对于包含多个日历引用的预订（如团队预订），这会导致多次额外的数据库查询。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/bookings/lib/handleCancelBooking.ts",
+        "line": 251,
+        "body": "[Medium] 潜在的数据不一致：取消 booking 时 evt 中的 destinationCalendar 与删除逻辑不匹配\n\n在 `handleCancelBooking` 中，`evt.destinationCalendar` 被构建为一个数组，可能包含多个日历。然而，后续的删除逻辑是遍历 `bookingCalendarReference` 数组，并为每个 reference 调用 `calendar?.deleteEvent(uid, evt, externalCalendarId)`。这里传递的 `evt` 对象中的 `destinationCalendar` 数组是全局的，而不是针对当前正在处理的 reference。这可能导致在 `GoogleCalendarService.deleteEvent` 中，`find` 方法无法在 `evt.destinationCalendar` 数组中找到与 `externalCalendarId` 匹配的项，从而导致 `calendarId` 为 `undefined` 和 API 调用失败。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/app-store/googlecalendar/lib/CalendarService.ts",
+        "line": 253,
+        "body": "[High] 行为回归：updateEvent 和 deleteEvent 中 selectedCalendar 可能为 undefined\n\n在 `updateEvent` 和 `deleteEvent` 方法中，选择日历的逻辑从直接使用 `event.destinationCalendar?.externalId` 变为在数组中查找匹配项。如果 `event.destinationCalendar` 数组不为空，但其中没有 `externalId` 与传入的 `externalCalendarId` 匹配的项，`find` 方法会返回 `undefined`，导致 `selectedCalendar` 或 `calendarId` 为 `undefined`。这会导致后续的 Google Calendar API 调用失败。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 9,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 9,
+      "after_gate": 9,
+      "filtered": 0
+    },
+    "elapsed": 46.8
+  },
+  "https://github.com/calcom/cal.com/pull/22345": {
+    "pr_title": "feat: convert InsightsBookingService to use Prisma.sql raw queries",
+    "golden_comments": [
+      {
+        "comment": "In getBaseConditions(), the else if (filterConditions) and final else branches are unreachable. This is because getAuthorizationConditions() always returns a non-null Prisma.Sql object, making authConditions always truthy, which means only the first two if/else if conditions are ever evaluated.",
+        "severity": "Low"
+      },
+      {
+        "comment": "Fetching userIdsFromOrg only when teamsFromOrg.length > 0 can exclude org-level members for orgs without child teams; consider deriving from teamIds (which includes orgId) or removing the guard so org-only orgs still include member user bookings.",
+        "severity": "Medium"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "packages/lib/server/service/insightsBooking.ts",
+        "line": null,
+        "body": "[Medium] 从类型安全的 Prisma WhereInput 迁移到原始 SQL 增加了 SQL 注入风险\n\nPR 将查询条件从 Prisma 的类型安全 `WhereInput` 对象重构为 `Prisma.sql` 模板字符串。虽然当前代码正确地使用了参数化查询，但这种改变移除了 Prisma ORM 提供的强类型和自动参数化保护层。未来任何在 `buildAuthorizationConditions` 或 `buildFilterConditions` 方法中拼接用户输入（如 `scope`、`teamId`、`eventTypeId`）的变更，都极有可能引入 SQL 注入漏洞。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/lib/server/service/insightsBooking.ts",
+        "line": null,
+        "body": "[Medium] 移除 `findMany` 安全抽象层，增加授权绕过风险\n\nPR 移除了 `findMany` 方法，该方法内部封装了授权和过滤条件的组合与执行。取而代之的是 `getBaseConditions` 方法，它返回原始 SQL，要求调用方自行使用 `prisma.$queryRaw` 执行。这移除了一个关键的安全抽象层，将正确应用授权逻辑的责任完全转移给了调用方。任何未来使用 `InsightsBookingService` 的代码如果忘记或错误地应用 `getBaseConditions` 返回的条件，都可能导致未授权数据访问。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/lib/server/service/insightsBooking.ts",
+        "line": null,
+        "body": "[High] 破坏性 API 变更：构造函数参数类型从 Zod 推导类型变为手动定义类型\n\n构造函数接受的 `options` 参数类型从 `InsightsBookingServiceOptions`（由 Zod 模式推导）变更为 `InsightsBookingServicePublicOptions`（手动定义）。如果这两个类型不完全兼容，任何创建 `InsightsBookingService` 实例的代码都可能因类型不匹配而编译失败或传入无效数据。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/lib/server/service/__tests__/insightsBooking.integration-test.ts",
+        "line": null,
+        "body": "[Medium] 删除了验证缓存行为的集成测试\n\n整个 `describe(\"Caching\", ...)` 测试块被删除，其中包含两个测试用例，分别验证 `getAuthorizationConditions` 和 `getFilterConditions` 的缓存机制。虽然服务层代码中的缓存逻辑仍然存在，但缺乏测试覆盖，未来对缓存逻辑的修改（如移除缓存）将无法被检测到。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 4,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 4,
+      "after_gate": 4,
+      "filtered": 0
+    },
+    "elapsed": 40.4
+  },
+  "https://github.com/calcom/cal.com/pull/7232": {
+    "pr_title": "Comprehensive workflow reminder management for booking lifecycle events",
+    "golden_comments": [
+      {
+        "comment": "Asynchronous functions deleteScheduledEmailReminder and deleteScheduledSMSReminder are called without await inside forEach loops. This occurs during booking rescheduling/cancellation, and workflow/workflow step deletion/updates. Consequently, scheduled workflow reminders may not be reliably cancelled, potentially leaving them active.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "When immediateDelete is true, the deleteScheduledEmailReminder function cancels the SendGrid email but fails to delete the corresponding WorkflowReminder record from the database. This creates orphaned database entries and is inconsistent with the immediateDelete: false path, which marks the record as cancelled. The SendGrid DELETE API call is also omitted in this path.",
+        "severity": "High"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "packages/features/ee/workflows/lib/reminders/emailReminderManager.ts",
+        "line": 194,
+        "body": "[Medium] 邮件提醒取消操作从同步改为异步，引入时间窗口风险\n\n变更将邮件提醒的取消操作从“立即调用第三方API取消并删除数据库记录”改为“仅将数据库记录标记为cancelled=true”，然后依赖一个定时任务（scheduleEmailReminders.ts）来异步执行实际的取消和删除操作。这引入了一个时间窗口，在该窗口内，已取消的预约或已禁用的工作流仍可能触发提醒的发送。如果定时任务因负载、网络问题或自身bug延迟执行，用户可能在取消预约后仍收到提醒邮件。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/ee/workflows/lib/reminders/smsReminderManager.ts",
+        "line": 177,
+        "body": "[Medium] `deleteScheduledSMSReminder` 在循环中串行调用外部 API，未利用批量操作优势\n\n在 `handleCancelBooking.ts`、`bookings.tsx` 和 `workflows.tsx` 中，对每个 reminder 都调用了 `deleteScheduledSMSReminder`。该函数内部会串行调用 Twilio API 取消调度。虽然单个 booking 的 reminder 数量通常不多，但在批量操作（如删除整个 workflow）时，多个串行的 API 调用会累积延迟，且无法并发执行。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+        "line": 43,
+        "body": "[High] 定时任务中全表扫描查询且串行处理，存在严重性能风险\n\n新增的 `findMany` 查询 `cancelled: true` 的记录，如果 `cancelled` 字段没有索引，将导致全表扫描。随后使用 `for...of` 循环串行执行外部 API 调用和数据库删除操作。当 `WorkflowReminder` 表数据量较大（例如数十万行）时，此查询会消耗大量数据库 IO，串行处理会显著延长任务执行时间，可能导致任务超时或堆积。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+        "line": null,
+        "body": "[Medium] SMS 类型的已取消提醒未被清理\n\n新增的清理逻辑仅查询并处理 `cancelled: true` 的 EMAIL 类型提醒。SMS 类型的已取消提醒将永远不会被清理，导致数据库中出现孤儿数据。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/bookings/lib/handleNewBooking.ts",
+        "line": 964,
+        "body": "[Medium] 在预订创建/重新安排的关键路径上新增了同步外部 API 调用\n\n在 `originalRescheduledBooking` 的处理逻辑中，新增了一个循环，对每个 workflow reminder 调用 `deleteScheduledEmailReminder` 或 `deleteScheduledSMSReminder`。`deleteScheduledSMSReminder` 内部会同步调用 Twilio API 取消短信。这会直接增加用户请求的响应时间，尤其是在网络延迟较高或 Twilio API 响应慢时。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/ee/workflows/components/WorkflowStepContainer.tsx",
+        "line": 390,
+        "body": "[High] 移除了 Sender ID 配置 UI\n\n条件渲染从 `(isPhoneNumberNeeded || isSenderIdNeeded)` 改为 `isPhoneNumberNeeded`。当工作流步骤需要 Sender ID 但不需要自定义电话号码时，相关的 UI 将不再显示，用户无法配置 Sender ID。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/bookings/lib/handleCancelBooking.ts",
+        "line": 485,
+        "body": "[Medium] 移除了对 `reminder.scheduled` 的检查\n\n旧代码只处理 `scheduled: true` 的提醒。新代码处理所有提醒。对于 `scheduled: false` 但 `referenceId` 不为 null 的提醒，新代码会尝试调用外部 API 取消，这可能产生未预期的副作用或 API 错误。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 7,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 7,
+      "after_gate": 7,
+      "filtered": 0
+    },
+    "elapsed": 54.4
+  },
+  "https://github.com/calcom/cal.com/pull/8330": {
+    "pr_title": "Advanced date override handling and timezone compatibility improvements",
+    "golden_comments": [
+      {
+        "comment": "Incorrect end time calculation using slotStartTime instead of slotEndTime",
+        "severity": "Medium"
+      },
+      {
+        "comment": "Using === for dayjs object comparison will always return false as it compares object references, not values. Use .isSame() method instead: dayjs(date.start).add(utcOffset, 'minutes').isSame(dayjs(date.end).add(utcOffset, minutes))",
+        "severity": "Medium"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "packages/trpc/server/routers/viewer/slots.ts",
+        "line": 139,
+        "body": "[High] 工作时间检查逻辑被完全绕过\n\n在 `checkIfIsAvailable` 函数中，新增的工作时间检查代码存在严重 bug。变量 `start` 和 `end` 被赋予了相同的值（`slotStartTime.hour() * 60 + slotStartTime.minute()`），导致 `if (start < workingHour.startTime || end > workingHour.endTime)` 条件永远无法为真。因此，任何不在 `busy` 列表中的时间段都会被判定为可用，即使它完全不在工作时间内。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/slots.ts",
+        "line": 99,
+        "body": "[High] checkIfIsAvailable 函数中新增的 O(N*D) 和 O(N*W) 循环导致性能崩溃\n\n在 checkIfIsAvailable 函数中，为每个时间槽新增了遍历 dateOverrides 和 workingHours 的循环。这些循环内部还包含昂贵的 dayjs 时区操作（.tz(), .add(), .format()）。该函数在 getSchedule 中被大量调用（主循环、松散主机、固定主机），导致整体复杂度从 O(N*B) 急剧上升至 O(N*(D+W+B))。在有多位主机、多个日期覆盖的场景下，API 响应时间会成倍增加，极易成为性能瓶颈。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/slots.ts",
+        "line": 99,
+        "body": "[High] checkIfIsAvailable 中 date override 检查逻辑错误，导致功能完全失效\n\n新增的 date override 检查逻辑存在严重错误。`dateOverrides.find()` 回调的返回值逻辑混乱，导致 slot 被错误地标记为不可用。具体来说，当 slot 在 override 开始之前或结束之后时，回调返回 `true`，这导致 `find` 认为找到了匹配项，进而外部 `if` 执行 `return false`，将 slot 标记为不可用。这完全颠倒了逻辑，会导致大量本应可用的 slot 被错误地排除。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/slots.ts",
+        "line": 99,
+        "body": "[Medium] availability 检查逻辑重复，增加维护成本和潜在冲突\n\n`getSchedule` 函数在 `getTimeSlots` 中已经处理了 date overrides 和 working hours 来生成 slots。现在又在 `checkIfIsAvailable` 中重复进行类似的检查。这导致 availability 逻辑分散在两处，增加了代码的复杂性和维护成本，并且两处逻辑可能不一致，导致难以调试的 bug。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/lib/slots.ts",
+        "line": 215,
+        "body": "[Medium] 日期覆盖时区偏移计算存在潜在错误\n\n在 `getSlots` 函数中，计算日期覆盖的 `startTime` 和 `endTime` 时，使用了 `dayjs(override.start.toString()).tz(override.timeZone).utcOffset()` 来获取时区偏移。`override.start` 是一个 `Date` 对象，其 `toString()` 方法返回的字符串不包含时区信息，然后 `.tz()` 会将其解释为 `override.timeZone` 时区的时间。这种转换方式在服务器时区与 `override.timeZone` 不一致时可能导致错误的偏移量计算，进而使日期覆盖在错误的时间生效。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/lib/slots.ts",
+        "line": 211,
+        "body": "[Medium] 日期覆盖处理中新增了昂贵的 dayjs 时区计算\n\n在 getSlots 函数处理 activeOverrides 时，将原本轻量级的 UTC 属性读取（getUTCHours/getUTCMinutes）替换为多次 dayjs 时区操作（.tz(), .utcOffset(), .add()）。虽然复杂度量级不变，但常数因子显著增加。当用户拥有大量日期覆盖时，此循环的开销会变得明显。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/lib/slots.ts",
+        "line": 211,
+        "body": "[Medium] 时区转换逻辑依赖可选字段，存在运行时错误风险\n\n在 `getSlots` 函数中，`override.timeZone` 被用于 `dayjs(...).tz(override.timeZone)`。但 `TimeRange` 类型的 `timeZone` 字段是可选的（`timeZone?: string`）。如果 `override.timeZone` 为 `undefined`，`dayjs.tz()` 的行为将不可预测，可能导致运行时错误或错误的时区转换，进而生成错误的 slots。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 7,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 7,
+      "after_gate": 7,
+      "filtered": 0
+    },
+    "elapsed": 42.6
+  },
+  "https://github.com/calcom/cal.com/pull/11059": {
+    "pr_title": "OAuth credential sync and app integration enhancements",
+    "golden_comments": [
+      {
+        "comment": "The parseRefreshTokenResponse function incorrectly sets refresh_token to the hardcoded string 'refresh_token' when it's missing from the OAuth refresh token response. This invalidates the token, breaking subsequent token refreshes and causing authentication failures.",
+        "severity": "High"
+      },
+      {
+        "comment": "Invalid Zod schema syntax. Computed property keys like [z.string().toString()] are not valid in Zod object schemas and will cause runtime errors. ",
+        "severity": "High"
+      },
+      {
+        "comment": "parseRefreshTokenResponse returns a Zod safeParse result ({ success, data, error }), not the credential key object. Persisting that as key stores the wrapper instead of the token payload; we should store the parsed data or use schema parse.",
+        "severity": "High"
+      },
+      {
+        "comment": "When APP_CREDENTIAL_SHARING_ENABLED and CALCOM_CREDENTIAL_SYNC_ENDPOINT are set, the refreshFunction helper returns the fetch Response, but several callers (for example GoogleCalendarService.refreshAccessToken expecting res.data, and HubspotCalendarService.refreshAccessToken expecting a HubspotToken) assume it returns the integration-specific token object. That mismatch will cause runtime errors in the sync-enabled path unless the return type or those call sites are adjusted.",
+        "severity": "High"
+      },
+      {
+        "comment": "When the sync endpoint path is used, res is a fetch Response and has no .data; res?.data will be undefined and token.access_token will throw at runtime. This relies on a consistent return shape from refreshOAuthTokens, which isn’t guaranteed currently.",
+        "severity": "High"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "apps/web/pages/api/webhook/app-credential.ts",
+        "line": null,
+        "body": "[High] 新增高权限 Webhook 端点，可被用于任意用户凭证接管\n\n新增的 `/api/webhook/app-credential` 端点允许通过一个共享的 `CALCOM_WEBHOOK_SECRET` 来创建或更新任意用户的 App Credentials。该端点绕过了标准的 OAuth 授权流程，直接写入数据库。如果 `CALCOM_WEBHOOK_SECRET` 泄露，攻击者可以完全控制所有用户的第三方应用凭证（如 Google Calendar、Office365 等），导致数据泄露、服务中断或进一步横向移动。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/app-store/_utils/oauth/refreshOAuthTokens.ts",
+        "line": null,
+        "body": "[High] OAuth 令牌刷新逻辑被重定向到外部不可信端点\n\n新增的 `refreshOAuthTokens` 函数在 `APP_CREDENTIAL_SHARING_ENABLED` 为 true 时，会将所有 OAuth 令牌刷新请求重定向到 `CALCOM_CREDENTIAL_SYNC_ENDPOINT` 配置的外部 URL。这意味着令牌刷新的安全性和正确性完全依赖于这个外部端点。如果该端点被攻击者控制或配置错误，攻击者可以返回任意数据，从而劫持用户的 OAuth 令牌。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/app-store/_utils/oauth/refreshOAuthTokens.ts",
+        "line": 1,
+        "body": "[Medium] Token 刷新路径引入条件性额外网络请求，增加延迟和外部依赖\n\n新增的 refreshOAuthTokens 函数在 APP_CREDENTIAL_SHARING_ENABLED 为 true 且配置了 CALCOM_CREDENTIAL_SYNC_ENDPOINT 时，会先向该端点发起一次 POST 请求，然后再执行原有的 token 刷新逻辑。这导致 token 刷新操作从一次网络 IO 变为最多两次网络 IO。虽然这是功能设计的一部分，但在高频率 token 刷新场景下（如大量日历同步），会显著增加延迟，并使系统更加依赖外部同步端点的可用性和性能。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/app-store/_utils/oauth/parseRefreshTokenResponse.ts",
+        "line": null,
+        "body": "[High] 令牌刷新响应验证被大幅放宽，可接受任意格式的恶意响应\n\n新增的 `parseRefreshTokenResponse` 函数在 `APP_CREDENTIAL_SHARING_ENABLED` 为 true 时，使用一个非常宽松的 `minimumTokenResponseSchema` 来验证外部端点返回的令牌刷新响应。该 schema 只要求 `access_token` 和 `expiry_date` 字段，忽略了其他所有字段。这使得攻击者可以轻松构造一个符合 schema 但包含恶意 `access_token` 的响应，从而绕过验证。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/app-store/_utils/oauth/parseRefreshTokenResponse.ts",
+        "line": 27,
+        "body": "[High] 危险的 refresh_token 回退值\n\n当刷新令牌响应中缺少 `refresh_token` 字段时，代码会将其设置为字符串 `\"refresh_token\"`。这会覆盖数据库中有效的 `refresh_token`，导致后续所有令牌刷新尝试都失败，因为这是一个无效的令牌。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/app-store/salesforce/lib/CalendarService.ts",
+        "line": 75,
+        "body": "[High] 构造函数中同步执行 Token 刷新和数据库更新，导致每次服务实例化都产生阻塞 IO\n\n在 SalesforceCalendarService 的构造函数中，新增了一段代码，在创建 jsforce.Connection 之前，同步地执行了 fetch 请求（网络 IO）和 prisma.credential.update（数据库 IO）来刷新和更新 token。这意味着每次实例化该服务（例如，加载日历列表、创建事件时），无论 token 是否过期，都会触发一次完整的 token 刷新流程。这会将一个原本轻量级的对象创建操作变成一个重量级的、阻塞的操作，严重拖慢所有依赖该服务的功能。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 6,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 6,
+      "after_gate": 6,
+      "filtered": 0
+    },
+    "elapsed": 46.0
+  },
+  "https://github.com/calcom/cal.com/pull/14943": {
+    "pr_title": "SMS workflow reminder retry count tracking",
+    "golden_comments": [
+      {
+        "comment": "Using retryCount: reminder.retryCount + 1 reads a possibly stale value and can lose increments under concurrency; consider an atomic increment via Prisma (increment: 1) to avoid race conditions (also applies to the similar update in the catch block).",
+        "severity": "High"
+      },
+      {
+        "comment": "The deletion logic in scheduleSMSReminders.ts incorrectly deletes non-SMS workflow reminders (e.g., Email, WhatsApp) that have retryCount > 1. This occurs because the retryCount condition within the OR clause for deletion lacks a method: WorkflowMethods.SMS filter, causing it to apply to all reminder types instead of only SMS reminders, which is the intended scope of this function.",
+        "severity": "High"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+        "line": 178,
+        "body": "[Medium] 重试逻辑缺陷：成功发送但无 SID 时递增重试次数，可能导致正常提醒被误删\n\n在 `scheduleSMS` 调用成功但 `scheduledSMS.sid` 不存在时，`retryCount` 会被递增。结合 `deleteMany` 中 `retryCount > 1` 的删除条件，一个正常的提醒可能会因为这种边缘情况（如 Twilio 返回成功但无 SID）而被错误地递增 `retryCount`，最终在达到阈值后被删除。这会导致用户收不到本应发送成功的提醒。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 1,
+    "risk_level": "MEDIUM",
+    "evidence_gate_stats": {
+      "before_gate": 1,
+      "after_gate": 1,
+      "filtered": 0
+    },
+    "elapsed": 32.6
+  },
+  "https://github.com/calcom/cal.com/pull/14740": {
+    "pr_title": "Add guest management functionality to existing bookings",
+    "golden_comments": [
+      {
+        "comment": "Case sensitivity bypass in email blacklist",
+        "severity": "High"
+      },
+      {
+        "comment": "The logic for checking team admin/owner permissions is incorrect. This condition uses AND (&&) which requires both isTeamAdmin AND isTeamOwner to be true, but it should use OR (||) since a user needs to be either an admin OR an owner to have permission.",
+        "severity": "Critical"
+      },
+      {
+        "comment": "This calls the email sender with the original guests, so existing attendees included in the input will be treated as new when sending notifications, leading to incorrect emails.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "uniqueGuests filters out existing attendees and blacklisted emails but does not deduplicate duplicates within the input; createMany can insert duplicate attendee rows if the client submits repeated emails.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "Starting with an array containing an empty string may cause validation issues. Consider starting with an empty array [] and handling the empty state in the MultiEmail component instead.",
+        "severity": "Low"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts",
+        "line": 30,
+        "body": "[High] 授权绕过：参与者可向预订添加任意客人\n\n新增的 `addGuestsHandler` 中存在严重的权限检查逻辑错误。`isTeamAdminOrOwner` 变量使用了 `&&`（逻辑与）而非 `||`（逻辑或），导致该条件几乎永远为 `false`。同时，`isAttendee` 检查允许任何现有参与者通过认证。这导致任何预订的现有参与者都可以绕过组织者和团队管理员的控制，向预订中添加任意数量的新客人。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts",
+        "line": 56,
+        "body": "[Medium] 潜在运行时错误：`booking.userId` 可能为 null\n\n在查询组织者时，使用了 `booking.userId || 0`。如果 `booking.userId` 为 `null` 或 `undefined`，`prisma.user.findFirstOrThrow` 会尝试查找 ID 为 0 的用户，导致 `NotFoundError` 异常，使整个请求失败。虽然 `booking.userId` 通常不为空，但这是一个潜在的运行时错误点。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts",
+        "line": 131,
+        "body": "[Medium] 日历同步错误未被捕获\n\n`eventManager.updateCalendarAttendees(evt, booking)` 的调用没有包裹在 try-catch 块中。如果更新外部日历（如 Google Calendar）失败，错误会被抛出，但不会被处理，导致整个请求失败。虽然数据库中的参会者已经添加成功，但外部日历状态不一致，且用户不会收到明确的错误提示。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/emails/email-manager.ts",
+        "line": 543,
+        "body": "[High] 新参会者收到错误的邮件模板\n\n在 `sendAddGuestsEmails` 函数中，对于 `newGuests` 列表中的参会者（即新添加的参会者），发送的是 `AttendeeScheduledEmail`（常规预定确认邮件），而不是 `AttendeeAddGuestsEmail`（通知有新参会者加入的邮件）。这导致新参会者收到的邮件内容不准确，可能包含“你预定了会议”等误导性信息。",
+        "created_at": ""
+      },
+      {
+        "path": "packages/ui/form/MultiEmail.tsx",
+        "line": 17,
+        "body": "[Medium] 直接修改 props 导致潜在副作用\n\n组件内部有 `value = value || [];` 这行代码，它会直接修改传入的 `value` prop 的引用。在 React 中，直接修改 props 是一个反模式，可能导致意外的副作用和难以调试的问题，例如父组件状态未更新但子组件行为改变。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 5,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 5,
+      "after_gate": 5,
+      "filtered": 0
+    },
+    "elapsed": 50.5
+  },
+  "https://github.com/calcom/cal.com/pull/22532": {
+    "error": "review_failed",
+    "elapsed": 5.0
+  },
+  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/1": {
+    "pr_title": "FEATURE: automatically downsize large images",
+    "golden_comments": [
+      {
+        "comment": "The downsize method is defined twice. The second definition, which expects a single dimensions string parameter, overrides the first, which expected separate max_width and max_height parameters. This makes the original method unreachable and breaks existing code that calls it with separate width and height arguments.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "Hardcoding maxSizeKB = 10 * 1024 ignores Discourse.SiteSettings['max_' + type + '_size_kb'], so the client-side limit can diverge from server-side and per-type settings (also applies to the 413 handler below).",
+        "severity": "Low"
+      },
+      {
+        "comment": "Passing 80% as the dimensions can fail for animated GIFs when allow_animated_thumbnails is true, since the animated path uses gifsicle --resize-fit which expects WxH geometry, not a percentage; downsizing would then silently fail.",
+        "severity": "Medium"
+      }
+    ],
+    "source_file": "discourse.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "app/assets/javascripts/discourse/lib/utilities.js",
+        "line": 182,
+        "body": "[Medium] 客户端文件大小校验被硬编码，绕过管理员配置\n\n客户端上传文件大小校验从动态读取站点设置 `Discourse.SiteSettings['max_' + type + '_size_kb']` 改为硬编码的 10MB。这移除了管理员对不同文件类型（如图片、视频）进行精细化大小控制的能力。攻击者可以绕过客户端校验，直接向服务器发送大于管理员预期但小于 10MB 的文件。",
+        "created_at": ""
+      },
+      {
+        "path": "app/assets/javascripts/discourse/lib/utilities.js",
+        "line": 182,
+        "body": "[High] 前端文件大小检查被硬编码为10MB，与站点设置脱钩\n\n原代码从 `Discourse.SiteSettings` 动态获取文件大小限制，现在被硬编码为10MB。如果管理员在后台将 `max_image_size_kb` 设置为小于10MB，用户上传一个介于两者之间的文件时，前端检查会通过，但后端会尝试缩小或拒绝，导致行为不一致。如果管理员将限制设置为大于10MB，用户上传一个介于10MB和该限制之间的文件时，前端会错误地拒绝，导致用户困惑。",
+        "created_at": ""
+      },
+      {
+        "path": "app/assets/javascripts/discourse/lib/utilities.js",
+        "line": 246,
+        "body": "[Medium] 413错误处理中的文件大小检查被硬编码为10MB\n\n原代码从 `Discourse.SiteSettings.max_image_size_kb` 获取大小限制，用于在收到413错误时向用户显示正确的限制信息。现在被硬编码为10MB，导致显示给用户的错误信息中的大小限制与后端实际配置不符，造成误导。",
+        "created_at": ""
+      },
+      {
+        "path": "app/controllers/uploads_controller.rb",
+        "line": 55,
+        "body": "[High] 服务端 API 上传文件大小限制被硬编码，绕过管理员配置\n\n通过 API 上传文件时，`FileHelper.download` 的 `max_file_size` 参数从动态的 `SiteSetting.max_image_size_kb.kilobytes` 改为硬编码的 `10.megabytes`。这移除了服务器端对 API 上传文件大小的关键限制，是一个直接的安全降级。攻击者可以利用 API 上传超过管理员预期大小的文件。",
+        "created_at": ""
+      },
+      {
+        "path": "app/controllers/uploads_controller.rb",
+        "line": 63,
+        "body": "[High] 新增自动缩小图片逻辑存在拒绝服务漏洞\n\n新增的代码会循环调用 `OptimizedImage.downsize` 来缩小超过大小限制的图片，最多尝试 5 次。攻击者可以上传一个尺寸极大（如 50000x50000 像素）的图片，即使文件大小不大，解码后也会消耗大量内存。服务器会反复尝试缩小这个图片，导致 CPU 和内存资源耗尽，造成拒绝服务。",
+        "created_at": ""
+      },
+      {
+        "path": "app/models/optimized_image.rb",
+        "line": 142,
+        "body": "[Medium] `downsize` 方法重构导致参数传递方式脆弱，存在潜在误用风险\n\n`downsize` 和 `resize` 方法被重构，现在接受一个 `dimensions` 字符串参数。同时，新增了一个接受 `dimensions` 参数的 `downsize` 重载方法。在 `uploads_controller.rb` 中，调用 `OptimizedImage.downsize(tempfile.path, tempfile.path, \"80%\", ...)` 将百分比字符串 `\"80%\"` 作为 `dimensions` 参数传递。虽然当前 ImageMagick 能处理 `80%`，但这种设计非常脆弱，容易在未来被误用，例如传入用户可控的字符串，可能导致命令注入或逻辑错误。",
+        "created_at": ""
+      },
+      {
+        "path": "app/models/optimized_image.rb",
+        "line": 148,
+        "body": "[Medium] `optimize` 方法签名变更，可能破坏外部调用者\n\n`self.optimize` 方法的参数从 `(operation, from, to, width, height, opts)` 变更为 `(operation, from, to, dimensions, opts)`。任何直接调用此方法并传递 `width` 和 `height` 作为单独参数的代码都会失败，因为第四个参数现在被解释为 `dimensions` 字符串，而不是 `height`。这会导致参数错位和潜在的运行时错误。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 7,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 7,
+      "after_gate": 7,
+      "filtered": 0
+    },
+    "elapsed": 55.4
+  },
+  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/2": {
+    "pr_title": "FEATURE: per-topic unsubscribe option in emails",
+    "golden_comments": [
+      {
+        "comment": "logic: Potential nil pointer exception - if no TopicUser record exists, tu will be nil and calling methods on it will crash",
+        "severity": "High"
+      },
+      {
+        "comment": "Typo in property name: 'stopNotificiationsText' should be 'stopNotificationsText' (missing 'n' in 'Notifications')",
+        "severity": "Low"
+      }
+    ],
+    "source_file": "discourse.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "app/assets/javascripts/discourse/templates/topic/unsubscribe.hbs",
+        "line": 4,
+        "body": "[High] 存储型跨站脚本攻击 (XSS) 通过主题标题\n\n在 `topic/unsubscribe.hbs` 模板中，`stopNotificiationsText` 属性通过三括号 `{{{ }}}` 渲染，这会禁用 Handlebars 的 HTML 转义。该属性的值来源于 `model.fancyTitle`，而 `fancyTitle` 是主题标题的 HTML 转义版本，但并非绝对安全。如果攻击者能够创建一个标题包含恶意 JavaScript 的主题（例如 `<img src=x onerror=alert('XSS')>`），那么当其他用户访问该主题的退订页面时，恶意脚本将在受害者的浏览器中执行。",
+        "created_at": ""
+      },
+      {
+        "path": "app/controllers/topics_controller.rb",
+        "line": 98,
+        "body": "[High] 跨站请求伪造 (CSRF) 导致的通知设置静默修改\n\n新增的 `unsubscribe` 动作通过 HTTP GET 请求修改用户的主题通知级别（`TopicUser.notification_level`）。根据 RESTful 设计原则，修改服务器状态的请求应使用 POST、PUT、PATCH 或 DELETE 等安全方法。使用 GET 请求使得该端点容易受到跨站请求伪造 (CSRF) 攻击。攻击者可以构造一个简单的 `<img>` 标签或链接，诱使已登录的受害者点击，从而在受害者不知情的情况下修改其通知设置。",
+        "created_at": ""
+      },
+      {
+        "path": "app/controllers/topics_controller.rb",
+        "line": 98,
+        "body": "[Medium] 取消订阅动作中不必要的 TopicView 完整加载\n\nunsubscribe 动作中创建了完整的 TopicView 对象，这会加载 topic 的所有帖子、参与者等数据。对于大 topic（数千帖子），TopicView.new 的时间复杂度为 O(P+U)，可能消耗数百毫秒。而实际只需要更新 TopicUser 记录，不需要加载完整 topic 数据。",
+        "created_at": ""
+      },
+      {
+        "path": "app/controllers/topics_controller.rb",
+        "line": 100,
+        "body": "[High] 未处理的 nil TopicUser 导致 NoMethodError\n\n在 `unsubscribe` action 中，`TopicUser.find_by` 可能返回 `nil`（例如，当用户从未访问过该主题时）。后续代码直接访问 `tu.notification_level` 会抛出 `NoMethodError`，导致服务器返回 500 错误。",
+        "created_at": ""
+      },
+      {
+        "path": "app/controllers/topics_controller.rb",
+        "line": 98,
+        "body": "[High] 未定义的方法 `slugs_do_not_match` 导致 NoMethodError\n\n在 `unsubscribe` action 中调用了 `slugs_do_not_match` 方法，但该方法的定义未包含在此次 PR 变更中。如果该方法不存在于当前代码库中，将导致 `NoMethodError`，使取消订阅功能完全失效。",
+        "created_at": ""
+      },
+      {
+        "path": "app/controllers/topics_controller.rb",
+        "line": 112,
+        "body": "[Medium] 复用 `perform_show_response` 可能引入不期望的副作用\n\n`unsubscribe` action 在完成通知级别更新后调用了 `perform_show_response`。该方法原本是为 `show` action 设计的，可能会执行与取消订阅无关的操作，例如记录访问、更新用户统计、触发 `consider_user_for_promotion` 等。这可能导致意外的行为或性能开销。",
+        "created_at": ""
+      },
+      {
+        "path": "app/assets/javascripts/discourse/components/dropdown-button.js.es6",
+        "line": 27,
+        "body": "[Medium] 条件渲染 `<h4>` 可能导致依赖该元素的逻辑失效\n\n`renderString` 方法中，`<h4 class='title'>` 的渲染被包裹在 `if (title)` 条件中。原来是无条件渲染，现在如果 `title` 属性为 `null`、`undefined` 或空字符串，该元素将不会出现在 DOM 中。任何依赖此元素存在的 CSS 选择器、JavaScript 事件监听或测试代码都可能失效。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 7,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 7,
+      "after_gate": 7,
+      "filtered": 0
+    },
+    "elapsed": 39.3
+  },
+  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/3": {
+    "pr_title": "Add comprehensive email validation for blocked users",
+    "golden_comments": [
+      {
+        "comment": "BlockedEmail.should_block_email? method has side effects during a read operation - it updates statistics even when just checking if an email should be blocked. This could cause race conditions in concurrent environments and makes the method name misleading.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "Regex pattern @(#{domains}) only matches domain suffixes, not full domains. evil.example.com would match whitelist entry example.com.",
+        "severity": "Medium"
+      }
+    ],
+    "source_file": "discourse.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "app/controllers/users_controller.rb",
+        "line": 197,
+        "body": "[High] 注册失败响应泄露用户枚举信息\n\n在用户注册失败时，后端返回了 `user.errors.to_hash`（`errors` 字段）和 `user.attributes.slice(\"name\", \"username\", \"email\")`（`values` 字段）。这导致攻击者可以通过解析 `errors` 字段中的具体错误信息（如 `\"email\": [\"has already been taken\"]`）来枚举系统中已注册的邮箱地址和用户名，从而进行用户枚举攻击。",
+        "created_at": ""
+      },
+      {
+        "path": "lib/validators/email_validator.rb",
+        "line": 16,
+        "body": "[Medium] 用户注册/更新流程中新增同步数据库查询\n\n在 `EmailValidator#validate_each` 方法中，每次验证 email 时都会调用 `BlockedEmail.should_block?(value)`。该方法会执行一次 `BlockedEmail.where(email: email).first` 数据库查询，并在匹配时执行 `record.save` 更新操作。这将在每个用户注册或 email 变更请求中，增加至少一次同步的数据库 IO 操作。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 2,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 2,
+      "after_gate": 2,
+      "filtered": 0
+    },
+    "elapsed": 26.1
+  },
+  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/4": {
+    "pr_title": "Enhance embed URL handling and validation system",
+    "golden_comments": [
+      {
+        "comment": "SSRF vulnerability using open(url) without validation",
+        "severity": "Critical"
+      },
+      {
+        "comment": "The current origin validation using indexOf is insufficient and can be bypassed. An attacker could use a malicious domain like evil-discourseUrl.com to pass this check.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "postMessage targetOrigin should be the origin (scheme+host+port), not the full referrer URL; using the full URL will cause the message to be dropped and prevent resizing.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "The code sets X-Frame-Options: ALLOWALL which completely disables clickjacking protection. The referer validation can be bypassed (referer headers are easily spoofed), and the fallback to empty string for nil referer masks validation failures.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "The TopicEmbed.import method is susceptible to a NoMethodError if the contents parameter is nil when attempting to append a string, and an XSS vulnerability due to unescaped url interpolation in the generated HTML.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "The ERB block closes with end if, which is invalid Ruby/ERB and will raise at render; it should just be end to close the if block.",
+        "severity": "Medium"
+      }
+    ],
+    "source_file": "discourse.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "app/models/post.rb",
+        "line": 133,
+        "body": "[High] 存储型 XSS：通过 raw_html 绕过 HTML 清理\n\n变更引入了 `cook_method` 枚举，其中 `:raw_html` 模式允许帖子内容直接作为原始 HTML 输出，完全跳过了 Discourse 的 Markdown 渲染和 HTML 清理（sanitization）管道。结合 `TopicEmbed.import` 方法中使用的 `skip_validations: true`，从外部 RSS 源或远程 URL 导入的内容将未经任何安全处理直接存储并渲染。攻击者可以通过控制 RSS 源或远程网页内容，注入恶意 JavaScript 代码，实现存储型跨站脚本攻击（XSS）。",
+        "created_at": ""
+      },
+      {
+        "path": "app/assets/javascripts/embed.js",
+        "line": 16,
+        "body": "[Medium] 不安全的 postMessage 源验证\n\n`embed.js` 中的 `postMessage` 事件监听器使用 `indexOf` 方法来验证消息来源（`e.origin`）是否包含在 `discourseUrl` 中。这是一种不安全的验证方式。攻击者可以注册一个域名，使其成为 `discourseUrl` 的子域（例如，`discourseUrl` 为 `https://example.com`，攻击者使用 `https://example.com.attacker.com`），从而绕过源检查，向嵌入的 iframe 发送恶意消息。",
+        "created_at": ""
+      },
+      {
+        "path": "app/controllers/embed_controller.rb",
+        "line": 24,
+        "body": "[Medium] 点击劫持风险：依赖不可靠的 Referer 头\n\n`EmbedController` 中的 `ensure_embeddable` 过滤器使用 `request.referer` 来验证嵌入请求的来源，并设置 `X-Frame-Options: ALLOWALL`。`Referer` 头可以被客户端（浏览器扩展、代理）修改或缺失，并非可靠的安全来源。如果 `embeddable_host` 配置不当（例如设置为通配符或可预测的值），或者攻击者能控制 referer，则 Discourse 页面可能被嵌入到恶意 iframe 中，导致点击劫持攻击。",
+        "created_at": ""
+      },
+      {
+        "path": "app/controllers/embed_controller.rb",
+        "line": 27,
+        "body": "[High] `request.referer` 为 nil 时导致未捕获异常\n\n`ensure_embeddable` 方法中，`URI(request.referer || '').host` 在 `request.referer` 为 `nil` 时，`URI('')` 会抛出 `URI::InvalidURIError`，这被 `rescue` 捕获。但是，如果 `request.referer` 为 `nil`，`URI(nil)` 会抛出 `TypeError`（`no implicit conversion of nil into String`），这个异常没有被 `rescue` 捕获，导致 500 错误。",
+        "created_at": ""
+      },
+      {
+        "path": "app/jobs/scheduled/poll_feed.rb",
+        "line": 30,
+        "body": "[Medium] Feed 导入循环中逐条处理条目，缺乏批量操作\n\n`poll_feed` 方法在 `rss.items.each` 循环中，对每个 feed 条目都调用 `TopicEmbed.import`。`import` 方法内部会执行数据库查询（查找/创建/更新）和 HTML 解析。当 feed 包含大量条目（例如首次导入时数百或数千条）时，这个循环会变成串行的、资源密集型的操作，导致后台 Job 运行时间过长，可能阻塞 Sidekiq 工作线程并影响其他任务。",
+        "created_at": ""
+      },
+      {
+        "path": "app/models/topic_embed.rb",
+        "line": 62,
+        "body": "[Medium] `absolutize_urls` 方法每次导入都解析整个 HTML 内容\n\n`absolutize_urls` 方法使用 `Nokogiri::HTML.fragment(contents)` 解析传入的 HTML 内容，然后遍历所有 `a` 和 `img` 标签来转换相对 URL。对于内容很长或结构复杂的文章，这个解析和 DOM 遍历操作会消耗显著的 CPU 时间。由于此方法在每次导入（`import` 和 `import_remote`）时都会被调用，它可能成为 CPU 瓶颈。",
+        "created_at": ""
+      },
+      {
+        "path": "lib/topic_retriever.rb",
+        "line": 42,
+        "body": "[Medium] `perform_retrieve` 方法同步执行 `PollFeed` Job\n\n在 `perform_retrieve` 方法中，当 `feed_polling_enabled?` 为 true 时，会直接调用 `Jobs::PollFeed.new.execute({})`。这意味着 `RetrieveTopic` Job 会同步等待整个 `PollFeed` Job 执行完毕。如果 `PollFeed` Job 因为 feed 很大或网络问题而运行缓慢，`RetrieveTopic` Job 也会被阻塞，导致 Sidekiq 工作线程被长时间占用。",
+        "created_at": ""
+      },
+      {
+        "path": "app/views/embed/best.html.erb",
+        "line": 14,
+        "body": "[Medium] 视图循环中访问 `post.user` 可能触发 N+1 查询\n\n在 `best.html.erb` 视图中，`@topic_view.posts.each` 循环内部访问了 `post.user.small_avatar_url` 和 `post.user.username`。如果 `TopicView` 在初始化时没有使用 `includes(:user)` 预加载用户数据，那么每次循环迭代都会触发一次额外的数据库查询来加载 `post.user`。虽然 `best` 动作只显示 5 个帖子，但 N+1 查询在任何规模下都是不良实践，应予以避免。",
+        "created_at": ""
+      },
+      {
+        "path": "db/migrate/20131223171005_create_top_topics.rb",
+        "line": 3,
+        "body": "[High] 破坏性迁移：`force: true` 会导致数据丢失\n\n在 `create_table` 中添加了 `force: true` 选项。如果 `top_topics` 表已存在（例如在生产环境升级时），此迁移会先删除该表再重新创建，导致所有 `top_topics` 数据永久丢失。",
+        "created_at": ""
+      },
+      {
+        "path": "lib/tasks/disqus.thor",
+        "line": 143,
+        "body": "[High] Disqus 导入功能被破坏：API 和语义变更\n\nDisqus 导入任务从使用 `PostCreator` 创建帖子改为使用 `TopicEmbed.import_remote`。这移除了 `--category` 选项，并且新的导入逻辑依赖于 `ruby-readability` 和 `simple-rss` 来解析远程 URL，这与 Disqus 导入的原始语义完全不同。这会导致 Disqus 导入功能的行为回归，且不再支持指定分类。",
+        "created_at": ""
+      },
+      {
+        "path": "app/views/embed/loading.html.erb",
+        "line": 8,
+        "body": "[Medium] 加载页面可能导致无限刷新循环\n\n加载页面使用 `setTimeout` 在 30 秒后自动刷新。如果 `Jobs::RetrieveTopic` 任务执行时间超过 30 秒或执行失败，页面会不断刷新，导致用户陷入无限加载循环，无法看到最终结果。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 11,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 11,
+      "after_gate": 11,
+      "filtered": 0
+    },
+    "elapsed": 59.3
+  },
+  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/5": {
+    "pr_title": "Optimize header layout performance with flexbox mixins",
+    "golden_comments": [
+      {
+        "comment": "Mixing float: left with flexbox causes layout issues. Further this PR removes the float-based right alignment for .d-header .panel, which may cause the login panel in the non-Ember/noscript header (where .panel is nested inside .row and not a flex item) to stack under the title instead of remaining right-aligned.",
+        "severity": "Low"
+      },
+      {
+        "comment": "-ms-align-items never existed in any version of IE/Edge; the correct legacy property is -ms-flex-align.",
+        "severity": "Low"
+      }
+    ],
+    "source_file": "discourse.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "app/assets/stylesheets/common/base/header.scss",
+        "line": null,
+        "body": "[Medium] 布局从 float 重构为 flexbox，可能导致全局 header 布局回归\n\n将 `.contents` 改为 flex 容器，并移除了 `.title` 的 `float: left` 和 `.panel` 的 `float: right`。虽然意图是使用 flexbox 进行现代化布局，但此改动完全改变了 header 区域的布局模型。如果 `.title` 或 `.panel` 内部或其兄弟元素依赖 `float` 行为（例如清除浮动），或者 flex 子项的默认对齐方式与预期不符，会导致 header 元素错位、重叠或消失。这是一个全局组件，影响所有页面。",
+        "created_at": ""
+      },
+      {
+        "path": "app/assets/stylesheets/common/base/topic-post.scss",
+        "line": null,
+        "body": "[Medium] `.small-action` 区域间距和布局重构，可能导致视觉回归\n\n将 `.small-action` 改为 flex 容器，并大幅修改了 `.small-action-desc` 及其子元素的间距（`padding`, `margin`）。这改变了“小操作”区域（如“置顶”、“关闭”等操作提示）的视觉呈现。如果 `.small-action-desc` 中的文本内容较长，或与 `.topic-avatar` 组合时，新的百分比内边距和零外边距可能导致文本与头像对齐异常、间距过小或重叠。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 2,
+    "risk_level": "MEDIUM",
+    "evidence_gate_stats": {
+      "before_gate": 2,
+      "after_gate": 2,
+      "filtered": 0
+    },
+    "elapsed": 31.7
+  },
+  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/6": {
+    "pr_title": "UX: show complete URL path if website domain is same as instance domain",
+    "golden_comments": [
+      {
+        "comment": "The include_website_name method is missing the required ? suffix. Rails serializers expect include_ methods to end with ? for conditional attribute inclusion, a convention followed by other methods in this serializer. Without it, the website_name attribute may not be conditionally included as intended. Additionally, the '.' << website_host string concatenation should be replaced with '.' + website_host or '.#{website_host}' to avoid mutating string literals, which can lead to issues.",
+        "severity": "Medium"
+      }
+    ],
+    "source_file": "discourse.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "app/serializers/user_serializer.rb",
+        "line": 134,
+        "body": "[High] 用户网站字段 `website` 缺乏输出编码，可能导致存储型 XSS\n\nPR 将 `website_name` 的计算逻辑从客户端迁移到服务端，但未对 `website` 字段本身进行任何额外的安全处理。前端模板 `user.hbs` 直接使用 `{{model.website}}` 作为 `<a>` 标签的 `href` 属性值。如果 `website` 字段存储了 `javascript:` 伪协议或包含事件处理器的恶意 URL，攻击者可以在其他用户查看其资料页时执行任意 JavaScript 代码。",
+        "created_at": ""
+      },
+      {
+        "path": "app/serializers/user_serializer.rb",
+        "line": 137,
+        "body": "[Medium] 服务端序列化器中新增了高频率调用的字符串解析逻辑\n\n将原本在客户端（浏览器）通过 JavaScript 简单字符串分割实现的 `websiteName` 计算逻辑，迁移到了服务端序列化器 `UserSerializer` 的 `website_name` 方法中。该方法在每次序列化用户对象时都会被调用，涉及创建 `URI` 对象、正则匹配和字符串比较，增加了服务端 CPU 和内存开销。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 2,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 2,
+      "after_gate": 2,
+      "filtered": 0
+    },
+    "elapsed": 62.3
+  },
+  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/7": {
+    "pr_title": "scale-color $lightness must use $secondary for dark themes",
+    "golden_comments": [
+      {
+        "comment": "In .topic-meta-data h5 a, the original code had color: scale-color($primary, $lightness: 30%) but was changed to dark-light-choose(scale-color($primary, $lightness: 70%), scale-color($secondary, $lightness: 30%)). The lightness for the light theme changed from 30% to 70%, which is a dramatic inversion",
+        "severity": "Low"
+      },
+      {
+        "comment": "This change for desktop/user.css changes $primary from 30% to 50% for the light theme; most other changes preserve the original $primary value and move the complement to $secondary for dark. Consider reviewing this (also applies to a similar .name change in the mobile variant).",
+        "severity": "Low"
+      },
+      {
+        "comment": "In topic-post.css the original code used $lightness: 70% but the replacement uses $lightness: 30% for the light theme. This makes the text significantly darker than intended.",
+        "severity": "Low"
+      }
+    ],
+    "source_file": "discourse.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "所有变更的 .scss 和 .css.scss 文件",
+        "line": null,
+        "body": "[Medium] 深色主题颜色值引入潜在的无障碍性安全回归\n\n此 PR 将大量基于 `$primary` 变量的静态颜色值，替换为使用 `dark-light-choose` 函数为深色主题提供独立颜色值。虽然意图是支持深色主题，但新引入的深色主题颜色值（`scale-color($secondary, $lightness: Y%)`）如果与深色背景对比度不足，将导致界面元素（如辅助文本、图标、边框）在深色主题下难以辨认。这违反了 Web 内容无障碍指南（WCAG），构成安全回归。攻击者可以利用用户视觉盲点，例如，使安全警告或错误提示在深色主题下不可见，从而进行社会工程学攻击或诱导用户忽略关键安全信息。",
+        "created_at": ""
+      },
+      {
+        "path": "app/assets/stylesheets/desktop/topic-post.scss",
+        "line": 291,
+        "body": "[Medium] 浅色主题下颜色值可能被意外修改\n\n在 `desktop/topic-post.scss` 的 `.topic-post .topic-meta-data .names a` 选择器中，`color` 属性的旧值为 `scale-color($primary, $lightness: 30%)`。新代码将其改为 `dark-light-choose(scale-color($primary, $lightness: 70%), ...)`。第一个参数（浅色主题值）从 `30%` 变为了 `70%`，这与 PR 中其他所有变更的模式（保持浅色主题值不变）不一致。这很可能是一个笔误，会导致浅色主题下该链接的颜色从深灰色变为浅灰色，影响可读性和视觉一致性。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 2,
+    "risk_level": "MEDIUM",
+    "evidence_gate_stats": {
+      "before_gate": 2,
+      "after_gate": 2,
+      "filtered": 0
+    },
+    "elapsed": 23.4
+  },
+  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/8": {
+    "pr_title": "FIX: proper handling of group memberships",
+    "golden_comments": [
+      {
+        "comment": " The findMembers() call is now asynchronous and unhandled. The controller may not have member data immediately available, creating a race condition.",
+        "severity": "High"
+      },
+      {
+        "comment": "In the next action, capping the next offset at user_count can produce an empty page (e.g., total equal to limit results in offset == total, showing 2/2 with no members). This can cause confusing UX on the last page.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "HTTP method mismatch in .remove_member - test uses PUT but remove_member action expects DELETE",
+        "severity": "Medium"
+      }
+    ],
+    "source_file": "discourse.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "app/controllers/admin/groups_controller.rb",
+        "line": null,
+        "body": "[Medium] 新增的 add_members 端点缺乏输入校验，可能导致拒绝服务攻击\n\n新增的 `add_members` 端点接收 `usernames` 参数（逗号分隔的字符串），并直接遍历添加用户。没有对 `usernames` 参数进行任何校验，例如限制用户名数量、长度或格式。攻击者可以构造一个包含大量用户名的请求，导致服务器进行大量数据库查询和操作，消耗资源，造成拒绝服务。",
+        "created_at": ""
+      },
+      {
+        "path": "app/assets/javascripts/discourse/models/group.js",
+        "line": null,
+        "body": "[Medium] 添加/删除成员后触发不必要的成员列表全量刷新\n\n在 `removeMember` 和 `addMembers` 方法成功执行后，都会调用 `self.findMembers()` 来重新加载当前页的成员列表。如果管理员连续进行多次添加或删除操作（例如，通过脚本或快速点击），每次操作都会触发一次独立的 API 请求来刷新列表，导致 N+1 次 API 调用。",
+        "created_at": ""
+      },
+      {
+        "path": "app/assets/javascripts/discourse/models/group.js",
+        "line": null,
+        "body": "[Medium] `findMembers` 方法 Promise 链返回值丢失\n\n`findMembers` 方法内部的 `then` 回调没有 `return` 语句，导致该方法返回的 Promise 最终 resolve 的值为 `undefined`，而不是预期的成员数组。任何依赖该 Promise 返回值进行后续操作的代码都会收到 `undefined`，可能导致运行时错误或静默失败。",
+        "created_at": ""
+      },
+      {
+        "path": "app/controllers/groups_controller.rb",
+        "line": null,
+        "body": "[Medium] `/groups/:group_id/members` API 响应结构发生破坏性变更\n\n`members` 动作的响应格式从纯数组 `[{user1}, {user2}, ...]` 变更为包含元数据的对象 `{ members: [...], meta: { total, limit, offset } }`。这是一个向后不兼容的 API 变更，任何未同步更新的客户端或外部集成将无法正确解析新的响应结构。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 4,
+    "risk_level": "MEDIUM",
+    "evidence_gate_stats": {
+      "before_gate": 4,
+      "after_gate": 4,
+      "filtered": 0
+    },
+    "elapsed": 42.3
+  },
+  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/9": {
+    "pr_title": "FEATURE: Localization fallbacks (server-side)",
+    "golden_comments": [
+      {
+        "comment": "Thread-safety issue with lazy @loaded_locales",
+        "severity": "Low"
+      },
+      {
+        "comment": "Consider normalizing the input locale (e.g., to a symbol) when checking/loading here to avoid double-loading if the same locale is passed as a String vs Symbol (also applies to other locations in the PR).",
+        "severity": "Low"
+      }
+    ],
+    "source_file": "discourse.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "lib/freedom_patches/translate_accelerator.rb",
+        "line": 62,
+        "body": "[High] 自定义 I18n locale 加载逻辑可能引入路径遍历漏洞\n\nPR 移除了 Rails 内置的、经过安全验证的 `config.i18n.fallbacks = true` 配置，转而使用自定义的 `FallbackLocaleList` 类和 `ensure_loaded!` 方法。新的 `ensure_loaded!` 方法会调用 `load_locale` 来加载翻译文件。如果 `load_locale` 方法没有对 locale 参数进行严格的路径清理（例如，直接拼接文件路径），攻击者可以通过控制 `I18n.locale`（例如，通过 `Accept-Language` 头或 `locale` 参数）来触发路径遍历攻击，读取服务器上的任意文件。",
+        "created_at": ""
+      },
+      {
+        "path": "config/initializers/i18n.rb",
+        "line": null,
+        "body": "[Medium] 移除经过安全验证的 Rails I18n 回退机制，引入自定义实现\n\nPR 从三个生产环境配置文件中删除了 `config.i18n.fallbacks = true`，并用一个全新的、自定义的 `FallbackLocaleList` 类替代。虽然新类实现了类似的功能，但自定义代码增加了攻击面，且绕过了 Rails 框架内置的安全保障。任何自定义的回退逻辑都可能引入未预期的行为，例如，如果 `SiteSetting.default_locale` 可以被篡改，回退链可能被操纵。",
+        "created_at": ""
+      },
+      {
+        "path": "config/initializers/i18n.rb",
+        "line": 22,
+        "body": "[High] 对自定义方法 `I18n.ensure_loaded!` 的强依赖可能导致运行时错误\n\n`FallbackLocaleList#ensure_loaded!` 方法调用了 `I18n.ensure_loaded!`，但该方法并非标准 I18n gem 的一部分，而是定义在 `lib/freedom_patches/translate_accelerator.rb` 中。如果 `translate_accelerator.rb` 未加载或加载顺序晚于 `i18n.rb`，则每次请求设置 locale 时都会抛出 `NoMethodError`，导致 500 错误。",
+        "created_at": ""
+      },
+      {
+        "path": "app/controllers/application_controller.rb",
+        "line": 158,
+        "body": "[Medium] 每次请求强制加载所有 fallback locale 导致性能退化\n\n在 `set_locale` 方法中新增了 `I18n.fallbacks.ensure_loaded!` 调用。此方法会遍历 fallback 链（最多3个 locale），并对每个 locale 调用 `I18n.ensure_loaded!`，后者可能触发 `load_locale`（文件 I/O 和 YAML 解析）。这导致每个 HTTP 请求都会产生额外的、不必要的开销来确保翻译文件已加载，而不是依赖原有的惰性加载机制。",
+        "created_at": ""
+      },
+      {
+        "path": "app/controllers/application_controller.rb",
+        "line": 158,
+        "body": "[High] 对 `I18n.fallbacks` 类型的强依赖可能导致运行时错误\n\n`set_locale` 方法中调用了 `I18n.fallbacks.ensure_loaded!`。这要求 `I18n.fallbacks` 必须是 `FallbackLocaleList` 的实例。如果 `config/initializers/i18n.rb` 未加载或加载失败，`I18n.fallbacks` 可能是 `nil` 或默认的 `I18n::Locale::FallbackList` 实例，两者都没有 `ensure_loaded!` 方法，会导致 `NoMethodError`。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 5,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 5,
+      "after_gate": 5,
+      "filtered": 0
+    },
+    "elapsed": 34.4
+  },
+  "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/10": {
+    "pr_title": "FEATURE: Can edit category/host relationships for embedding",
+    "golden_comments": [
+      {
+        "comment": "NoMethodError before_validation in EmbeddableHost",
+        "severity": "Critical"
+      },
+      {
+        "comment": "The update and destroy methods in Admin::EmbeddableHostsController do not validate the existence of the EmbeddableHost record retrieved by ID. If EmbeddableHost.where(id: params[:id]).first returns nil (i.e., the host does not exist), attempting to call methods on the nil object (e.g., save_host or destroy) will result in a NoMethodError.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "record_for_host compares lower(host) = ? but does not normalize the parameter’s case, so mixed‑case referer hosts may fail to match even though comparison intends to be case‑insensitive.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "Because this migration inserts embeddable_hosts rows with raw SQL, any existing embeddable_hosts values that include http:// or /https:// or path segments won’t go through the EmbeddableHost model’s normalization, so the new host lookup (which compares only the bare host) may fail for migrated data. Consider ensuring that migrated hosts are normalized to the same format as newly created EmbeddableHost records so existing embedding configurations keep working.",
+        "severity": "High"
+      }
+    ],
+    "source_file": "discourse.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "app/models/topic.rb",
+        "line": 869,
+        "body": "[Medium] 移除 embeddable_hosts 检查导致潜在的信息泄露\n\n在 `expandable_first_post?` 方法中，移除了对 `SiteSetting.embeddable_hosts.present?` 的检查。这导致即使没有配置任何可嵌入主机，只要 `embed_truncate` 设置为 true 且帖子有嵌入内容，该帖子的首帖内容就可以被展开。攻击者可以利用此漏洞查看本应被截断的帖子内容。",
+        "created_at": ""
+      },
+      {
+        "path": "app/models/topic_embed.rb",
+        "line": 36,
+        "body": "[Medium] 创建嵌入主题时新增数据库查询\n\n在 `import` 方法中新增了 `eh = EmbeddableHost.record_for_host(url)` 调用，用于查找与嵌入URL匹配的主机记录。",
+        "created_at": ""
+      },
+      {
+        "path": "app/controllers/embed_controller.rb",
+        "line": 61,
+        "body": "[Medium] 关键路径上的嵌入主机验证从内存操作变为数据库查询\n\n变更将 `ensure_embeddable` 方法中的主机验证从内存中的 `SiteSetting.allows_embeddable_host?` 替换为数据库查询 `EmbeddableHost.host_allowed?`。`host_allowed?` 方法会调用 `record_for_host`，后者执行 `where(\"lower(host) = ?\", host).first` 查询。",
+        "created_at": ""
+      },
+      {
+        "path": "lib/topic_retriever.rb",
+        "line": 16,
+        "body": "[Medium] 主题检索器中的主机验证从内存操作变为数据库查询\n\n与 `embed_controller.rb` 类似，`invalid_host?` 方法中的主机验证也从内存操作变为了数据库查询。",
+        "created_at": ""
+      },
+      {
+        "path": "db/migrate/20150818190757_create_embeddable_hosts.rb",
+        "line": 24,
+        "body": "[Medium] 迁移脚本中存在 SQL 注入风险\n\n在将旧的 `embeddable_hosts` 设置迁移到新表时，host 值被直接拼接进 SQL 语句，未使用参数化查询。如果管理员在设置中保存了恶意内容，可能导致 SQL 注入。",
+        "created_at": ""
+      },
+      {
+        "path": "db/migrate/20150818190757_create_embeddable_hosts.rb",
+        "line": 8,
+        "body": "[Medium] 迁移脚本中通过分类名称查找分类 ID 的方式不够健壮\n\n迁移脚本使用 `s.value = c.name` 来关联 `embed_category` 设置的值和 `categories` 表。`embed_category` 设置的值是分类的名称，如果分类被重命名，此查询将无法找到匹配项，导致 `category_id` 为 0，并最终 fallback 到 `uncategorized_category_id`。这可能导致现有 embed 帖子的分类信息丢失。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 6,
+    "risk_level": "MEDIUM",
+    "evidence_gate_stats": {
+      "before_gate": 6,
+      "after_gate": 6,
+      "filtered": 0
+    },
+    "elapsed": 45.0
+  },
+  "https://github.com/grafana/grafana/pull/79265": {
+    "pr_title": "Anonymous: Add configurable device limit",
+    "golden_comments": [
+      {
+        "comment": "Race condition: Multiple concurrent requests could pass the device count check simultaneously and create devices beyond the limit. Consider using a database transaction or lock.",
+        "severity": "High"
+      },
+      {
+        "comment": "Anonymous authentication now fails entirely if anonDeviceService.TagDevice returns ErrDeviceLimitReached. Previously, device tagging was asynchronous and non-blocking. This change prevents anonymous users from authenticating when the device limit is reached.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "This call won’t compile: dbSession.Exec(args...) is given a []interface{} where the first element is the query, but Exec’s signature requires a first parameter of type string (not an interface{} splat).",
+        "severity": "Medium"
+      },
+      {
+        "comment": "Returning ErrDeviceLimitReached when no rows were updated is misleading; the device might not exist.",
+        "severity": "Low"
+      },
+      {
+        "comment": "Time window calculation inconsistency: Using device.UpdatedAt.UTC().Add(-anonymousDeviceExpiration) as the lower bound but device.UpdatedAt as the current time may not match the intended logic. Consider using time.Now().UTC() consistently.",
+        "severity": "Low"
+      }
+    ],
+    "source_file": "grafana.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "pkg/services/anonymous/anonimpl/client.go",
+        "line": 44,
+        "body": "[High] 匿名设备限制导致认证拒绝服务\n\n当匿名设备数量达到配置的 `device_limit` 时，`TagDevice` 返回 `ErrDeviceLimitReached`，导致 `Authenticate` 方法直接返回错误。这使得所有新的匿名用户（包括正常用户）无法完成认证，从而无法访问 Grafana。这是一个由功能引入的拒绝服务漏洞。",
+        "created_at": ""
+      },
+      {
+        "path": "pkg/services/anonymous/anonimpl/client.go",
+        "line": 44,
+        "body": "[High] 匿名设备标记从异步改为同步，阻塞认证主流程\n\n`TagDevice` 调用从独立的 goroutine 异步执行改为同步执行。这意味着每次匿名用户认证时，`Authenticate` 方法都必须等待 `TagDevice`（包含数据库操作）完成，才能返回。在高并发场景下，这会显著增加认证延迟，导致请求排队和超时。",
+        "created_at": ""
+      },
+      {
+        "path": "pkg/services/anonymous/anonimpl/client.go",
+        "line": 45,
+        "body": "[Medium] 设备限制错误直接导致匿名认证失败，可能引发重试风暴\n\n当 `TagDevice` 返回 `ErrDeviceLimitReached` 时，`Authenticate` 方法会直接返回该错误，导致匿名用户认证失败。这本身不是性能问题，但客户端（如浏览器）在收到认证失败响应后，可能会自动重试请求，从而在短时间内产生大量重复请求，形成重试风暴，加剧服务器负载。",
+        "created_at": ""
+      },
+      {
+        "path": "pkg/services/anonymous/anonimpl/anonstore/database.go",
+        "line": 88,
+        "body": "[Medium] 每次设备创建/更新前都执行一次 COUNT 查询\n\n当 `deviceLimit > 0` 时，`CreateOrUpdateDevice` 方法在每次调用时都会先执行 `CountDevices` 查询，以检查当前设备数量是否达到限制。这使每次匿名请求的数据库操作次数翻倍（1次读 + 1次写），增加了数据库负载和响应时间。",
+        "created_at": ""
+      },
+      {
+        "path": "pkg/services/anonymous/anonimpl/anonstore/database.go",
+        "line": 72,
+        "body": "[Medium] `updateDevice` 的 WHERE 条件可能导致全表扫描\n\n新增的 `updateDevice` 方法使用 `WHERE updated_at BETWEEN ? AND ?` 条件，时间范围是 `[updatedAt - 30天, updatedAt + 1分钟]`。这个范围非常宽（30天），数据库优化器可能无法有效利用 `updated_at` 上的索引，导致全表扫描或低效的索引扫描，尤其是在表数据量大时。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 5,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 5,
+      "after_gate": 5,
+      "filtered": 0
+    },
+    "elapsed": 36.3
+  },
+  "https://github.com/grafana/grafana/pull/103633": {
+    "pr_title": "AuthZService: improve authz caching",
+    "golden_comments": [
+      {
+        "comment": "The Check operation exhibits asymmetric cache trust logic: cached permission grants are trusted and returned immediately, but cached denials from the same permission cache are ignored, leading to a fresh database lookup. This allows stale cached grants to provide access to revoked resources, posing a security risk. ",
+        "severity": "High"
+      },
+      {
+        "comment": "The test comment says the cached permissions 'allow access', but the map stores false for dashboards:uid:dash1, so checkPermission will still treat this scope as not allowed.",
+        "severity": "Low"
+      }
+    ],
+    "source_file": "grafana.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "pkg/services/authz/rbac/service.go",
+        "line": 350,
+        "body": "[Medium] 渲染服务类型丢失缓存路径\n\n新增的 getCachedIdentityPermissions 方法对 types.TypeRenderService 类型直接返回 cache.ErrNotFound，导致渲染服务请求不再使用 permCache 缓存。原来渲染服务通过 getAnonymousPermissions 路径可以命中缓存，现在每次请求都会穿透到数据库查询。",
+        "created_at": ""
+      },
+      {
+        "path": "pkg/services/authz/rbac/service.go",
+        "line": 116,
+        "body": "[High] 拒绝缓存 (permDenialCache) 可能导致权限误判\n\n新增的 `permDenialCache` 在权限检查被拒绝后，会将拒绝结果缓存起来。该缓存的键包含了 `name` 和 `parent` 字段。如果用户的权限在缓存 TTL 内被授予，由于没有相应的缓存失效机制，后续相同的请求会命中拒绝缓存，导致用户被错误地拒绝访问。这是一个典型的缓存一致性问题。",
+        "created_at": ""
+      },
+      {
+        "path": "pkg/services/authz/rbac.go",
+        "line": 101,
+        "body": "[Medium] 移除 gRPC 客户端本地缓存导致性能回归\n\n在 `ProvideAuthZClient` 函数中，创建 RBAC 客户端时，将原本的 `newRBACClient`（内部使用带 30 秒过期时间的本地缓存）替换为直接调用 `authzlib.NewClient` 并传入 `NoopCache{}`。这导致所有通过此函数创建的客户端（例如用于 Zanzana shadow 模式的客户端）完全失去了本地缓存能力，每次权限检查请求都会直接穿透到远程 RBAC 服务。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 3,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 3,
+      "after_gate": 3,
+      "filtered": 0
+    },
+    "elapsed": 39.0
+  },
+  "https://github.com/grafana/grafana/pull/76186": {
+    "pr_title": "Plugins: Chore: Renamed instrumentation middleware to metrics middleware",
+    "golden_comments": [
+      {
+        "comment": "The ContextualLoggerMiddleware methods (QueryData, CallResource, CheckHealth, CollectMetrics) panic when a nil request is received. This occurs because they directly access req.PluginContext (via the instrumentContext function) without first checking if req is nil. This is a regression, as previous middleware layers gracefully handled nil requests.",
+        "severity": "High"
+      },
+      {
+        "comment": "The traceID is no longer logged for plugin requests. During a refactoring, the tracing import and the logic to extract and add traceID from the context to log parameters were removed from the LoggerMiddleware. The newly introduced ContextualLoggerMiddleware does not add this information, resulting in missing traceID in plugin request logs and impacting debugging and request tracing capabilities.",
+        "severity": "Low"
+      }
+    ],
+    "source_file": "grafana.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "pkg/services/pluginsintegration/clientmiddleware/contextual_logger_middleware.go",
+        "line": 60,
+        "body": "[Medium] 流式端点缺少上下文信息注入\n\n新增的 ContextualLoggerMiddleware 在 QueryData、CallResource、CheckHealth、CollectMetrics 方法中调用了 instrumentContext 来注入上下文信息，但在 SubscribeStream、PublishStream、RunStream 这三个流式端点方法中遗漏了此调用。这导致通过流式端点发起的请求将无法获得包含 pluginId、uname 等关键信息的上下文，进而导致下游的 LoggerMiddleware 无法记录这些请求的审计信息。",
+        "created_at": ""
+      },
+      {
+        "path": "pkg/services/pluginsintegration/clientmiddleware/contextual_logger_middleware.go",
+        "line": 27,
+        "body": "[Medium] 日志中丢失 traceID 字段\n\n在将上下文日志属性注入职责从 MetricsMiddleware 迁移到新的 ContextualLoggerMiddleware 时，instrumentContext 函数未能包含 traceID 的注入逻辑。这导致所有经过 LoggerMiddleware 的插件请求日志中不再包含 traceID 字段，破坏了基于 traceID 的请求追踪能力。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 2,
+    "risk_level": "MEDIUM",
+    "evidence_gate_stats": {
+      "before_gate": 3,
+      "after_gate": 2,
+      "filtered": 1
+    },
+    "elapsed": 37.8
+  },
+  "https://github.com/grafana/grafana/pull/107534": {
+    "pr_title": "Advanced Query Processing Architecture",
+    "golden_comments": [
+      {
+        "comment": "The applyTemplateVariables method is called with request.filters as the third parameter, but this parameter is not used in the corresponding test setup.",
+        "severity": "Low"
+      }
+    ],
+    "source_file": "grafana.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "public/app/plugins/datasource/loki/querySplitting.ts",
+        "line": 296,
+        "body": "[Medium] 模板变量插值时机后移可能导致查询分割逻辑绕过\n\nPR 将模板变量（如 `$__auto`, `$step`）的插值操作从查询处理流程的早期（`interpolateVariablesInQueries`）移到了过滤和分割逻辑（`querySupportsSplitting`, `isLogsQuery`）之后。这意味着 `querySupportsSplitting` 和 `isLogsQuery` 等函数现在处理的是包含原始模板变量的查询字符串，而不是插值后的具体值。攻击者可以通过构造包含特定模板变量的查询，绕过这些函数的逻辑判断，例如，使一个本应被分割的大查询被当作不可分割的查询直接执行，从而导致后端资源耗尽或拒绝服务。",
+        "created_at": ""
+      },
+      {
+        "path": "public/app/plugins/datasource/loki/shardQuerySplitting.ts",
+        "line": 49,
+        "body": "[Medium] 模板变量插值时机后移可能导致分片查询逻辑绕过\n\n与 `querySplitting.ts` 类似，`shardQuerySplitting.ts` 也将模板变量的插值操作从函数入口处移到了过滤逻辑之后。这可能导致 `splitQueriesByStreamShard` 函数在处理查询时，`query.expr` 中包含未解析的模板变量，从而影响分片逻辑的正确性，甚至可能被攻击者利用来绕过分片，导致查询性能问题。",
+        "created_at": ""
+      },
+      {
+        "path": "public/app/plugins/datasource/loki/shardQuerySplitting.ts",
+        "line": 49,
+        "body": "[Medium] 行为变化：`applyTemplateVariables` 现在显式传入 `request.filters`\n\n在替换 `interpolateVariablesInQueries` 为 `applyTemplateVariables` 时，新代码显式传入了 `request.filters` 作为第三个参数。之前 `interpolateVariablesInQueries` 可能没有处理 `filters`，或者以不同方式处理。此变更会改变查询的插值结果，尤其是在使用 Grafana 变量过滤器（Variable Filter）的场景下。如果 `applyTemplateVariables` 的实现没有正确处理 `filters`，或者 `interpolateVariablesInQueries` 之前有特殊的 `filters` 处理逻辑，此变更可能引入回归。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 3,
+    "risk_level": "MEDIUM",
+    "evidence_gate_stats": {
+      "before_gate": 3,
+      "after_gate": 3,
+      "filtered": 0
+    },
+    "elapsed": 41.0
+  },
+  "https://github.com/grafana/grafana/pull/106778": {
+    "pr_title": "Notification Rule Processing Engine",
+    "golden_comments": [
+      {
+        "comment": "The rendered GrafanaRuleListItem is missing the required key prop for React list items. This can cause rendering issues when the list order changes.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "RuleActionsButtons is invoked with only promRule, but SilenceGrafanaRuleDrawer inside RuleActionsButtons still depends on a Grafana Ruler rule being present, so for Grafana rules coming from list views the 'Silence notifications' menu entry (now driven by Grafana Prom abilities) will toggle showSilenceDrawer without ever rendering the drawer. This means clicking 'Silence notifications' for these rules has no visible effect, even when abilities indicate silencing is allowed.",
+        "severity": "High"
+      }
+    ],
+    "source_file": "grafana.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "public/app/features/alerting/unified/components/rule-viewer/AlertRuleMenu.tsx",
+        "line": 72,
+        "body": "[Medium] 权限判断逻辑从 AND 变为 OR，可能导致权限放宽\n\n`AlertRuleMenu` 中，每个操作的权限判断从 `canPause = pauseSupported && pauseAllowed` 变为 `canPause = (rulerPauseSupported && rulerPauseAllowed) || (grafanaPauseSupported && grafanaPauseAllowed)`。这意味着只要 `rulerRule` 或 `promRule` 中任意一个允许该操作，按钮就会显示为可用。如果 `rulerRule` 和 `promRule` 的权限判断结果不一致（例如，由于数据不同步或逻辑差异），用户可能会看到他们本无权操作的按钮。",
+        "created_at": ""
+      },
+      {
+        "path": "public/app/features/alerting/unified/hooks/useAbilities.ts",
+        "line": 320,
+        "body": "[Medium] 新增 GrafanaPromRule 权限检查路径，扩大攻击面\n\n新增的 useAllGrafanaPromRuleAbilities hook 为 GrafanaPromRuleDTO 提供了独立的权限检查逻辑。虽然这是为了性能优化，但它创建了一个新的、与原有 Ruler API 权限检查并行的授权路径。如果这个新路径的权限检查逻辑（如 useIsGrafanaPromRuleEditable）存在缺陷，或者其依赖的数据源（promRule）可以被攻击者污染，那么攻击者就可以利用这个新路径来绕过原有的安全控制。",
+        "created_at": ""
+      },
+      {
+        "path": "public/app/features/alerting/unified/hooks/useAbilities.ts",
+        "line": 340,
+        "body": "[High] 新增的 useIsGrafanaPromRuleEditable 钩子引入了 N+1 查询风险\n\n变更在 `useIsGrafanaPromRuleEditable` 钩子中引入了对 `useFolder(folderUID)` 的调用。这个钩子被 `useAllGrafanaPromRuleAbilities` 使用，而后者又被列表视图中每个规则项渲染的 `AlertRuleMenu` 组件通过 `useGrafanaPromRuleAbilities` 调用。这导致对于列表中的每一个 Grafana 规则，都会发起一次额外的 API 请求来获取文件夹信息，形成了典型的 N+1 查询模式。",
+        "created_at": ""
+      },
+      {
+        "path": "public/app/features/alerting/unified/hooks/useAbilities.ts",
+        "line": 330,
+        "body": "[Medium] useAllGrafanaPromRuleAbilities 中静默权限逻辑使用了新的未经验证的钩子\n\n新的 `useAllGrafanaPromRuleAbilities` 钩子使用 `useGrafanaRulesSilenceSupport()` 和 `useCanSilenceInFolder(rule?.folderUid)` 来判断静默能力，而不是旧的 `useCanSilence(rule)`。这些新钩子的正确性尚未在本次 PR 的测试中得到充分验证，可能导致静默功能在 Grafana 规则上行为异常。",
+        "created_at": ""
+      },
+      {
+        "path": "public/app/features/alerting/unified/hooks/useAbilities.ts",
+        "line": 340,
+        "body": "[High] useIsGrafanaPromRuleEditable 中使用了未定义的变量 'ctx'\n\n新引入的 `useIsGrafanaPromRuleEditable` 函数内部调用了 `ctx.hasPermissionInMetadata(...)`，但变量 `ctx` 在该函数作用域内未被定义或导入。这会导致运行时错误（ReferenceError），使得任何使用 `useAllGrafanaPromRuleAbilities` 的组件（如 `AlertRuleMenu`）在渲染 Grafana 规则时崩溃。",
+        "created_at": ""
+      },
+      {
+        "path": "public/app/features/alerting/unified/rule-list/GrafanaGroupLoader.test.tsx",
+        "line": null,
+        "body": "[Medium] 关键测试用例被删除，导致边缘情况覆盖缺失\n\nPR 删除了两个重要的测试用例：1) 'should render rule with url and creating state when only ruler rule exists' 2) 'should render delete rule operation list item when only prom rule exists'。这些测试覆盖了 Grafana 规则处于创建中或删除中状态时的 UI 渲染。删除它们意味着如果新的 GrafanaRuleListItem 组件没有正确处理这些状态，回归将不会被现有测试捕获。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 6,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 6,
+      "after_gate": 6,
+      "filtered": 0
+    },
+    "elapsed": 55.9
+  },
+  "https://github.com/grafana/grafana/pull/90045": {
+    "pr_title": "Dual Storage Architecture",
+    "golden_comments": [
+      {
+        "comment": "The context is being created with d.Log instead of the log variable that was initialized with additional context values (name, kind, method). This means those values won't be propagated to the logging context.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "Bug: calling recordLegacyDuration when storage operation fails should be recordStorageDuration.",
+        "severity": "High"
+      },
+      {
+        "comment": "Inconsistency: using name instead of options.Kind for metrics recording differs from other methods.",
+        "severity": "Medium"
+      }
+    ],
+    "source_file": "grafana.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "pkg/apiserver/rest/dualwriter_mode3.go",
+        "line": 30,
+        "body": "[High] 并发更新导致 Legacy 存储数据损坏\n\n在 `Update` 方法中，移除了 `updateWrapper` 逻辑。旧代码通过 `updateWrapper` 确保传递给 Legacy 存储的 `objInfo` 是基于从 Storage 获取的最新对象生成的，从而防止并发更新导致的数据竞争。新代码直接传递原始的 `objInfo`，如果多个并发更新请求针对同一资源，Legacy 存储可能被写入基于过时状态的数据，导致数据损坏。",
+        "created_at": ""
+      },
+      {
+        "path": "pkg/apiserver/rest/dualwriter_mode3.go",
+        "line": 30,
+        "body": "[Medium] Legacy 存储写入操作异步化导致数据不一致\n\n`Create`, `Delete`, `Update`, `DeleteCollection` 方法中对 Legacy 存储的写入操作从同步变为异步（`go func()`），且调用方不再等待或处理 Legacy 操作的错误。如果 Legacy 存储写入失败（如网络问题、权限错误），调用方将完全不知情，导致 Storage 和 Legacy 存储之间的数据不一致。",
+        "created_at": ""
+      },
+      {
+        "path": "pkg/apiserver/rest/dualwriter_mode3.go",
+        "line": 60,
+        "body": "[High] 行为回归：Update 方法跳过了 UpdatedObjectInfo 回调\n\n重构后的 `Update` 方法直接调用 `d.Storage.Update`，删除了原有的先通过 `d.Storage.Get` 获取旧对象，再通过 `objInfo.UpdatedObject(ctx, old)` 计算新对象的逻辑。这破坏了 `UpdatedObjectInfo` 接口的契约，任何依赖此回调来执行自定义更新逻辑（如乐观锁、数据转换）的调用方将无法正常工作，可能导致数据不一致。",
+        "created_at": ""
+      },
+      {
+        "path": "pkg/apiserver/rest/dualwriter_mode3.go",
+        "line": 72,
+        "body": "[Medium] API 契约变更：Get 方法透传用户传入的 options\n\n`Get` 方法从使用硬编码的 `&metav1.GetOptions{}` 改为透传用户传入的 `options` 参数。这改变了 API 的契约，任何依赖于 `Get` 总是使用默认选项的调用方可能会观察到不同的行为（例如，当传入特定的 `ResourceVersion` 时）。",
+        "created_at": ""
+      },
+      {
+        "path": "pkg/apiserver/rest/dualwriter_mode1_test.go",
+        "line": 138,
+        "body": "[High] 编译错误：未定义的变量 'p'\n\n删除了 `p := prometheus.NewRegistry()` 的定义，但第 138 行仍在使用 `p` 作为参数传递给 `NewDualWriter`。这会导致编译失败。",
+        "created_at": ""
+      },
+      {
+        "path": "pkg/apiserver/rest/dualwriter_mode3_test.go",
+        "line": 100,
+        "body": "[High] 编译错误：未定义的变量 'p'\n\n在 `TestMode3_Create`, `TestMode3_List`, `TestMode3_Delete`, `TestMode3_DeleteCollection`, `TestMode3_Update` 等多个测试函数中，使用了未定义的变量 `p` 作为参数传递给 `NewDualWriter`。这会导致编译失败。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 6,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 6,
+      "after_gate": 6,
+      "filtered": 0
+    },
+    "elapsed": 41.9
+  },
+  "https://github.com/grafana/grafana/pull/80329": {
+    "pr_title": "Database Performance Optimizations",
+    "golden_comments": [
+      {
+        "comment": "The code uses Error log level for what appears to be debugging information. This will pollute error logs in production. Consider using Debug or Info level instead.",
+        "severity": "Low"
+      }
+    ],
+    "source_file": "grafana.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "pkg/services/annotations/annotationsimpl/xorm_store.go",
+        "line": 580,
+        "body": "[High] SQL 注入风险：在 SQLite 环境下将 ID 列表直接拼接到 SQL 语句中\n\n在 `deleteByIDs` 函数中，当数据库类型为 SQLite 且 `AnnotationCleanupJobBatchSize` 大于 999 时，代码将 `ids` 列表中的值直接格式化并拼接到 `DELETE` 语句中。虽然当前 `ids` 来源于数据库查询，但这种编码模式绕过了参数化查询，是一个严重的安全编码缺陷。如果未来 `ids` 的来源被任何外部输入污染（例如，通过其他漏洞或代码变更），这将成为一个直接的 SQL 注入点。攻击者可以利用此漏洞执行任意 SQL 命令，可能导致数据泄露、数据篡改或权限提升。",
+        "created_at": ""
+      },
+      {
+        "path": "pkg/services/annotations/annotationsimpl/xorm_store.go",
+        "line": 523,
+        "body": "[Medium] 非原子操作引入竞态条件，可能导致数据不一致或意外删除\n\n`CleanAnnotations` 和 `CleanOrphanedAnnotationTags` 函数从使用单条原子 SQL 语句删除，改为“先查询 ID，再逐批删除”的非原子操作。这引入了时间窗口，在 `SELECT` 和 `DELETE` 之间，其他并发操作（如插入新的 annotation）可能发生。PR 描述中承认了这一点（“This may under-delete when concurrent inserts happen”），这意味着在高并发场景下，新创建的 annotation 可能被错误地删除，导致数据丢失。虽然这是为了解决 MySQL 死锁问题而做出的有意识权衡，但它是一个明确的安全降级。",
+        "created_at": ""
+      },
+      {
+        "path": "pkg/services/annotations/annotationsimpl/xorm_store.go",
+        "line": 537,
+        "body": "[Medium] 日志级别不当且可能泄露敏感信息\n\n在 `CleanAnnotations` 和 `CleanOrphanedAnnotationTags` 方法中，使用 `r.log.Error` 级别记录了待清理的注释 ID 列表（`\"ids\", ids`）。这有两个问题：1) 这是正常的业务操作，不是错误，使用 `Error` 级别会污染错误日志和监控告警；2) 将完整的 ID 列表写入日志，如果 ID 是敏感或业务关键数据，可能导致信息泄露。",
+        "created_at": ""
+      },
+      {
+        "path": "pkg/services/cleanup/cleanup.go",
+        "line": 77,
+        "body": "[High] 清理任务执行频率提升10倍，导致数据库负载显著增加\n\n清理任务的执行间隔从10分钟缩短为1分钟，频率提升了10倍。如果清理任务本身是资源密集型的（例如，需要扫描大量注释数据），这将直接导致数据库的查询和写入负载增加约10倍。在注释数据量大的系统中，这可能导致数据库连接池耗尽、查询响应变慢，甚至影响其他正常业务操作。",
+        "created_at": ""
+      },
+      {
+        "path": "pkg/services/cleanup/cleanup.go",
+        "line": 77,
+        "body": "[Medium] 清理任务执行频率从 10 分钟改为 1 分钟，可能增加数据库负载\n\n`CleanUpService.Run` 方法中的 ticker 间隔从 `time.Minute * 10` 改为 `time.Minute * 1`，清理频率提高了 10 倍。如果清理任务本身对数据库有较大压力（例如，扫描大量注释），频繁执行会显著增加数据库负载，可能影响其他正常业务操作的性能。此外，如果清理逻辑存在其他 bug（如并发安全问题），更频繁的执行会放大问题的影响。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 5,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 5,
+      "after_gate": 5,
+      "filtered": 0
+    },
+    "elapsed": 47.1
+  },
+  "https://github.com/grafana/grafana/pull/90939": {
+    "pr_title": "Frontend Asset Optimization",
+    "golden_comments": [
+      {
+        "comment": "The GetWebAssets function implements an incomplete double-checked locking pattern for caching web assets. The function first checks if the cache is populated using a read lock (RLock), and if the cache is empty, it acquires a write lock to populate it. However, it fails to re-check whether the cache was populated by another goroutine while waiting to acquire the write lock.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "In addition to the missing double-check, the function has a critical flaw in its error handling: it unconditionally assigns the fetch result to the cache (line 69: entryPointAssetsCache = result) regardless of whether the fetch succeeded or failed. When an error occurs during asset fetching, result is nil, and this nil value overwrites any previously valid cache entry.",
+        "severity": "High"
+      }
+    ],
+    "source_file": "grafana.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "pkg/api/webassets/webassets.go",
+        "line": 35,
+        "body": "[Medium] 高频读路径引入 RWMutex 锁开销\n\n变更将无锁的全局变量缓存访问改为使用 `sync.RWMutex` 保护。虽然修复了并发安全问题，但在 `GetWebAssets` 这个高频调用路径上，每次读取都需要获取和释放读锁，引入了额外的原子操作和内存屏障开销。在 Grafana 这种每个页面请求都会调用此函数的场景下，高并发时（例如每秒数千次请求以上），这个开销会累积，增加 CPU 使用率和请求延迟。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 1,
+    "risk_level": "MEDIUM",
+    "evidence_gate_stats": {
+      "before_gate": 1,
+      "after_gate": 1,
+      "filtered": 0
+    },
+    "elapsed": 23.0
+  },
+  "https://github.com/grafana/grafana/pull/94942": {
+    "pr_title": "Advanced SQL Analytics Framework",
+    "golden_comments": [
+      {
+        "comment": "The enableSqlExpressions function has flawed logic that always returns false, effectively disabling SQL expressions unconditionally:",
+        "severity": "Critical"
+      },
+      {
+        "comment": "Several methods such as NewInMemoryDB().RunCommands and db.QueryFramesInto return 'not implemented'.",
+        "severity": "High"
+      }
+    ],
+    "source_file": "grafana.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "pkg/expr/reader.go",
+        "line": 129,
+        "body": "[High] enableSqlExpressions 函数逻辑错误导致 SQL 表达式功能完全失效\n\n新增的 `enableSqlExpressions` 函数逻辑有误，无论 `FlagSqlExpressions` 特性开关是否启用，该函数都返回 `false`。这导致 `ReadQuery` 在处理 `QueryTypeSQL` 类型的查询时，总是立即返回错误 `\"sqlExpressions is not implemented\"`，使得所有 SQL 表达式查询都无法执行。",
+        "created_at": ""
+      },
+      {
+        "path": "pkg/expr/sql/db.go",
+        "line": 1,
+        "body": "[High] 新的 sql.DB 实现为空壳，所有方法返回 \"not implemented\" 错误\n\n新增的 `pkg/expr/sql/db.go` 文件中的 `DB` 结构体及其方法（`TablesList`, `RunCommands`, `QueryFramesInto`）都是空壳实现，所有方法都返回 `\"not implemented\"` 错误。这导致 `pkg/expr/sql/parser.go` 中的 `TablesList` 函数和 `pkg/expr/sql_command.go` 中的 `SQLCommand.Execute` 方法在调用这些方法时会失败。虽然当前被 `enableSqlExpressions` 的 bug 所掩盖，但一旦该 bug 被修复，这些调用将直接导致运行时错误。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 2,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 2,
+      "after_gate": 2,
+      "filtered": 0
+    },
+    "elapsed": 32.9
+  },
+  "https://github.com/grafana/grafana/pull/97529": {
+    "pr_title": "Unified Storage Performance Optimizations",
+    "golden_comments": [
+      {
+        "comment": "A race condition in BuildIndex allows multiple goroutines to concurrently build the same expensive index for the same key. This is caused by moving the b.cacheMu lock from protecting the entire function to only protecting the final cache assignment. ",
+        "severity": "High"
+      },
+      {
+        "comment": "Calling s.search.TotalDocs() here may race with concurrent index creation: TotalDocs iterates b.cache without synchronization, and the event watcher goroutine started just above could trigger BuildIndex writes concurrently, potentially causing a concurrent map read/write panic.",
+        "severity": "High"
+      }
+    ],
+    "source_file": "grafana.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "pkg/storage/unified/search/bleve.go",
+        "line": 85,
+        "body": "[Medium] 并发构建索引时存在竞态条件和资源耗尽风险\n\n在 `BuildIndex` 函数中，将互斥锁 `b.cacheMu` 的保护范围从整个函数缩小到仅保护缓存写入操作。这导致在创建文件索引（`bleve.New`）和写入文档等耗时操作期间，多个 goroutine 可以并发执行 `BuildIndex`。这可能导致：1) 多个 goroutine 同时操作同一个文件系统目录，造成索引文件损坏；2) 并发创建大型文件索引导致磁盘 I/O 过载或磁盘空间耗尽。",
+        "created_at": ""
+      },
+      {
+        "path": "pkg/storage/unified/resource/server.go",
+        "line": 258,
+        "body": "[High] 初始化流程从惰性改为主动，可能导致服务器启动失败\n\n在 `NewResourceServer` 中新增了对 `s.Init(ctx)` 的主动调用，并移除了所有 RPC 方法（如 Create, Update, Delete, Read, List, Watch, Search 等）中的惰性初始化调用。如果 `s.Init()` 在 `NewResourceServer` 被调用时依赖的资源（如数据库连接、外部服务）尚未就绪，服务器将无法启动并返回错误。这改变了之前“服务可启动，但第一个请求会失败”的行为，可能导致部署或启动顺序问题。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 2,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 2,
+      "after_gate": 2,
+      "filtered": 0
+    },
+    "elapsed": 42.5
+  },
+  "https://github.com/ai-code-review-evaluation/keycloak-greptile/pull/1": {
+    "pr_title": "Fixing Re-authentication with passkeys",
+    "golden_comments": [
+      {
+        "comment": "ConditionalPasskeysEnabled() called without UserModel parameter",
+        "severity": "Medium"
+      },
+      {
+        "comment": "With isConditionalPasskeysEnabled(UserModel user) requiring user != null, authenticate(...) will not call webauthnAuth.fillContextForm(context) on the initial login page where context.getUser() is still null, so conditional passkey UI will not be set up for first-time passkey login. Consider whether this should also be enabled when no user has been selected yet so ID-less passkey authentication on the initial login form continues to work.",
+        "severity": "Medium"
+      }
+    ],
+    "source_file": "keycloak.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java",
+        "line": 113,
+        "body": "[Medium] 重新认证流程中显示 Passkeys 选项，可能改变预期认证行为\n\n变更将 `authenticate` 和 `challenge` 方法中填充 WebAuthn 上下文表单的条件从 `context.getUser() == null`（用户未识别时）改为 `isConditionalPasskeysEnabled(context.getUser())`（用户已识别且 Passkeys 启用时）。这导致在重新认证（如 `prompt=login`）场景下，用户名/密码页面会显示 Passkeys 按钮。攻击者可能利用此变化，通过社会工程学手段诱导已登录用户在重新认证时使用恶意 Passkey，从而绕过密码认证。",
+        "created_at": ""
+      },
+      {
+        "path": "services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java",
+        "line": 137,
+        "body": "[High] WebAuthn 认证器在初始登录时不再显示\n\n在 `challenge` 方法中，调用 `webauthnAuth.fillContextForm(context)` 的条件从 `context.getUser() == null` 改为 `isConditionalPasskeysEnabled(context.getUser())`。新方法 `isConditionalPasskeysEnabled` 要求 `user != null`。这导致在初始登录（用户未识别，`user == null`）时，即使 Passkeys 已启用，WebAuthn 认证器也不会被填充到表单中。这是一个行为回归。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 2,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 2,
+      "after_gate": 2,
+      "filtered": 0
+    },
+    "elapsed": 42.7
+  },
+  "https://github.com/keycloak/keycloak/pull/32918": {
+    "pr_title": "Add caching support for IdentityProviderStorageProvider.getForLogin operations",
+    "golden_comments": [
+      {
+        "comment": "Recursive caching call using session instead of delegate",
+        "severity": "Critical"
+      },
+      {
+        "comment": "Cleanup reference uses incorrect alias - should be 'idp-alias-' + i instead of 'alias'.",
+        "severity": "Medium"
+      }
+    ],
+    "source_file": "keycloak.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/idp/InfinispanIdentityProviderStorageProvider.java",
+        "line": 230,
+        "body": "[Medium] getForLogin 方法引入 N+1 查询模式\n\n新增的 getForLogin 方法在缓存中只存储 IDP 的 internalId 集合，然后对每个 IDP ID 单独调用 session.identityProviders().getById(id) 获取完整模型。这引入了 N+1 查询问题：原来 idpDelegate.getForLogin() 一次查询即可返回所有 IDP 模型，现在需要 1 次查询获取 ID 列表 + N 次 getById 查询。当 realm 中身份提供者数量较多时（如 > 50），登录页面加载时间会显著增加。",
+        "created_at": ""
+      },
+      {
+        "path": "model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/idp/InfinispanIdentityProviderStorageProvider.java",
+        "line": 213,
+        "body": "[High] 新增的 `getForLogin` 缓存实现依赖 `IdentityProviderListQuery` 的可序列化性\n\n新增的 `getForLogin` 方法将查询结果存储在 `IdentityProviderListQuery` 对象中，并放入 Infinispan 缓存。Infinispan 在集群环境或启用持久化时，要求缓存的值必须实现 `java.io.Serializable` 接口。如果 `IdentityProviderListQuery` 类或其内部引用的任何对象（如 `FetchMode`、`RealmModel` 等）没有正确实现 `Serializable`，在集群节点间同步或重启恢复时会导致 `java.io.NotSerializableException` 运行时错误。",
+        "created_at": ""
+      },
+      {
+        "path": "server-spi/src/main/java/org/keycloak/models/IdentityProviderStorageProvider.java",
+        "line": 254,
+        "body": "[Medium] getLoginPredicate 新增组织 IDP 公开性检查，导致行为回归\n\n在 `getLoginPredicate` 中新增了 `.and(idp -> idp.getOrganizationId() == null || Boolean.parseBoolean(idp.getConfig().get(OrganizationModel.BROKER_PUBLIC)))` 条件。这意味着，任何关联了组织（`organizationId` 不为 null）的 Identity Provider，如果其配置中没有显式设置 `BROKER_PUBLIC=true`，将不再被 `getForLogin` 方法返回。这会导致这些 IDP 从登录页面消失，影响用户登录。这是一个破坏性的行为变更，没有提供迁移路径或兼容性处理。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 3,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 3,
+      "after_gate": 3,
+      "filtered": 0
+    },
+    "elapsed": 39.3
+  },
+  "https://github.com/keycloak/keycloak/pull/33832": {
+    "pr_title": "Add AuthzClientCryptoProvider for authorization client cryptographic operations",
+    "golden_comments": [
+      {
+        "comment": "Returns wrong provider (default keystore instead of BouncyCastle)",
+        "severity": "High"
+      },
+      {
+        "comment": "Dead code exists where ASN1Encoder instances are created and written to, but their results are immediately discarded. The actual encoding is performed by new ASN1Encoder instances created in the subsequent return statement, rendering the earlier operations useless.",
+        "severity": "Low"
+      }
+    ],
+    "source_file": "keycloak.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "authz/client/src/main/java/org/keycloak/authorization/client/util/crypto/AuthzClientCryptoProvider.java",
+        "line": 62,
+        "body": "[Medium] AuthzClientCryptoProvider.getBouncyCastleProvider() 返回非 BouncyCastle 提供者\n\n`getBouncyCastleProvider()` 方法实现为 `KeyStore.getInstance(KeyStore.getDefaultType()).getProvider()`，这通常返回 `sun.security.provider.Sun`，而不是 BouncyCastle 提供者。如果调用者期望使用 BouncyCastle 提供者进行后续操作，可能会遇到 `NoSuchAlgorithmException` 或其他不兼容问题。",
+        "created_at": ""
+      },
+      {
+        "path": "authz/client/src/main/java/org/keycloak/authorization/client/util/crypto/AuthzClientCryptoProvider.java",
+        "line": 1,
+        "body": "[Medium] AuthzClientCryptoProvider 功能不完整，被选为主提供者时会导致运行时错误\n\n`AuthzClientCryptoProvider` 的 `order()` 为 `100`，低于其他提供者的 `200`。但在独立使用 `AuthzClient` 的场景下，它可能是 classpath 上唯一的 `CryptoProvider`。此时，`CryptoIntegration.getProvider()` 将返回此实例。由于它的大部分方法（如 `getCertificateUtils`, `getSignature`, `getKeyFactory` 等）都抛出 `UnsupportedOperationException`，任何依赖这些方法的代码都会在运行时失败。",
+        "created_at": ""
+      },
+      {
+        "path": "common/src/main/java/org/keycloak/common/crypto/CryptoProvider.java",
+        "line": 42,
+        "body": "[High] CryptoProvider 接口新增 order() 方法，破坏 API 契约\n\n在 `CryptoProvider` 接口中新增了 `int order()` 方法。所有实现了 `CryptoProvider` 接口的自定义类（不在本 diff 中）都会因为缺少 `order()` 方法而编译失败，这是一个二进制不兼容的变更。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 3,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 3,
+      "after_gate": 3,
+      "filtered": 0
+    },
+    "elapsed": 48.9
+  },
+  "https://github.com/keycloak/keycloak/pull/36882": {
+    "pr_title": "Add rolling-updates feature flag and compatibility framework",
+    "golden_comments": [
+      {
+        "comment": "Incorrect method call for exit codes. The picocli.exit() method calls System.exit() directly, which is problematic:",
+        "severity": "Medium"
+      }
+    ],
+    "source_file": "keycloak.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "quarkus/runtime/src/main/java/org/keycloak/quarkus/runtime/compatibility/CompatibilityResult.java",
+        "line": 34,
+        "body": "[High] 破坏性变更：修改了 RECREATE_UPGRADE_EXIT_CODE 退出码\n\n将 `RECREATE_UPGRADE_EXIT_CODE` 的值从 4 改为 3，并将新的退出码 4 分配给 `FEATURE_DISABLED`。这是一个 API 契约破坏。任何依赖退出码 4 来判断“需要重建升级”的自动化脚本或工具（如 Keycloak Operator）现在会错误地将退出码 4 解释为“特性未启用”，而将退出码 3 解释为“需要重建升级”。这会导致自动化升级逻辑完全失效。",
+        "created_at": ""
+      },
+      {
+        "path": "quarkus/runtime/src/main/java/org/keycloak/quarkus/runtime/cli/command/UpdateCompatibilityCheck.java",
+        "line": 46,
+        "body": "[Medium] 强制依赖预览特性：update-compatibility 命令现在要求启用 rolling-updates 特性\n\n`UpdateCompatibilityCheck` 和 `UpdateCompatibilityMetadata` 命令现在在运行前会检查 `ROLLING_UPDATES` 特性是否启用。如果未启用，命令会立即失败并返回退出码 4。这意味着用户即使只是想检查兼容性，也必须启用一个预览特性。这增加了用户的使用门槛，并强制用户接受预览特性的潜在不稳定性。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 2,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 2,
+      "after_gate": 2,
+      "filtered": 0
+    },
+    "elapsed": 26.3
+  },
+  "https://github.com/keycloak/keycloak/pull/36880": {
+    "error": "review_failed",
+    "elapsed": 7.5
+  },
+  "https://github.com/keycloak/keycloak/pull/37038": {
+    "error": "review_failed",
+    "elapsed": 4.7
+  },
+  "https://github.com/keycloak/keycloak/pull/37429": {
+    "error": "review_failed",
+    "elapsed": 3.9
+  },
+  "https://github.com/keycloak/keycloak/pull/37634": {
+    "pr_title": "Implement access token context encoding framework",
+    "golden_comments": [
+      {
+        "comment": "Wrong parameter in null check (grantType vs. rawTokenId)",
+        "severity": "Critical"
+      },
+      {
+        "comment": "In isAccessTokenId, the substring for the grant shortcut and the equality check look inverted: the grant shortcut occupies indices 4–5 (substring(4,6)), and a match should return true (combined with UUID check), not false.",
+        "severity": "High"
+      },
+      {
+        "comment": "Javadoc mentions \"usually like 3-letters shortcut\" but some implementations use 2-letter shortcuts (\"ac\", \"cc\", \"rt\", \"te\", \"pc\", \"ci\", \"ro\"). Consider updating documentation to reflect actual usage pattern.",
+        "severity": "Low"
+      },
+      {
+        "comment": " Catching generic RuntimeException is too broad. The implementation throws IllegalArgumentException specifically - catch that instead for more precise testing.",
+        "severity": "Low"
+      }
+    ],
+    "source_file": "keycloak.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "services/src/main/java/org/keycloak/protocol/oidc/encode/DefaultTokenContextEncoderProvider.java",
+        "line": null,
+        "body": "[Medium] Token ID 编码导致内部状态信息泄露\n\n变更将 Token 的上下文信息（sessionType, tokenType, grantType）编码到 Token ID 中。原本 Token ID 是纯随机字符串，不包含任何业务逻辑信息。现在，任何能够访问到 Token ID 的实体（如通过日志、错误消息、URL 参数或中间人攻击）都可以解码这些信息，从而了解 Token 的内部属性，例如它是来自在线会话还是离线会话，是轻量级 Token 还是常规 Token，以及是通过哪个 OAuth2 Grant Type 发放的。",
+        "created_at": ""
+      },
+      {
+        "path": "services/src/main/java/org/keycloak/protocol/oidc/TokenManager.java",
+        "line": 1051,
+        "body": "[Medium] Token 创建路径引入 SPI 调用链，导致性能退化\n\n在 `initToken` 方法中，将原本简单的 `KeycloakModelUtils.generateId()` 调用替换为通过 SPI (`TokenContextEncoderProvider`) 获取并编码 token 上下文的复杂调用链。该调用链包含多次 Map 查找、条件判断和额外的 SPI 调用 (`AbstractOIDCProtocolMapper.getShouldUseLightweightToken`)，显著增加了每次 token 创建时的 CPU 开销。",
+        "created_at": ""
+      },
+      {
+        "path": "services/src/main/java/org/keycloak/protocol/oidc/TokenManager.java",
+        "line": 248,
+        "body": "[Medium] 在 refresh token 流程中设置 `GRANT_TYPE` 属性可能导致行为回归\n\n在 `validateToken` 方法中，为 `clientSessionCtx` 设置了 `Constants.GRANT_TYPE` 属性，值为 `OAuth2Constants.REFRESH_TOKEN`。这改变了 `clientSessionCtx` 的状态，可能会影响后续的 token 生成逻辑，例如在 `initToken` 中，`getTokenContextFromClientSessionContext` 会读取这个属性。这可能导致 refresh token 生成的 token ID 包含 `REFRESH_TOKEN` 的上下文，而不是原始 grant type 的上下文。",
+        "created_at": ""
+      },
+      {
+        "path": "server-spi-private/src/main/java/org/keycloak/protocol/oidc/grants/OAuth2GrantType.java",
+        "line": 102,
+        "body": "[High] 删除拷贝构造函数导致 API 破坏\n\n删除了 `OAuth2GrantType.Context` 的拷贝构造函数 `public Context(Context context)`。任何依赖此构造函数的代码（包括第三方扩展）将无法编译。",
+        "created_at": ""
+      },
+      {
+        "path": "server-spi-private/src/main/java/org/keycloak/protocol/oidc/grants/OAuth2GrantType.java",
+        "line": 105,
+        "body": "[High] 构造函数中 `formParams` 可能为 null 导致 NPE\n\n修改后的构造函数 `public Context(...)` 中，新增了 `this.grantType = formParams.getFirst(OAuth2Constants.GRANT_TYPE);` 调用。如果 `formParams` 参数为 null，将抛出 `NullPointerException`。",
+        "created_at": ""
+      },
+      {
+        "path": "services/src/main/java/org/keycloak/protocol/oidc/grants/PreAuthorizedCodeGrantType.java",
+        "line": 82,
+        "body": "[Medium] 在 `process` 中设置 `GRANT_TYPE` 属性可能导致行为回归\n\n在 `process` 方法中，为 `sessionContext` 设置了 `Constants.GRANT_TYPE` 属性，值为 `PreAuthorizedCodeGrantTypeFactory.GRANT_TYPE`。这改变了 `sessionContext` 的状态，可能会影响后续的 token 生成逻辑。虽然这看起来是故意的，但这是一个行为回归，因为之前没有设置这个属性。",
+        "created_at": ""
+      },
+      {
+        "path": "services/src/main/java/org/keycloak/protocol/oidc/grants/ResourceOwnerPasswordCredentialsGrantType.java",
+        "line": 134,
+        "body": "[Medium] 在 `process` 中设置 `GRANT_TYPE` 属性可能导致行为回归\n\n在 `process` 方法中，为 `clientSessionCtx` 设置了 `Constants.GRANT_TYPE` 属性，值来自 `context.getGrantType()`。这改变了 `clientSessionCtx` 的状态，可能会影响后续的 token 生成逻辑。虽然这看起来是故意的，但这是一个行为回归，因为之前没有设置这个属性。",
+        "created_at": ""
+      },
+      {
+        "path": "services/src/main/java/org/keycloak/protocol/oidc/encode/DefaultTokenContextEncoderProviderFactory.java",
+        "line": 82,
+        "body": "[High] `postInit` 中映射大小不一致可能导致启动失败\n\n在 `postInit` 方法中，如果 `grantsByShortcuts` 和 `grantsToShortcuts` 两个映射的大小不一致，会抛出 `IllegalStateException`。这可能导致 Keycloak 启动失败。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 8,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 8,
+      "after_gate": 8,
+      "filtered": 0
+    },
+    "elapsed": 60.1
+  },
+  "https://github.com/keycloak/keycloak/pull/38446": {
+    "pr_title": "Implement recovery key support for user storage providers",
+    "golden_comments": [
+      {
+        "comment": "Unsafe raw List deserialization without type safety. Calling Optional.get() directly on the Optional returned by RecoveryAuthnCodesUtils.getCredential(user) without checking isPresent() can lead to a NoSuchElementException if the Optional is empty.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "After creating the RecoveryAuthnCodesCredentialModel, consider setting its id from the stored credential (e.g., myUser.recoveryCodes.getId()); otherwise getId() will be null and downstream removal by id (e.g., removeStoredCredentialById in the authenticator flow) may not work.",
+        "severity": "Low"
+      }
+    ],
+    "source_file": "keycloak.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "server-spi/src/main/java/org/keycloak/models/utils/RecoveryAuthnCodesUtils.java",
+        "line": 50,
+        "body": "[High] 恢复码凭证查找逻辑引入外部存储信任边界\n\n新增的 `getCredential` 方法优先从用户存储（User Storage）获取恢复码凭证，仅在用户存储中不存在时才回退到本地数据库。这改变了原有的仅从本地数据库查找的安全模型，将凭证的安全性依赖于外部用户存储实现的正确性和安全性。如果用户存储被攻破或存在漏洞，攻击者可以注入恶意凭证或绕过验证。",
+        "created_at": ""
+      },
+      {
+        "path": "server-spi-private/src/main/java/org/keycloak/utils/CredentialHelper.java",
+        "line": 115,
+        "body": "[High] 恢复码凭证创建逻辑引入外部存储信任边界\n\n新增的 `createRecoveryCodesCredential` 方法优先尝试将凭证写入用户存储，仅在写入失败时才回退到本地数据库。这同样将凭证创建的完整性依赖于用户存储。如果用户存储的 `updateCredential` 方法实现有缺陷（例如，总是返回 `true` 但不实际存储），凭证可能丢失。更严重的是，如果用户存储被控制，它可以接受恶意凭证。",
+        "created_at": ""
+      },
+      {
+        "path": "services/src/main/java/org/keycloak/authentication/authenticators/browser/RecoveryAuthnCodesFormAuthenticator.java",
+        "line": 80,
+        "body": "[High] 恢复码验证逻辑直接使用新的、可能不安全的查找方法\n\n在验证恢复码时，直接使用 `RecoveryAuthnCodesUtils.getCredential(authenticatedUser)` 来获取凭证。这直接应用了上述优先从用户存储查找的逻辑，使得验证过程完全依赖于用户存储返回的凭证。如果用户存储返回了恶意凭证，验证将基于该恶意凭证进行。",
+        "created_at": ""
+      },
+      {
+        "path": "services/src/main/java/org/keycloak/forms/login/freemarker/model/RecoveryAuthnCodeInputLoginBean.java",
+        "line": 17,
+        "body": "[High] 潜在的空 Optional 导致 NoSuchElementException\n\n在 `RecoveryAuthnCodeInputLoginBean` 的构造函数中，`RecoveryAuthnCodesUtils.getCredential(user)` 返回的 `Optional` 被直接调用 `.get()`，而没有先检查 `isPresent()`。如果用户没有配置 recovery authn codes（例如，在认证流程中作为可选步骤但用户从未设置过），`getCredential` 方法会返回空的 `Optional`，导致 `NoSuchElementException` 运行时错误。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 4,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 4,
+      "after_gate": 4,
+      "filtered": 0
+    },
+    "elapsed": 42.6
+  },
+  "https://github.com/keycloak/keycloak/pull/40940": {
+    "pr_title": "Fix concurrent group access to prevent NullPointerException",
+    "golden_comments": [
+      {
+        "comment": "Returning null from getSubGroupsCount() violates the GroupModel contract (Javadoc says it never returns null) and may lead to NPEs in callers that expect a non-null count.",
+        "severity": "Critical"
+      },
+      {
+        "comment": "The reader thread isn’t waited for; flipping deletedAll to true and asserting immediately can race and miss exceptions added just after the flag change, making this test flaky.",
+        "severity": "Medium"
+      }
+    ],
+    "source_file": "keycloak.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "services/src/main/java/org/keycloak/utils/GroupUtils.java",
+        "line": 98,
+        "body": "[Medium] 组搜索路径匹配逻辑被移除，导致搜索结果不完整\n\n私有方法 `groupMatchesSearchOrIsPathElement` 被完全删除。该方法确保在搜索时，如果一个父组本身不匹配搜索词，但只要它有匹配的子组，父组仍会作为路径元素出现在搜索结果中。删除此方法后，搜索功能将不再包含这些父组，导致用户无法通过 UI 导航到匹配的子组。",
+        "created_at": ""
+      },
+      {
+        "path": "model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/GroupAdapter.java",
+        "line": 274,
+        "body": "[Medium] getSubGroupsCount() 可能返回 null，引发 NullPointerException\n\n`getSubGroupsCount()` 方法被修改，引入了 `modelSupplier.get()` 调用，并在模型为 null 时返回 null。调用此方法的代码可能期望一个非 null 的 Long 值，直接进行拆箱或算术运算将导致 NullPointerException，造成服务端 500 错误。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 2,
+    "risk_level": "MEDIUM",
+    "evidence_gate_stats": {
+      "before_gate": 2,
+      "after_gate": 2,
+      "filtered": 0
+    },
+    "elapsed": 37.2
+  },
+  "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/1": {
+    "pr_title": "Enhanced Pagination Performance for High-Volume Audit Logs",
+    "golden_comments": [
+      {
+        "comment": "Django querysets do not support negative slicing",
+        "severity": "High"
+      },
+      {
+        "comment": "When requests are authenticated with API keys or org auth tokens (which have user_id=None), organization_context.member is None. Line 71 attempts to access organization_context.member.has_global_access without checking if member is None, causing an AttributeError crash when optimized_pagination=true is used, even though the request passed all permission checks with valid org:write scope.",
+        "severity": "High"
+      },
+      {
+        "comment": "get_item_key assumes a numeric key, but the paginator is used with order_by=-datetime in the audit logs endpoint; calling math.floor/ceil on a datetime will raise a TypeError.",
+        "severity": "High"
+      }
+    ],
+    "source_file": "sentry.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "src/sentry/api/paginator.py",
+        "line": 856,
+        "body": "[High] OptimizedCursorPaginator 中负偏移量导致的信息泄露风险\n\n在 `OptimizedCursorPaginator.get_result` 方法中，当 `enable_advanced_features` 为 True 且 `cursor.offset` 为负数时，代码直接使用负值作为 `start_offset`，跳过了 `max(0, offset)` 的边界检查。这允许攻击者通过构造恶意的 `cursor` 参数（包含负偏移量）来访问正常分页范围之外的数据记录，可能导致组织内部审计日志的未授权信息泄露。",
+        "created_at": ""
+      },
+      {
+        "path": "src/sentry/api/paginator.py",
+        "line": 822,
+        "body": "[High] OptimizedCursorPaginator.get_item_key 使用 math.floor/ceil 导致游标定位错误\n\n新引入的 `OptimizedCursorPaginator` 的 `get_item_key` 方法对 `self.key` 的值使用了 `math.floor` 和 `math.ceil` 进行取整。当 `self.key` 是 `datetime` 字段时，这会将其转换为秒级时间戳并取整，导致游标无法精确匹配到特定记录。在审计日志等高频写入场景下，同一秒内可能存在多条记录，此错误会导致分页结果重复、丢失或顺序错乱，严重破坏分页功能的正确性。",
+        "created_at": ""
+      },
+      {
+        "path": "src/sentry/api/paginator.py",
+        "line": 183,
+        "body": "[High] 基类 `BasePaginator.get_result` 修改导致所有分页器行为回归\n\n修改了 `BasePaginator.get_result` 中的切片逻辑，允许在 `cursor.is_prev` 为 True 时使用负偏移量。这改变了所有继承自 `BasePaginator` 的分页器（如 `DateTimePaginator`）在反向分页时的行为。负偏移量会导致 Django ORM 从 queryset 末尾开始切片，从而产生完全错误的分页结果（数据重复、丢失或顺序错乱）。",
+        "created_at": ""
+      },
+      {
+        "path": "src/sentry/api/paginator.py",
+        "line": 835,
+        "body": "[High] `OptimizedCursorPaginator.get_item_key` 类型错误导致运行时崩溃\n\n`OptimizedCursorPaginator.get_item_key` 方法对 `self.key` 对应的值执行 `math.floor` 或 `math.ceil`。当 `self.key` 是 `datetime` 类型（如 `organization_auditlogs.py` 中的 `-datetime`）时，`getattr(item, self.key)` 返回 `datetime` 对象，对其执行 `math.floor` 会抛出 `TypeError`。这会导致触发优化路径的请求返回 HTTP 500 错误。",
+        "created_at": ""
+      },
+      {
+        "path": "src/sentry/api/paginator.py",
+        "line": 838,
+        "body": "[High] `OptimizedCursorPaginator.value_from_cursor` 缺少类型转换导致查询错误\n\n`OptimizedCursorPaginator.value_from_cursor` 直接返回 `cursor.value`（一个时间戳整数/浮点数），而没有像 `DateTimePaginator` 那样将其转换回 `datetime` 对象。`build_queryset` 方法期望一个 `datetime` 对象来进行过滤，传入时间戳会导致过滤条件不匹配，从而返回错误的数据集或空结果。",
+        "created_at": ""
+      },
+      {
+        "path": "src/sentry/api/endpoints/organization_auditlogs.py",
+        "line": 72,
+        "body": "[Medium] 通过客户端参数启用有安全缺陷的分页器\n\n`organization_auditlogs.py` 端点允许客户端通过一个简单的 GET 参数 `optimized_pagination=true` 来启用 `OptimizedCursorPaginator`。这个分页器存在安全缺陷（允许负偏移量）。虽然 `enable_advanced` 条件限制了触发用户的范围，但 `has_global_access` 权限在组织中较为普遍，且该设计将安全决策（使用哪个分页器）暴露给了客户端，增加了被恶意利用的风险。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 6,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 6,
+      "after_gate": 6,
+      "filtered": 0
+    },
+    "elapsed": 39.8
+  },
+  "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/2": {
+    "pr_title": "Optimize spans buffer insertion with eviction during insert",
+    "golden_comments": [
+      {
+        "comment": "OptimizedCursorPaginator negative-offset branch slices QuerySet with a negative start index",
+        "severity": "Critical"
+      },
+      {
+        "comment": "BasePaginator negative-offset branch slices QuerySet with a negative start index",
+        "severity": "High"
+      },
+      {
+        "comment": "OptimizedCursorPaginator.get_item_key uses floor/ceil on a datetime key (order_by='-datetime'), causing TypeError.",
+        "severity": "High"
+      }
+    ],
+    "source_file": "sentry.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "src/sentry/api/endpoints/organization_auditlogs.py",
+        "line": 78,
+        "body": "[High] OptimizedCursorPaginator 允许通过负偏移量越界访问审计日志\n\n新增的 OptimizedCursorPaginator 在启用高级功能时，允许使用负偏移量进行数据库切片。这绕过了标准分页器的边界检查（max(0, offset)），使得拥有管理员权限的攻击者可以通过构造恶意的游标参数，访问到本不应出现在当前查询结果中的历史审计日志条目，导致信息泄露。",
+        "created_at": ""
+      },
+      {
+        "path": "src/sentry/spans/buffer.py",
+        "line": 449,
+        "body": "[Medium] 移除了 max_segment_spans 检查，可能导致资源耗尽\n\n在 _load_segment_data 方法中，移除了对单个 segment 内 span 数量的检查（max_segment_spans）。这导致如果攻击者向同一 segment 发送大量 span，缓冲区可能会无限增长，消耗大量内存，最终可能导致服务拒绝（DoS）或 OOM。虽然 max_segment_bytes 限制仍然存在，但攻击者可以通过发送大量小 payload 来绕过它。",
+        "created_at": ""
+      },
+      {
+        "path": "src/sentry/spans/buffer.py",
+        "line": 197,
+        "body": "[Medium] Redis 数据结构从 Set 改为 Sorted Set 导致写入性能下降和内存增加\n\n将 span 存储从 Redis Set（sadd）改为 Sorted Set（zadd），所有相关操作（zadd、zcard、zunionstore、zscan）的时间复杂度从 O(1) 变为 O(log n)，且每个元素需要额外存储 score（8 字节浮点数）。在高吞吐量场景下（每秒数千个 span），写入延迟和 Redis 内存使用会显著增加。",
+        "created_at": ""
+      },
+      {
+        "path": "src/sentry/api/paginator.py",
+        "line": 870,
+        "body": "[High] OptimizedCursorPaginator 允许负偏移量可能导致数据库查询异常\n\nOptimizedCursorPaginator 在 enable_advanced_features 为 true 且 cursor.offset < 0 时，直接使用负偏移量进行数据库切片查询。Django ORM 对负切片的行为未定义，可能导致 SQL 生成错误（如 LIMIT -10）、数据库报错或返回意外结果。这会影响审计日志分页功能，在任意数据量下都可能触发。",
+        "created_at": ""
+      },
+      {
+        "path": "src/sentry/api/paginator.py",
+        "line": 856,
+        "body": "[Medium] OptimizedCursorPaginator 负偏移量可能导致分页行为异常\n\n当 `enable_advanced_features` 为 True 且 `cursor.offset < 0` 时，代码允许对 Django QuerySet 进行负索引切片 (`queryset[start_offset:stop]`)。Django 的负索引会触发额外的 COUNT 查询并从末尾切片，这与游标分页的预期行为不符。此外，`build_cursor` 函数可能未正确处理负偏移量，导致游标状态不一致，进而引发翻页时数据重复或丢失。",
+        "created_at": ""
+      },
+      {
+        "path": "src/sentry/scripts/spans/add-buffer.lua",
+        "line": 30,
+        "body": "[Medium] Lua 脚本循环上限从 10000 降到 1000 可能导致深度超过 1000 的段树数据丢失\n\n段树连接循环的上限从 10000 降到 1000，这意味着深度超过 1000 的段树无法正确连接。虽然深度超过 1000 的段树可能罕见，但一旦发生，相关 span 数据将无法正确关联到父段，导致数据丢失或错误。",
+        "created_at": ""
+      },
+      {
+        "path": "src/sentry/scripts/spans/add-buffer.lua",
+        "line": 67,
+        "body": "[Medium] 新增 zpopmin 操作在 span 超过 1000 时丢弃数据\n\n当 set_key 中的 span 数量超过 1000 时，执行 zpopmin 丢弃超出部分。这会导致大型段的 span 数据丢失，且 zpopmin 操作的时间复杂度为 O(log n + k)，在大量数据时增加 Redis 负载。",
+        "created_at": ""
+      },
+      {
+        "path": "src/sentry/scripts/spans/add-buffer.lua",
+        "line": 43,
+        "body": "[High] Redis 数据结构不兼容导致运行时错误\n\nLua 脚本将 `scard` 和 `sunionstore` 命令替换为 `zcard` 和 `zunionstore`，期望 `span_key` 和 `parent_key` 是 Sorted Set。然而，如果 Redis 中已存在使用 Set 存储的旧数据，执行 `zcard` 或 `zunionstore` 会因命令类型不匹配而失败，导致整个 Lua 脚本执行出错，进而使 span 处理流程中断。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 8,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 8,
+      "after_gate": 8,
+      "filtered": 0
+    },
+    "elapsed": 49.0
+  },
+  "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/3": {
+    "pr_title": "feat(upsampling) - Support upsampled error count with performance optimizations",
+    "golden_comments": [
+      {
+        "comment": "sample_rate = 0.0 is falsy and skipped",
+        "severity": "Low"
+      },
+      {
+        "comment": "Using Python’s built-in hash() to build cache keys is non-deterministic across processes (hash randomization), so keys won’t match across workers and invalidate_upsampling_cache may fail to delete them. Use a deterministic serialization of project_ids for the cache key.",
+        "severity": "Low"
+      },
+      {
+        "comment": "The upsampling eligibility check passes the outer dataset instead of the actual dataset used by scoped_dataset. In paths where the query ultimately runs against discover (e.g., dashboard split) while the original dataset is metrics, upsampling may be skipped even when all projects are allowlisted.",
+        "severity": "Medium"
+      }
+    ],
+    "source_file": "sentry.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "src/sentry/search/events/datasets/discover.py",
+        "line": 1048,
+        "body": "[Medium] 新增 `upsampled_count` 聚合函数导致查询性能退化\n\n新增的 `upsampled_count` 聚合函数使用 `sum(sample_weight)` 替代了原有的 `count()`。`count()` 是 ClickHouse 中最高效的聚合操作之一（通常基于主键或轻量级标记），而 `sum(sample_weight)` 需要读取并聚合 `sample_weight` 列的所有匹配行数据，这是一个 I/O 和 CPU 密集型的操作。在拥有大量错误事件（例如，数亿行）的组织中，此变更会将查询时间从毫秒级提升到秒级甚至更久，显著增加数据库负载和 API 响应时间。",
+        "created_at": ""
+      },
+      {
+        "path": "src/sentry/search/events/datasets/discover.py",
+        "line": 1048,
+        "body": "[High] `sample_weight` 列可能不存在或为 NULL\n\n新增的 `upsampled_count` 函数假设 `sample_weight` 列在所有被查询的 Snuba 表中都存在且非空。如果该列不存在，查询会抛出运行时错误。如果该列存在但为 `NULL`，`sum(sample_weight)` 会返回 `0` 或 `NULL`，而不是预期的 `1`，导致计数结果严重不准确。",
+        "created_at": ""
+      },
+      {
+        "path": "src/sentry/api/helpers/error_upsampling.py",
+        "line": 120,
+        "body": "[Medium] `discover` 数据集上采样条件过于严格\n\n`_is_error_focused_query` 函数仅检查查询字符串中是否包含 `event.type:error`。对于 `discover` 数据集，如果用户使用其他方式过滤错误事件（例如 `!event.type:transaction`、`error.unhandled:true` 或 `error.type:ValueError`），该函数会返回 `False`，导致上采样不会被应用。这会导致这些查询的 `count()` 结果不准确。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 3,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 3,
+      "after_gate": 3,
+      "filtered": 0
+    },
+    "elapsed": 50.5
+  },
+  "https://github.com/getsentry/sentry/pull/67876": {
+    "pr_title": "GitHub OAuth Security Enhancement",
+    "golden_comments": [
+      {
+        "comment": "Null reference if github_authenticated_user state is missing",
+        "severity": "Medium"
+      },
+      {
+        "comment": "OAuth state uses pipeline.signature (static) instead of a per-request random value",
+        "severity": "Medium"
+      },
+      {
+        "comment": "The code attempts to access integration.metadata[sender][login] without checking for the existence of the sender key. This causes a KeyError for integrations where the sender metadata was not set during creation",
+        "severity": "High"
+      }
+    ],
+    "source_file": "sentry.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "src/sentry/integrations/github/integration.py",
+        "line": 415,
+        "body": "[Medium] 安装流程中新增同步网络 I/O 调用\n\n在 `OAuthLoginView.dispatch` 方法中，新增了两个同步的 HTTP 请求：1) 向 GitHub 交换 access token (`safe_urlopen`)，2) 获取已认证用户信息 (`get_user_info`)。这会将原本仅包含本地数据库查询的安装流程，变为必须等待两个外部网络调用完成。",
+        "created_at": ""
+      },
+      {
+        "path": "src/sentry/integrations/github/integration.py",
+        "line": 456,
+        "body": "[High] 潜在 KeyError：访问 integration.metadata[\"sender\"][\"login\"] 时未做存在性检查\n\n在 GitHubInstallation.dispatch 方法中，新增的代码直接访问 integration.metadata[\"sender\"][\"login\"]。如果 Integration 对象是通过旧流程创建的，或者其 metadata 字段不完整（例如缺少 \"sender\" 或 \"login\" 键），则会抛出 KeyError，导致 500 内部服务器错误。",
+        "created_at": ""
+      },
+      {
+        "path": "src/sentry/integrations/github/integration.py",
+        "line": 344,
+        "body": "[Medium] 行为回归：安装流程强制要求 OAuth 授权步骤\n\nget_pipeline_views() 返回的视图列表从 [GitHubInstallation()] 变更为 [OAuthLoginView(), GitHubInstallation()]。这意味着所有 GitHub 集成安装流程现在都必须先经过 OAuth 授权。任何不包含 code 和 state 参数的直接安装请求（例如从 GitHub 重定向或自动化脚本）都将被重定向到 GitHub 授权页面，而不是直接完成安装。这改变了原有的安装入口和行为。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 3,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 4,
+      "after_gate": 3,
+      "filtered": 1
+    },
+    "elapsed": 39.2
+  },
+  "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/5": {
+    "error": "review_failed",
+    "elapsed": 6.6
+  },
+  "https://github.com/getsentry/sentry/pull/93824": {
+    "pr_title": "Span Buffer Multiprocess Enhancement with Health Monitoring",
+    "golden_comments": [
+      {
+        "comment": "Inconsistent metric tagging with 'shard' and 'shards'",
+        "severity": "Medium"
+      },
+      {
+        "comment": "Fixed sleep in tests can be flaky; wait on condition instead",
+        "severity": "Low"
+      },
+      {
+        "comment": "Because flusher processes are created via multiprocessing.get_context('spawn').Process, they are instances of multiprocessing.context.SpawnProcess, which on POSIX is not a subclass of multiprocessing.Process, so this isinstance check will always be false and hung processes won't be killed here.",
+        "severity": "High"
+      },
+      {
+        "comment": "Sleep in test_consumer.py won’t actually wait because time.sleep was monkeypatched above; consider restoring sleep or using a different sync to ensure the flusher has time to process.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "Breaking out of the loop when the deadline has elapsed can skip terminating remaining flusher processes, potentially leaving them running after shutdown; consider ensuring termination is attempted even if the deadline is exceeded.",
+        "severity": "Medium"
+      }
+    ],
+    "source_file": "sentry.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "src/sentry/spans/consumers/process/flusher.py",
+        "line": null,
+        "body": "[Medium] 多进程背压和内存检查逻辑可能引入拒绝服务漏洞\n\n将 SpanFlusher 从单进程重构为多进程模型后，背压（backpressure）和内存检查逻辑被修改为遍历所有进程的状态。如果任何一个进程的背压状态因 bug（如竞争条件、未处理异常）而永久卡住，或者内存使用统计因累加逻辑错误而失真，可能导致整个消费者持续拒绝消息（MessageRejected），造成拒绝服务。",
+        "created_at": ""
+      },
+      {
+        "path": "src/sentry/spans/consumers/process/flusher.py",
+        "line": null,
+        "body": "[Medium] 多进程健康检查逻辑对部分故障的脆弱性可能导致全局拒绝服务\n\n新的多进程健康检查机制为每个进程维护独立的重启计数器。如果某个 Redis 分片出现持续性问题（如网络分区、过载），导致负责该分片的 flusher 进程反复崩溃，该进程的重启计数器会耗尽，进而导致整个消费者抛出 RuntimeError 并停止工作。这比单进程模型更脆弱，因为一个分片的问题会拖垮整个消费者，而不仅仅是影响该分片的数据处理。",
+        "created_at": ""
+      },
+      {
+        "path": "src/sentry/spans/consumers/process/flusher.py",
+        "line": 270,
+        "body": "[Medium] submit() 方法中引入了 O(N) 循环，导致每次消息提交都需遍历所有进程的 buffer\n\n变更将 `submit()` 方法中对 `buffer.record_stored_segments()` 和 `buffer.get_memory_info()` 的单次调用，改为了遍历 `self.buffers` 字典中所有 M 个 buffer 的循环。这意味着每次 Kafka 消息提交时，原本 1 次的 Redis 操作（或类似 IO 操作）现在变成了 M 次。当分配的 shard 数量（即 M）较大时（例如 50 个），`submit()` 方法的延迟会线性增加，可能阻塞消费者主循环，降低整体消息处理吞吐量。",
+        "created_at": ""
+      },
+      {
+        "path": "src/sentry/spans/consumers/process/flusher.py",
+        "line": 47,
+        "body": "[Medium] 多进程架构导致资源消耗线性增长\n\n变更将单进程/线程的 SpanFlusher 改为多进程架构。每个进程都拥有独立的 `SpansBuffer` 实例，这意味着 Redis 连接、内存缓冲等资源会随着进程数（`max_processes`）线性增长。如果 `max_processes` 设置得过高（例如，等于 shard 数量），可能会导致 Redis 连接数激增、内存使用量大幅上升，对 Redis 服务器和应用服务器造成压力，甚至引发资源耗尽。",
+        "created_at": ""
+      },
+      {
+        "path": "src/sentry/spans/consumers/process/flusher.py",
+        "line": 264,
+        "body": "[Medium] 背压检查逻辑变更，可能导致更频繁的消息拒绝\n\n在 `submit` 方法中，背压检查从检查单个 `self.backpressure_since` 变量变为遍历 `self.process_backpressure_since` 字典。现在，只要任何一个 flusher 进程处于背压状态超过阈值，整个 consumer 就会抛出 `MessageRejected`。这比原来的逻辑更严格，在 shard 负载不均的场景下，可能导致不必要的背压和吞吐量下降。",
+        "created_at": ""
+      },
+      {
+        "path": "src/sentry/spans/consumers/process/flusher.py",
+        "line": 47,
+        "body": "[Medium] 原始 `SpansBuffer` 对象被废弃，可能导致状态不一致\n\n`SpanFlusher.__init__` 中删除了 `self.buffer = buffer` 这一行。原来传入的 `buffer` 对象不再被 `SpanFlusher` 持有或使用。取而代之的是，`_create_process_for_shards` 方法为每个进程创建了新的 `SpansBuffer` 实例。如果 `ProcessSpansStrategyFactory` 或其他调用方在创建 `SpanFlusher` 后仍然持有并操作原始 `buffer` 对象，这些操作将不会反映到 flusher 内部的新 buffer 上，可能导致数据丢失、重复处理或状态不同步。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 6,
+    "risk_level": "MEDIUM",
+    "evidence_gate_stats": {
+      "before_gate": 6,
+      "after_gate": 6,
+      "filtered": 0
+    },
+    "elapsed": 46.7
+  },
+  "https://github.com/getsentry/sentry/pull/77754": {
+    "pr_title": "feat(ecosystem): Implement cross-system issue synchronization",
+    "golden_comments": [
+      {
+        "comment": "Shared mutable default in dataclass timestamp",
+        "severity": "Medium"
+      },
+      {
+        "comment": "The method name has a typo: test_from_dict_inalid_data should be test_from_dict_invalid_data.",
+        "severity": "Low"
+      },
+      {
+        "comment": "Method name says 'empty_array' but tests empty dict - consider renaming to 'test_from_dict_empty_dict' for clarity.",
+        "severity": "Low"
+      },
+      {
+        "comment": "to_dict() returns a datetime for queued; if this dict is passed in task kwargs (e.g., via apply_async), JSON serialization may fail depending on the serializer, which can cause enqueue errors.",
+        "severity": "Medium"
+      }
+    ],
+    "source_file": "sentry.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "src/sentry/integrations/tasks/sync_assignee_outbound.py",
+        "line": 30,
+        "body": "[Medium] AssignmentSource 参数可被伪造，绕过同步循环检测\n\n新引入的 `assignment_source_dict` 参数作为异步任务 `sync_assignee_outbound` 的输入，其完整性和来源未经验证。任何能够调用此任务的内部组件（如其他服务、被攻破的 worker）都可以构造一个伪造的 `assignment_source_dict`，例如提供一个不同的 `integration_id`，从而绕过 `should_sync` 方法中新增的循环检测逻辑。这可能导致意外的同步行为，甚至引发同步循环。",
+        "created_at": ""
+      },
+      {
+        "path": "src/sentry/integrations/tasks/sync_assignee_outbound.py",
+        "line": 30,
+        "body": "[Medium] Celery 任务 `sync_assignee_outbound` 签名变更可能破坏其他调用者\n\n`sync_assignee_outbound` Celery 任务增加了 `assignment_source_dict` 参数。如果存在其他未更新的代码直接调用 `sync_assignee_outbound.apply_async`，会因缺少参数而失败。",
+        "created_at": ""
+      },
+      {
+        "path": "src/sentry/integrations/mixins/issues.py",
+        "line": 63,
+        "body": "[High] 抽象方法 `should_sync` 签名变更可能导致子类运行时错误\n\n`IssueBasicIntegration.should_sync` 和 `IssueSyncIntegration.should_sync` 方法增加了 `sync_source` 参数。任何继承自 `IssueSyncIntegration` 并覆盖了 `should_sync` 方法的子类（如 GitHub、Jira、GitLab 等集成），如果未更新签名以匹配新的参数，在调用时会抛出 `TypeError`。触发场景是任何导致出站同步且 `sync_source` 不为 `None` 的操作（例如，由入站同步触发的分配）。",
+        "created_at": ""
+      },
+      {
+        "path": "src/sentry/integrations/mixins/issues.py",
+        "line": 411,
+        "body": "[High] 抽象方法 `sync_status_outbound` 签名变更可能导致子类运行时错误\n\n`sync_status_outbound` 抽象方法增加了 `assignment_source` 参数。任何实现了此方法的子类如果未更新签名，在调用时会抛出 `TypeError`。触发场景是任何导致状态同步的操作。",
+        "created_at": ""
+      },
+      {
+        "path": "src/sentry/integrations/utils/sync.py",
+        "line": 134,
+        "body": "[Medium] 函数 `sync_group_assignee_outbound` 签名变更可能破坏其他调用者\n\n`sync_group_assignee_outbound` 函数增加了 `assignment_source` 参数。如果存在其他未更新的调用者直接调用此函数，会因缺少参数或参数不匹配而失败。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 5,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 5,
+      "after_gate": 5,
+      "filtered": 0
+    },
+    "elapsed": 41.0
+  },
+  "https://github.com/getsentry/sentry/pull/80528": {
+    "pr_title": "ref(crons): Reorganize incident creation / issue occurrence logic",
+    "golden_comments": [
+      {
+        "comment": "The function modifies the config variable to include display values but then returns the original monitor.config instead of the modified version.",
+        "severity": "High"
+      },
+      {
+        "comment": "The code fetches MonitorCheckIn objects by ID when the required data already exists in previous_checkins. This creates an unnecessary database query.",
+        "severity": "Low"
+      }
+    ],
+    "source_file": "sentry.json",
+    "tool": "prism",
+    "review_comments": [],
+    "issue_count": 0,
+    "risk_level": "LOW",
+    "evidence_gate_stats": {
+      "before_gate": 0,
+      "after_gate": 0,
+      "filtered": 0
+    },
+    "elapsed": 14.5
+  },
+  "https://github.com/getsentry/sentry/pull/95633": {
+    "pr_title": "feat(uptime): Add ability to use queues to manage parallelism",
+    "golden_comments": [
+      {
+        "comment": "The queue.shutdown() method with 'immediate=False' parameter may not exist in the standard Python queue module. This could cause AttributeError at runtime. Verify the correct API or implement a custom shutdown mechanism.",
+        "severity": "High"
+      },
+      {
+        "comment": "The magic number 50 for max_wait is used repeatedly throughout the tests. Consider extracting this as a named constant to improve maintainability.",
+        "severity": "Low"
+      },
+      {
+        "comment": "The test test_thread_queue_parallel_error_handling has a docstring that doesn't match the test implementation.",
+        "severity": "Low"
+      }
+    ],
+    "source_file": "sentry.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+        "line": 175,
+        "body": "[High] FixedQueuePool 哈希碰撞导致拒绝服务\n\nFixedQueuePool.get_queue_for_group 方法使用 `hash(group_key) % self.num_queues` 进行消息路由。Python 的 hash() 函数在同一个进程内是确定的，攻击者可以构造大量具有相同哈希值的 group_key，将所有消息路由到同一个队列，导致该队列的单个工作线程过载，造成拒绝服务。",
+        "created_at": ""
+      },
+      {
+        "path": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+        "line": 103,
+        "body": "[Medium] OffsetTracker.get_committable_offsets 方法存在 O(N) 时间复杂度风险\n\n`get_committable_offsets` 方法通过遍历从 `last_committed + 1` 到 `max_offset` 的连续整数范围来查找可提交的最高偏移量。当分区出现消息积压（例如消费者重启后追赶进度），导致 `max_offset` 远大于 `last_committed` 时，该循环的迭代次数会急剧增加。虽然集合查找是 O(1)，但大量的迭代（可能数千次）会消耗显著的 CPU 资源。此方法每秒被 `_commit_loop` 线程调用一次，在积压严重时可能成为 CPU 热点，影响整体处理吞吐量。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 2,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 2,
+      "after_gate": 2,
+      "filtered": 0
+    },
+    "elapsed": 70.2
+  },
+  "https://github.com/getsentry/sentry/pull/80168": {
+    "pr_title": "feat(workflow_engine): Add in hook for producing occurrences from the stateful detector",
+    "golden_comments": [
+      {
+        "comment": "MetricAlertDetectorHandler inherits from StatefulDetectorHandler but only contains pass, failing to implement its required abstract methods: counter_names (property), get_dedupe_value(), get_group_key_values(), and build_occurrence_and_event_data(). This will cause a TypeError at runtime when the class is instantiated.",
+        "severity": "High"
+      },
+      {
+        "comment": "Docstring says this returns a list of DetectorEvaluationResult, but the method now returns a dict keyed by DetectorGroupKey. Consider updating the docstring to match the new return type.",
+        "severity": "Low"
+      }
+    ],
+    "source_file": "sentry.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "src/sentry/workflow_engine/processors/detector.py",
+        "line": 59,
+        "body": "[Medium] 移除重复 group_key 的防御性检查\n\n变更将 `evaluate` 方法的返回类型从 `list` 改为 `dict`，并移除了对重复 `group_key` 的显式检查和错误日志。这导致如果 handler 的 `get_group_key_values` 方法返回了重复的 key，重复项会被静默覆盖，而不会记录任何错误。这降低了系统的健壮性，掩盖了 handler 实现中的潜在 bug 或数据异常，并可能导致状态更新逻辑的副作用被多次执行。",
+        "created_at": ""
+      },
+      {
+        "path": "src/sentry/workflow_engine/processors/detector.py",
+        "line": 298,
+        "body": "[Medium] 新增 build_occurrence_and_event_data 调用可能导致高频场景下的性能瓶颈\n\n在 StatefulDetectorHandler.evaluate_group_key_value 方法中，当状态变为非 OK 时，新增了对 build_occurrence_and_event_data 的调用。该方法会创建 IssueOccurrence 对象和事件数据字典，这是一个有开销的操作。在每次状态变更时都会执行，如果 DataPacket 包含大量 group_key 且状态频繁变更，会导致显著的 CPU 和内存开销。",
+        "created_at": ""
+      },
+      {
+        "path": "src/sentry/workflow_engine/processors/detector.py",
+        "line": 49,
+        "body": "[High] process_detectors 函数返回类型从 list 变更为 dict，破坏 API 契约\n\nprocess_detectors 函数的返回类型从 list[tuple[Detector, list[DetectorEvaluationResult]]] 变更为 list[tuple[Detector, dict[DetectorGroupKey, DetectorEvaluationResult]]]。所有调用此函数并期望返回列表的代码都需要更新，否则会导致类型错误或行为异常。",
+        "created_at": ""
+      },
+      {
+        "path": "src/sentry/workflow_engine/processors/detector.py",
+        "line": 126,
+        "body": "[High] DetectorHandler.evaluate 抽象方法返回类型从 list 变更为 dict，破坏子类契约\n\nDetectorHandler 抽象基类的 evaluate 方法返回类型从 list[DetectorEvaluationResult] 变更为 dict[DetectorGroupKey, DetectorEvaluationResult]。所有 DetectorHandler 的自定义子类（如 MetricAlertDetectorHandler）必须更新其 evaluate 方法签名，否则会导致类型错误。",
+        "created_at": ""
+      },
+      {
+        "path": "src/sentry/workflow_engine/processors/detector.py",
+        "line": 298,
+        "body": "[Medium] PriorityLevel(new_status) 转换可能导致 ValueError\n\n在 evaluate_group_key_value 方法中，当 new_status 不为 OK 时，使用 PriorityLevel(new_status) 进行转换。DetectorPriorityLevel 和 PriorityLevel 是两个不同的枚举，如果 DetectorPriorityLevel 的值不在 PriorityLevel 的成员值范围内，此转换会抛出 ValueError。",
+        "created_at": ""
+      },
+      {
+        "path": "src/sentry/incidents/grouptype.py",
+        "line": 12,
+        "body": "[High] MetricAlertDetectorHandler 实现不完整，可能导致服务崩溃\n\n`MetricAlertDetectorHandler` 从继承 `DetectorHandler` 并实现空的 `evaluate` 方法，改为继承 `StatefulDetectorHandler` 并完全使用 `pass`。`StatefulDetectorHandler` 是一个有状态的处理器，其 `evaluate` 方法会调用多个抽象方法（如 `get_dedupe_value`, `get_group_key_values`, `build_occurrence_and_event_data`）。由于 `MetricAlertDetectorHandler` 没有实现这些方法，任何尝试使用此 handler 处理数据包的操作都会导致 `NotImplementedError` 或 `TypeError`，从而引发服务崩溃（DoS）。",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 6,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 6,
+      "after_gate": 6,
+      "filtered": 0
+    },
+    "elapsed": 47.7
+  }
+}
