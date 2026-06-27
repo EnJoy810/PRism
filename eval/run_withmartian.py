@@ -8,6 +8,7 @@ Usage:
 import argparse
 import asyncio
 import json
+import logging
 import sys
 import time
 from pathlib import Path
@@ -19,7 +20,13 @@ sys.path.insert(0, str(PRISM_BACKEND))
 from dotenv import load_dotenv
 load_dotenv(PRISM_BACKEND / ".env")
 
-from app.services.github import fetch_pr_context, parse_pr_url
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(name)s %(levelname)s %(message)s",
+    stream=sys.stderr,
+)
+
+from app.services.github import parse_pr_url
 from app.graph import ReviewGraph
 
 
@@ -63,55 +70,22 @@ def convert_prism_to_review_comments(result: dict) -> list[dict]:
     return comments
 
 
-async def run_prism_light(pr_url: str, timeout: int = 180) -> dict | None:
-    """Run PRism review on a single PR, bypassing investigate (symbol/blast/sast/verif)."""
-    owner, repo, pr_number = parse_pr_url(pr_url)
-    try:
-        ctx = await asyncio.wait_for(
-            fetch_pr_context(owner, repo, pr_number),
-            timeout=30,
-        )
-    except Exception as e:
-        print(f"  FETCH ERROR: {e}", flush=True)
-        return None
-
-    ctx["pr_url"] = pr_url
-    diff = ctx.get("diff", "")
-    if not diff:
-        print(f"  EMPTY DIFF", flush=True)
-        return None
-
+async def run_prism_full(pr_url: str, timeout: int = 300) -> dict | None:
+    """Run PRism review on a single PR with full investigate (blast radius, symbol, sast).
+    Blast radius requires repo clone; if clone fails, graph auto-degrades to diff-only.
+    """
     graph = ReviewGraph()
-    agent_context = {
-        "pr_title": ctx.get("title", ""),
-        "pr_description": ctx.get("description", ""),
-        "files": ctx.get("files", []),
-        "symbol_definitions": {},
-        "blast_radius": [],
-        "blast_radius_section": "",
-        "sast_findings": {},
-    }
-
-    try:
-        agent_results = await asyncio.wait_for(
-            graph._run_agents(diff, agent_context),
-            timeout=timeout,
-        )
-    except asyncio.TimeoutError:
-        print(f"  AGENT TIMEOUT", flush=True)
-        return None
-    except Exception as e:
-        print(f"  AGENT ERROR: {e}", flush=True)
-        return None
-
     try:
         result = await asyncio.wait_for(
-            graph._assemble_result(agent_results, ctx, pr_url, time.monotonic(), diff),
-            timeout=60,
+            graph.run(pr_url),
+            timeout=timeout,
         )
         return result
+    except asyncio.TimeoutError:
+        print(f"  TIMEOUT after {timeout}s", flush=True)
+        return None
     except Exception as e:
-        print(f"  ASSEMBLE ERROR: {e}", flush=True)
+        print(f"  ERROR: {e}", flush=True)
         return None
 
 
@@ -126,7 +100,7 @@ async def _run_one(
     async with sem:
         print(f"[{i}/{total}] START {url}", flush=True)
         t0 = time.monotonic()
-        result = await run_prism_light(url, timeout=timeout)
+        result = await run_prism_full(url, timeout=timeout)
         elapsed = time.monotonic() - t0
 
     if result is None:
@@ -157,10 +131,11 @@ async def _run_one(
 async def main():
     parser = argparse.ArgumentParser(description="Run PRism on withmartian benchmark PRs")
     parser.add_argument("--limit", type=int, default=None, help="Limit number of PRs to process")
-    parser.add_argument("--timeout", type=int, default=180, help="LLM agent timeout per PR in seconds")
+    parser.add_argument("--timeout", type=int, default=300, help="Per-PR timeout in seconds (clone + review)")
     parser.add_argument("--concurrency", type=int, default=5, help="Max concurrent PR reviews")
     parser.add_argument("--golden-dir", default="", help="Golden comments directory")
     parser.add_argument("--output", default="eval/prism_benchmark_results.json", help="Output file")
+    parser.add_argument("--urls", default="", help="Comma-separated PR URLs to run (subset mode)")
     args = parser.parse_args()
 
     if args.golden_dir:
@@ -169,10 +144,13 @@ async def main():
         golden_dir = Path("/tmp/code-review-benchmark/offline/golden_comments")
 
     all_prs = load_all_pr_urls(golden_dir)
-    if args.limit:
+    if args.urls:
+        url_filter = {u.strip() for u in args.urls.split(",") if u.strip()}
+        all_prs = [p for p in all_prs if p["url"] in url_filter]
+    elif args.limit:
         all_prs = all_prs[:args.limit]
 
-    print(f"Running PRism (light mode, no investigate) on {len(all_prs)} PRs (concurrency={args.concurrency})...", flush=True)
+    print(f"Running PRism (full mode, with blast radius) on {len(all_prs)} PRs (concurrency={args.concurrency})...", flush=True)
 
     sem = asyncio.Semaphore(args.concurrency)
     tasks = [

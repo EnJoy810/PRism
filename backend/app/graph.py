@@ -227,17 +227,21 @@ class ReviewGraph:
 
             head_sha = context.get("head_sha", "")
             if not head_sha:
-                logger.debug("no head_sha in context, skip blast radius")
+                logger.info("blast_radius[skip]: no head_sha in context — %s", pr_url)
                 return []
 
             cfg = load_config()
             token = context.get("github_token") or cfg.github_token or os.environ.get("GITHUB_TOKEN", "")
             if not token:
-                logger.debug("no github token, skip blast radius")
+                logger.info("blast_radius[skip]: no github token — %s", pr_url)
                 return []
 
             repo_path = await ensure_repo(owner, repo, head_sha, token)
             if repo_path is None:
+                logger.info(
+                    "blast_radius[degraded]: clone failed for %s/%s@%s — diff-only fallback",
+                    owner, repo, head_sha[:8],
+                )
                 return []
 
             diff = context.get("diff", "")
@@ -253,8 +257,8 @@ class ReviewGraph:
                     repo_path, changed_fns, diff_tokens,
                 )
                 logger.info(
-                    "blast radius [codegraph]: %d changed fns, %d caller groups found",
-                    len(changed_fns), len(result),
+                    "blast_radius[ok/codegraph]: changed_fns=%d caller_groups=%d — %s",
+                    len(changed_fns), len(result), pr_url,
                 )
                 return result
 
@@ -266,6 +270,10 @@ class ReviewGraph:
 
             changed_node_ids = _changed_node_ids_from_diff(db_path, diff)
             if not changed_fns and not changed_node_ids:
+                logger.info(
+                    "blast_radius[skip]: no changed functions/nodes extracted from diff — %s",
+                    pr_url,
+                )
                 return []
 
             result = compute_blast_radius(
@@ -275,13 +283,16 @@ class ReviewGraph:
                 changed_node_ids=changed_node_ids,
             )
             logger.info(
-                "blast radius [builtin]: %d changed fns, %d changed nodes, %d caller groups found",
-                len(changed_fns), len(changed_node_ids), len(result),
+                "blast_radius[ok/builtin]: changed_fns=%d changed_nodes=%d caller_groups=%d — %s",
+                len(changed_fns), len(changed_node_ids), len(result), pr_url,
             )
             return result
 
         except Exception as e:
-            logger.warning("blast radius fetch failed: %s", e)
+            logger.warning(
+                "blast_radius[error]: %s: %s — %s",
+                type(e).__name__, e, pr_url,
+            )
             return []
 
     async def _fetch_sast_findings(self, context: dict, pr_url: str) -> dict[str, list[dict]]:
@@ -844,13 +855,41 @@ def _split_diff_by_token_budget(diff: str, max_tokens: int) -> list[str]:
 
 
 def _extract_changed_functions(diff: str) -> set[str]:
+    # Python: def foo( / async def foo(
     fn_pattern = re.compile(r"^\+\s*(?:async\s+)?def\s+(\w+)\s*\(", re.MULTILINE)
-    js_pattern = re.compile(r"^\+\s*(?:async\s+)?function\s+(\w+)\s*\(", re.MULTILINE)
-    arrow_pattern = re.compile(r"^\+\s*(?:const|let)\s+(\w+)\s*=\s*(?:async\s+)?\(", re.MULTILINE)
+
+    # JS/TS named function — with optional export / export default / async
+    # covers: function foo(  /  export function foo(  /  export async function foo(
+    js_pattern = re.compile(
+        r"^\+\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+(\w+)\s*\(",
+        re.MULTILINE,
+    )
+
+    # Arrow / const — with optional export
+    # covers: const foo = (  /  export const foo = (  /  export const foo = async (
+    arrow_pattern = re.compile(
+        r"^\+\s*(?:export\s+)?(?:const|let)\s+(\w+)\s*=\s*(?:async\s+)?\(",
+        re.MULTILINE,
+    )
+
+    # TypeScript/JS class methods (indented ≥2 spaces, optional access modifier / async)
+    # covers: async handleRequest(  /  private validate(  /  public static create(
+    method_pattern = re.compile(
+        r"^\+\s{2,}(?:(?:public|private|protected|static|override|abstract)\s+)*"
+        r"(?:async\s+)?(\w+)\s*\(",
+        re.MULTILINE,
+    )
 
     names: set[str] = set()
-    for pat in (fn_pattern, js_pattern, arrow_pattern):
+    for pat in (fn_pattern, js_pattern, arrow_pattern, method_pattern):
         names.update(m.group(1) for m in pat.finditer(diff))
+    # 过滤掉明显的非函数名（JS 关键字、单字符）
+    _JS_KEYWORDS = {
+        "if", "for", "while", "switch", "catch", "return", "throw",
+        "new", "delete", "typeof", "void", "await", "yield",
+    }
+    names -= _JS_KEYWORDS
+    names = {n for n in names if len(n) > 1}
     return names
 
 
