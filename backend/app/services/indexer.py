@@ -190,7 +190,7 @@ def _extract_ts_imports(source: bytes, rel: str, repo_path: Path) -> list[dict]:
       import X, { Y } from './path'
       import type { X } from './path'
       export { X } from './path'   (re-exports)
-    Skips non-relative imports (node_modules, path aliases).
+    Skips non-relative imports (node_modules, path aliases starting with @).
     """
     text = source.decode("utf-8", errors="replace")
     imports: list[dict] = []
