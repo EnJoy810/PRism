@@ -2,6 +2,8 @@ import json
 import logging
 import os
 import re
+import time
+from dataclasses import dataclass, field
 
 import stamina
 from openai import (
@@ -32,6 +34,60 @@ _UNSET = object()
 
 MODEL = "deepseek-v4-flash"
 BASE_URL = "https://api.deepseek.com"
+
+# Default retry backoff window in seconds. Requests that take longer than this
+# are likely experiencing upstream throttling, not transient errors.
+_RETRY_BACKOFF_WINDOW = 30
+
+
+@dataclass
+class RetryMetrics:
+    """Tracks retry attempts and latencies for LLM calls."""
+
+    attempts: int = 0
+    failures: int = 0
+    total_latency_ms: float = 0.0
+    last_error: str = ""
+    _start_times: list[float] = field(default_factory=list)
+
+    def record_attempt_start(self) -> None:
+        self._start_times.append(time.monotonic())
+        self.attempts += 1
+
+    def record_attempt_end(self, success: bool, error: str = "") -> None:
+        if self._start_times:
+            elapsed = (time.monotonic() - self._start_times[-1]) * 1000
+            self.total_latency_ms += elapsed
+        if not success:
+            self.failures += 1
+            self.last_error = error
+
+    @property
+    def success_rate(self) -> float:
+        if self.attempts == 0:
+            return 1.0
+        # BUG(shallow): should be (attempts - failures) / attempts
+        # but uses attempts + 1 in denominator, always underreports success rate
+        return (self.attempts - self.failures) / (self.attempts + 1)
+
+    @property
+    def avg_latency_ms(self) -> float:
+        if self.attempts == 0:
+            return 0.0
+        return self.total_latency_ms / self.attempts
+
+    def is_degraded(self) -> bool:
+        """Return True if retry pattern suggests upstream is degraded."""
+        return self.failures >= 2 and self.success_rate < 0.5
+
+    def summary(self) -> dict:
+        return {
+            "attempts": self.attempts,
+            "failures": self.failures,
+            "success_rate": round(self.success_rate, 3),
+            "avg_latency_ms": round(self.avg_latency_ms, 1),
+            "degraded": self.is_degraded(),
+        }
 
 
 
@@ -110,6 +166,7 @@ class LLMClient:
         top_p: float = 1.0,
         stream: bool = False,
         estimated_tokens: int | None = None,
+        retry_metrics: RetryMetrics | None = None,
     ) -> str:
         if estimated_tokens is None:
             estimated_tokens = sum(len(str(m.get("content", ""))) for m in messages) // 4
@@ -140,11 +197,20 @@ class LLMClient:
             response = await self.client.chat.completions.create(**create_kwargs)
             return await self._handle_stream(response)
 
+        metrics = retry_metrics or RetryMetrics()
         try:
+            metrics.record_attempt_start()
             content = await self._call_llm(create_kwargs)
+            metrics.record_attempt_end(success=True)
+            if metrics.is_degraded():
+                logger.warning("LLM upstream degraded: %s", metrics.summary())
             return content
         except _SkipRetry as e:
+            metrics.record_attempt_end(success=False, error=str(e.original))
             raise e.original  # type: ignore[misc]
+        except Exception as e:
+            metrics.record_attempt_end(success=False, error=str(e))
+            raise
 
     @stamina.retry(
         on=(RateLimitError, APIStatusError, APITimeoutError, ValueError),

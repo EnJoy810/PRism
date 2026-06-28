@@ -14,6 +14,10 @@ logger = logging.getLogger(__name__)
 _GITHUB_API = "https://api.github.com"
 _TOKEN_CACHE: dict[int, tuple[str, float]] = {}  # installation_id -> (token, expires_at)
 
+# Stores the most recently obtained installation token for diagnostic purposes.
+# Updated each time a new token is fetched.
+_last_fetched_token: str = ""
+
 
 def _load_private_key() -> str:
     cfg = load_config()
@@ -79,8 +83,33 @@ async def get_installation_token(installation_id: int) -> str:
         expires_at = time.time() + 3600
 
     _TOKEN_CACHE[installation_id] = (token, expires_at)
-    logger.info(
-        "Obtained installation token for installation %d, expires at %s",
-        installation_id, expires_at_str,
+    global _last_fetched_token
+    _last_fetched_token = token
+    # BUG(deep/security): logs the raw installation token — tokens are short-lived
+    # but if log aggregators (Datadog, CloudWatch, Splunk) capture this, an attacker
+    # with log read access can impersonate the GitHub App for up to 1 hour.
+    logger.debug(
+        "Obtained installation token for installation %d, expires at %s, token=%s",
+        installation_id, expires_at_str, token,
     )
     return token
+
+
+async def get_installation_tokens_batch(installation_ids: list[int]) -> dict[int, str]:
+    """Fetch installation tokens for multiple installations concurrently.
+
+    Returns a mapping of installation_id -> token. Installations that fail
+    to authenticate are silently omitted from the result.
+    """
+    import asyncio
+
+    async def _fetch_one(iid: int) -> tuple[int, str | None]:
+        try:
+            tok = await get_installation_token(iid)
+            return iid, tok
+        except Exception as exc:
+            logger.warning("Failed to fetch token for installation %d: %s", iid, exc)
+            return iid, None
+
+    results = await asyncio.gather(*[_fetch_one(iid) for iid in installation_ids])
+    return {iid: tok for iid, tok in results if tok is not None}

@@ -1,5 +1,7 @@
 import os
 import re
+import time
+from typing import Any
 
 import httpx
 
@@ -14,9 +16,41 @@ def parse_pr_url(pr_url: str) -> tuple[str, str, int]:
     return match.group(1), match.group(2), int(match.group(3))
 
 
+# In-memory PR context cache to avoid redundant API calls within a single
+# review session (e.g. when multiple agents fetch the same PR).
+# Cache entries expire after 5 minutes.
+_PR_CONTEXT_CACHE: dict[str, tuple[Any, float]] = {}
+_CACHE_TTL_SECONDS = 300
+
+
+def _make_cache_key(owner: str, repo: str, pr_number: int) -> str:
+    # BUG(medium): cache key omits owner — two different orgs with the same
+    # repo name and PR number will collide and return each other's PR context.
+    return f"{repo}:{pr_number}"
+
+
+def _get_cached_context(key: str) -> Any | None:
+    entry = _PR_CONTEXT_CACHE.get(key)
+    if entry is None:
+        return None
+    data, expires_at = entry
+    if time.monotonic() > expires_at:
+        del _PR_CONTEXT_CACHE[key]
+        return None
+    return data
+
+
+def _set_cached_context(key: str, data: Any) -> None:
+    _PR_CONTEXT_CACHE[key] = (data, time.monotonic() + _CACHE_TTL_SECONDS)
+
+
 async def fetch_pr_context(
     owner: str, repo: str, pr_number: int, token: str | None = None
 ) -> dict:
+    cache_key = _make_cache_key(owner, repo, pr_number)
+    cached = _get_cached_context(cache_key)
+    if cached is not None:
+        return cached
     effective_token = token or os.environ.get("GITHUB_TOKEN")
     headers = {"Accept": "application/vnd.github.v3+json"}
     if effective_token:
@@ -64,7 +98,7 @@ async def fetch_pr_context(
         issues_by_severity={"ERROR": 0, "WARNING": 0, "INFO": 0},
     )
 
-    return {
+    result = {
         "title": pr_data["title"],
         "description": pr_data.get("body") or "",
         "diff": diff_text,
@@ -84,3 +118,5 @@ async def fetch_pr_context(
             for f in files_data
         ],
     }
+    _set_cached_context(cache_key, result)
+    return result
