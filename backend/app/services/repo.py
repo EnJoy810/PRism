@@ -41,21 +41,25 @@ async def ensure_repo(
     """返回本地克隆路径，失败返回 None（调用方降级处理）。"""
     cache_path = _cache_path(owner, repo, head_sha)
 
-    done_marker = cache_path / ".done"
-    if cache_path.exists() and done_marker.exists():
+    # Fast path: already done, no lock needed.
+    if (cache_path / ".done").exists():
         logger.info("repo cache hit: %s/%s@%s", owner, repo, head_sha[:8])
         return cache_path
-    if cache_path.exists() and not done_marker.exists():
-        logger.warning("incomplete clone for %s/%s@%s, re-cloning", owner, repo, head_sha[:8])
-        shutil.rmtree(cache_path, ignore_errors=True)
 
     lock_key = f"{owner}/{repo}/{head_sha}"
     if lock_key not in _clone_locks:
         _clone_locks[lock_key] = asyncio.Lock()
 
     async with _clone_locks[lock_key]:
-        if cache_path.exists():
+        # Re-check inside lock — another coroutine may have finished while we waited.
+        if (cache_path / ".done").exists():
+            logger.info("repo cache hit (after lock): %s/%s@%s", owner, repo, head_sha[:8])
             return cache_path
+
+        # Clean up any partial clone before retrying.
+        if cache_path.exists():
+            logger.warning("incomplete clone for %s/%s@%s, re-cloning", owner, repo, head_sha[:8])
+            shutil.rmtree(cache_path, ignore_errors=True)
 
         try:
             await _clone_by_fetch(owner, repo, head_sha, token, cache_path)
