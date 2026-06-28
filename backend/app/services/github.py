@@ -84,3 +84,8 @@ async def fetch_pr_context(
             for f in files_data
         ],
     }
+
+
+def get_pr_author(pr_data: dict) -> str:
+    """Return the PR author login."""
+    return pr_data.get("user", {}).get("login", "unknown")
