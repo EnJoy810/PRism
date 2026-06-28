@@ -370,3 +370,45 @@ diff --git a/b.py b/b.py
     assert len(callers) == 3
     files = {c["file"] for c in callers}
     assert files == {"a.py", "b.py"}
+
+
+class TestDetectUnsafeParamSinks:
+    def test_dict_key_usage_triggers(self):
+        from app.services.blast_radius import detect_unsafe_param_sinks
+        diff = "+def _rate_limit(key: str):\n+    counters = {}\n+    counters[key] += 1\n"
+        assert detect_unsafe_param_sinks(diff) is True
+
+    def test_array_index_usage_triggers(self):
+        from app.services.blast_radius import detect_unsafe_param_sinks
+        diff = "+def get_item(idx):\n+    return items[idx]\n"
+        assert detect_unsafe_param_sinks(diff) is True
+
+    def test_none_guard_suppresses_trigger(self):
+        from app.services.blast_radius import detect_unsafe_param_sinks
+        diff = (
+            "+def _rate_limit(key: str):\n"
+            "+    if key is None:\n"
+            "+        return\n"
+            "+    counters[key] += 1\n"
+        )
+        assert detect_unsafe_param_sinks(diff) is False
+
+    def test_isinstance_guard_suppresses_trigger(self):
+        from app.services.blast_radius import detect_unsafe_param_sinks
+        diff = "+def process(val):\n+    isinstance(val, str)\n+    data[val] = 1\n"
+        assert detect_unsafe_param_sinks(diff) is False
+
+    def test_no_sink_returns_false(self):
+        from app.services.blast_radius import detect_unsafe_param_sinks
+        diff = "+def add(a, b):\n+    return a + b\n"
+        assert detect_unsafe_param_sinks(diff) is False
+
+    def test_empty_diff_returns_false(self):
+        from app.services.blast_radius import detect_unsafe_param_sinks
+        assert detect_unsafe_param_sinks("") is False
+
+    def test_only_context_lines_ignored(self):
+        from app.services.blast_radius import detect_unsafe_param_sinks
+        # Lines without '+' prefix are context lines, should be ignored
+        diff = " def old(key):\n     data[key] = 1\n"
+        assert detect_unsafe_param_sinks(diff) is False

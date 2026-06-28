@@ -20,6 +20,61 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_DEPTH = 2
 
+# AST patterns that indicate a function parameter is used in a "sensitive sink":
+# dict key, array index, attribute access, or direct pass to another call.
+# These are the patterns where an unexpected None / wrong type causes a runtime error.
+_UNSAFE_SINK_PATTERNS = [
+    # dict key: d[key], cache[key], counters[value]
+    re.compile(r'\b(\w+)\s*\['),
+    # attribute access on a parameter: obj.attr, result.value
+    re.compile(r'\b(\w+)\s*\.'),
+    # getattr call: getattr(obj, key)
+    re.compile(r'\bgetattr\s*\('),
+    # setattr call
+    re.compile(r'\bsetattr\s*\('),
+    # format / join using param: f"{key}", "".join(items)
+    re.compile(r'f["\'].*\{(\w+)\}'),
+]
+
+
+def detect_unsafe_param_sinks(fn_diff_chunk: str) -> bool:
+    """Return True if the changed function body contains a 'sensitive sink':
+    a pattern where a parameter is used as a dict key, array index, or
+    attribute access without a prior None/type guard.
+
+    This is Layer 1 of the caller-aware analysis: a cheap deterministic AST
+    filter that decides whether a caller scan is worth doing. Only functions
+    that pass this gate should trigger an LLM caller-parameter check.
+
+    Uses regex over the diff chunk (+ lines only) rather than full tree-sitter
+    parsing, because we only need a heuristic signal, not perfect precision.
+    If the function body is short enough to be ambiguous, we err on the side
+    of triggering the scan (false positives here are cheap; false negatives are not).
+    """
+    added_lines = [
+        line[1:]  # strip the leading '+'
+        for line in fn_diff_chunk.splitlines()
+        if line.startswith("+") and not line.startswith("+++")
+    ]
+    if not added_lines:
+        return False
+
+    fn_body = "\n".join(added_lines)
+
+    # Check for explicit None guard or type check — if the function already
+    # validates its input, the risk is lower and we skip the caller scan.
+    has_guard = bool(re.search(
+        r'\bif\s+\w+\s+is\s+(not\s+)?None\b'
+        r'|\bisinstance\s*\('
+        r'|\bif\s+not\s+\w+\b'
+        r'|\bAssert\b|\bassert\b',
+        fn_body,
+    ))
+    if has_guard:
+        return False
+
+    return any(pat.search(fn_body) for pat in _UNSAFE_SINK_PATTERNS)
+
 
 def find_new_callers_in_diff(diff: str) -> list[dict]:
     """从 diff 里直接找新函数的调用点。
