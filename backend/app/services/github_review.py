@@ -6,8 +6,81 @@ import httpx
 from app.models.review import ReviewIssue, ReviewResult
 
 _BOT_SIGNATURE = "## PRism Review"
+_CHECK_NAME = "PRism Review"
 
 logger = logging.getLogger(__name__)
+
+
+async def create_check_run(
+    owner: str,
+    repo: str,
+    head_sha: str,
+    github_token: str,
+) -> int | None:
+    """Create an in_progress check run. Returns check_run_id or None on failure."""
+    async with httpx.AsyncClient(timeout=15) as client:
+        try:
+            resp = await client.post(
+                f"https://api.github.com/repos/{owner}/{repo}/check-runs",
+                headers={
+                    "Authorization": f"token {github_token}",
+                    "Accept": "application/vnd.github.v3+json",
+                },
+                json={
+                    "name": _CHECK_NAME,
+                    "head_sha": head_sha,
+                    "status": "in_progress",
+                    "output": {
+                        "title": "Reviewing...",
+                        "summary": "PRism is analyzing your changes.",
+                    },
+                },
+            )
+            resp.raise_for_status()
+            check_id = resp.json().get("id")
+            logger.info("Created check run %s for %s/%s@%s", check_id, owner, repo, head_sha[:8])
+            return check_id
+        except Exception as e:
+            logger.warning("Failed to create check run: %s", e)
+            return None
+
+
+async def update_check_run(
+    owner: str,
+    repo: str,
+    check_run_id: int,
+    github_token: str,
+    conclusion: str,
+    issue_count: int,
+    risk_level: str,
+) -> None:
+    """Update check run to completed with conclusion."""
+    if conclusion == "action_required":
+        title = f"Found {issue_count} issue{'s' if issue_count != 1 else ''} · Risk: {risk_level}"
+    else:
+        title = "No issues found"
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        try:
+            resp = await client.patch(
+                f"https://api.github.com/repos/{owner}/{repo}/check-runs/{check_run_id}",
+                headers={
+                    "Authorization": f"token {github_token}",
+                    "Accept": "application/vnd.github.v3+json",
+                },
+                json={
+                    "status": "completed",
+                    "conclusion": conclusion,
+                    "output": {
+                        "title": title,
+                        "summary": f"PRism review complete. Risk level: **{risk_level}**. {issue_count} issue(s) found.",
+                    },
+                },
+            )
+            resp.raise_for_status()
+            logger.info("Updated check run %s: %s", check_run_id, conclusion)
+        except Exception as e:
+            logger.warning("Failed to update check run %s: %s", check_run_id, e)
 
 _MAX_RETRIES = 3
 _BASE_DELAY = 1.0
