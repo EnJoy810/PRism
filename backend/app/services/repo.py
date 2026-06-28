@@ -23,7 +23,7 @@ def _cache_path(owner: str, repo: str, head_sha: str) -> Path:
 
 
 def _clone_url(owner: str, repo: str, token: str) -> str:
-    return f"git@github.com:{owner}/{repo}.git"
+    return f"https://x-access-token:{token}@github.com/{owner}/{repo}.git"
 
 
 def _redact_token(text: str, token: str) -> str:
