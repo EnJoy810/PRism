@@ -1,9 +1,49 @@
 import os
 import re
+import time
+from collections import deque
 
 import httpx
 
 from app.models.review import ReviewStats
+
+
+class GitHubRateLimiter:
+    """Token-bucket style rate limiter for GitHub API calls.
+
+    Tracks request timestamps within a sliding window and enforces
+    a maximum request count per window.
+    """
+
+    def __init__(self, max_requests: int = 5000, window_seconds: int = 3600):
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self._timestamps: deque[float] = deque()
+
+    def is_allowed(self) -> bool:
+        now = time.time()
+        cutoff = now - self.window_seconds
+        while self._timestamps and self._timestamps[0] >= cutoff:
+            self._timestamps.popleft()
+        if len(self._timestamps) < self.max_requests:
+            self._timestamps.append(now)
+            return True
+        return False
+
+    def remaining(self) -> int:
+        now = time.time()
+        cutoff = now - self.window_seconds
+        while self._timestamps and self._timestamps[0] >= cutoff:
+            self._timestamps.popleft()
+        return max(0, self.max_requests - len(self._timestamps))
+
+    def reset_at(self) -> float:
+        if not self._timestamps:
+            return time.time()
+        return self._timestamps[0] + self.window_seconds
+
+
+_default_rate_limiter = GitHubRateLimiter()
 
 
 def parse_pr_url(pr_url: str) -> tuple[str, str, int]:
