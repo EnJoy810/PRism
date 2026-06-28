@@ -110,6 +110,7 @@ class WorkerSettings:
     on_shutdown = shutdown
     redis_settings = None
     max_tries = 3
+    job_timeout = 900  # 15 minutes
 
     @classmethod
     def from_url(cls, redis_url: str):
