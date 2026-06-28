@@ -286,9 +286,24 @@ class ReviewGraph:
                 diff_tokens,
                 changed_node_ids=changed_node_ids,
             )
+
+            # Supplement BFS with call sites found directly in the diff.
+            # Handles new functions whose callers couldn't be import-resolved.
+            from app.services.blast_radius import find_new_callers_in_diff
+            diff_callers = find_new_callers_in_diff(diff)
+            bfs_fns = {item["changed_fn"].rsplit(":", 1)[-1] for item in result}
+            added_from_diff = 0
+            for item in diff_callers:
+                fn_short = item["changed_fn"].rsplit(":", 1)[-1]
+                if fn_short not in bfs_fns:
+                    result.append(item)
+                    added_from_diff += 1
+
             logger.info(
-                "blast_radius[ok/builtin]: changed_fns=%d changed_nodes=%d caller_groups=%d — %s",
-                len(changed_fns), len(changed_node_ids), len(result), pr_url,
+                "blast_radius[ok/builtin]: changed_fns=%d changed_nodes=%d "
+                "caller_groups=%d diff_callers=%d — %s",
+                len(changed_fns), len(changed_node_ids),
+                len(result), added_from_diff, pr_url,
             )
             return result
 

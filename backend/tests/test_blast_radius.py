@@ -277,3 +277,96 @@ def test_codegraph_backend_respects_token_budget(mock_run, _mock_which, tmp_path
     )
     # at most one group returned (budget hit after first fn)
     assert len(result) <= 1
+
+
+# ---------------------------------------------------------------------------
+# find_new_callers_in_diff
+# ---------------------------------------------------------------------------
+
+from app.services.blast_radius import find_new_callers_in_diff
+
+
+DIFF_NEW_FN_AND_CALLER = """\
+diff --git a/app/services/rate_limit.py b/app/services/rate_limit.py
+--- /dev/null
++++ b/app/services/rate_limit.py
+@@ -0,0 +1,5 @@
++async def is_rate_limited(redis, installation_id):
++    key = f"prism:rate:{installation_id}"
++    count = await redis.incr(key)
++    return count > 20
+diff --git a/app/routers/webhook.py b/app/routers/webhook.py
+--- a/app/routers/webhook.py
++++ b/app/routers/webhook.py
+@@ -10,3 +10,5 @@
++from app.services.rate_limit import is_rate_limited
++
++    if await is_rate_limited(redis, job.installation_id):
++        return JSONResponse(status_code=429)
+"""
+
+
+def test_find_new_callers_detects_call_in_other_file():
+    result = find_new_callers_in_diff(DIFF_NEW_FN_AND_CALLER)
+    assert len(result) == 1
+    item = result[0]
+    assert "is_rate_limited" in item["changed_fn"]
+    assert item["from_diff"] is True
+    callers = item["callers"]
+    assert len(callers) == 1
+    assert callers[0]["file"] == "app/routers/webhook.py"
+    assert "is_rate_limited" in callers[0]["code"]
+
+
+def test_find_new_callers_skips_definition_line():
+    """The function definition line itself should not appear as a call site."""
+    result = find_new_callers_in_diff(DIFF_NEW_FN_AND_CALLER)
+    for item in result:
+        for caller in item["callers"]:
+            # definition lines contain 'def is_rate_limited('
+            assert "def is_rate_limited" not in caller["code"]
+
+
+def test_find_new_callers_no_callers_returns_empty():
+    diff_no_caller = """\
+diff --git a/app/services/util.py b/app/services/util.py
+--- /dev/null
++++ b/app/services/util.py
+@@ -0,0 +1,2 @@
++def helper():
++    return 42
+"""
+    result = find_new_callers_in_diff(diff_no_caller)
+    assert result == []
+
+
+def test_find_new_callers_empty_diff():
+    assert find_new_callers_in_diff("") == []
+
+
+def test_find_new_callers_multiple_call_sites():
+    diff = """\
+diff --git a/lib/foo.py b/lib/foo.py
+--- /dev/null
++++ b/lib/foo.py
+@@ -0,0 +1,2 @@
++def new_util(x):
++    return x
+diff --git a/a.py b/a.py
+--- a/a.py
++++ b/a.py
+@@ -1,0 +2,2 @@
++    result1 = new_util(1)
++    result2 = new_util(2)
+diff --git a/b.py b/b.py
+--- a/b.py
++++ b/b.py
+@@ -1,0 +2,1 @@
++    val = new_util(99)
+"""
+    result = find_new_callers_in_diff(diff)
+    assert len(result) == 1
+    callers = result[0]["callers"]
+    assert len(callers) == 3
+    files = {c["file"] for c in callers}
+    assert files == {"a.py", "b.py"}
