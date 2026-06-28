@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 import re
@@ -6,6 +7,8 @@ import sqlite3
 import time
 from collections.abc import Sequence
 from pathlib import Path
+
+from json_repair import repair_json
 
 from app.agents.judge import JudgeAgent
 from app.agents.performance import PerformanceAgent
@@ -286,9 +289,24 @@ class ReviewGraph:
                 diff_tokens,
                 changed_node_ids=changed_node_ids,
             )
+
+            # Supplement BFS with call sites found directly in the diff.
+            # Handles new functions whose callers couldn't be import-resolved.
+            from app.services.blast_radius import find_new_callers_in_diff
+            diff_callers = find_new_callers_in_diff(diff)
+            bfs_fns = {item["changed_fn"].rsplit(":", 1)[-1] for item in result}
+            added_from_diff = 0
+            for item in diff_callers:
+                fn_short = item["changed_fn"].rsplit(":", 1)[-1]
+                if fn_short not in bfs_fns:
+                    result.append(item)
+                    added_from_diff += 1
+
             logger.info(
-                "blast_radius[ok/builtin]: changed_fns=%d changed_nodes=%d caller_groups=%d — %s",
-                len(changed_fns), len(changed_node_ids), len(result), pr_url,
+                "blast_radius[ok/builtin]: changed_fns=%d changed_nodes=%d "
+                "caller_groups=%d diff_callers=%d — %s",
+                len(changed_fns), len(changed_node_ids),
+                len(result), added_from_diff, pr_url,
             )
             return result
 
@@ -298,6 +316,162 @@ class ReviewGraph:
                 type(e).__name__, e, pr_url,
             )
             return []
+
+    async def _run_caller_parameter_check(
+        self,
+        blast_radius: list[dict],
+        diff: str,
+        max_callers_per_fn: int = 3,
+        max_functions: int = 5,
+    ) -> list[FindingSchema]:
+        """Proactive check: do callers pass arguments that the changed function mishandles?
+
+        Unlike _run_impact_verification (which requires a finding first), this pass
+        works without any prior finding. It looks at each changed function's diff chunk
+        alongside its callers and asks a narrow question: "does any caller pass a value
+        the function doesn't handle correctly?"
+
+        This catches caller-aware bugs like None-key collisions that are invisible when
+        the function is analyzed in isolation.
+        """
+        from app.services.llm import LLMClient
+
+        if not blast_radius or not diff:
+            return []
+
+        # Build file→diff-chunk map so we can show the actual function body
+        file_diffs = split_diff_by_file(diff)
+
+        llm = LLMClient()
+        new_findings: list[FindingSchema] = []
+
+        async def check_one(item: dict) -> list[FindingSchema]:
+            changed_fn: str = item.get("changed_fn", "")
+            callers = item.get("callers", [])[:max_callers_per_fn]
+            if not callers or ":" not in changed_fn:
+                return []
+
+            fn_file, fn_short = changed_fn.rsplit(":", 1)
+            fn_diff_chunk = file_diffs.get(fn_file, "")
+            if not fn_diff_chunk:
+                return []
+
+            call_site_sections = []
+            for caller in callers:
+                snippet = _extract_call_site(caller.get("code", ""), fn_short)
+                call_site_sections.append(
+                    f"[Caller] {caller['file']}:{caller['start_line']} `{caller['fn']}`\n"
+                    f"```\n{snippet}\n```"
+                )
+
+            prompt = (
+                f"A function `{fn_short}` in `{fn_file}` was changed.\n\n"
+                f"[FUNCTION DIFF]\n```diff\n{fn_diff_chunk[:1200]}\n```\n\n"
+                f"[CALLERS]\n"
+                + "\n\n".join(call_site_sections)
+                + "\n\n"
+                "Question: Does any caller pass an argument value that this function "
+                "does not handle correctly? Look ONLY for:\n"
+                "- None/null/undefined passed where the function expects a non-null value\n"
+                "- Wrong type passed (str vs int, dict vs list, etc.)\n"
+                "- Missing required argument\n"
+                "- Value used as a dict key or array index without validation\n\n"
+                "Output JSON only. If no problem:\n"
+                '{"issues": []}\n'
+                "If a problem exists:\n"
+                '{"issues": [{"caller_file": "path", "caller_fn": "name", '
+                '"line": N, "arg": "argument expression", '
+                '"reason": "one sentence why this causes a problem"}]}'
+            )
+
+            try:
+                response = await llm.chat(
+                    messages=[
+                        {"role": "system", "content": (
+                            "You are a strict code analyst. "
+                            "Report ONLY issues where a caller passes an argument value "
+                            "that the changed function clearly mishandles. "
+                            "Do not speculate. Only report if the function code shows "
+                            "the value would cause an error or wrong behavior. "
+                            "Output valid JSON only."
+                        )},
+                        {"role": "user", "content": prompt},
+                    ],
+                    max_tokens=512,
+                    temperature=0.0,
+                )
+            except Exception as e:
+                logger.debug("caller_parameter_check llm error: %s", e)
+                return []
+
+            try:
+                content = response or ""
+                logger.debug("caller_parameter_check raw response for %s: %s", changed_fn, content[:200])
+                data = json.loads(repair_json(content))
+                issues = data.get("issues", [])
+            except Exception as e:
+                logger.debug("caller_parameter_check parse error for %s: %s", changed_fn, e)
+                return []
+
+            results = []
+            for issue in issues:
+                caller_file = issue.get("caller_file", "")
+                caller_fn = issue.get("caller_fn", "")
+                arg = issue.get("arg", "")
+                reason = issue.get("reason", "")
+                line = issue.get("line")
+                if not (caller_file and reason):
+                    continue
+                arg_label = f" (arg: `{arg}`)" if arg else ""
+                results.append(FindingSchema(
+                    file=caller_file,
+                    line=line,
+                    title=f"Caller passes invalid argument to `{fn_short}`{arg_label}",
+                    description=(
+                        f"`{caller_fn}` in `{caller_file}` calls `{fn_short}` "
+                        f"with a value the function does not handle: {reason}"
+                    ),
+                    severity="WARNING",
+                    confidence=0.75,
+                    category="quality",
+                    impact_type="runtime_error",
+                    impact_statement=f"Calling `{fn_short}` with this argument may cause a runtime error.",
+                    evidence=[reason],
+                    evidence_source="CONTEXT",
+                ))
+            return results
+
+        # Layer 1: AST gate — only check functions with unsafe param sinks
+        # (dict key, array index, attribute deref without prior None guard).
+        # Converts LLM task from "归因 (attribution)" to "验证 (verification)",
+        # keeping precision stable while avoiding subgraph noise.
+        from app.services.blast_radius import detect_unsafe_param_sinks
+
+        items_to_check = []
+        for item in blast_radius:
+            if not item.get("callers") or ":" not in item.get("changed_fn", ""):
+                continue
+            fn_file = item["changed_fn"].rsplit(":", 1)[0]
+            fn_diff_chunk = file_diffs.get(fn_file, "")
+            if fn_diff_chunk and detect_unsafe_param_sinks(fn_diff_chunk):
+                items_to_check.append(item)
+            if len(items_to_check) >= max_functions:
+                break
+
+        if not items_to_check:
+            logger.info("caller_parameter_check: no eligible blast_radius items (AST gate filtered all)")
+            return []
+
+        logger.info("caller_parameter_check: checking %d functions", len(items_to_check))
+        results_nested = await asyncio.gather(
+            *[check_one(item) for item in items_to_check],
+            return_exceptions=True,
+        )
+        for r in results_nested:
+            if isinstance(r, list):
+                new_findings.extend(r)
+        logger.info("caller_parameter_check: done — %d findings", len(new_findings))
+        return new_findings
 
     async def _run_impact_verification(
         self,
@@ -727,11 +901,21 @@ class ReviewGraph:
         blast_radius = context.get("blast_radius", [])
         if not blast_radius:
             logger.info("impact_verification: skipped (blast_radius empty)")
-        elif not findings:
-            logger.info("impact_verification: skipped (no findings to match against)")
+            logger.info("caller_parameter_check: skipped (blast_radius empty)")
         else:
-            impact_findings = await self._run_impact_verification(findings, blast_radius)
-            findings = list(findings) + impact_findings
+            # Run both passes concurrently:
+            # - impact_verification: finding-first (does this bug propagate to callers?)
+            # - caller_parameter_check: proactive (do callers pass bad args to changed fns?)
+            caller_findings = await self._run_caller_parameter_check(blast_radius, diff or "")
+            if isinstance(caller_findings, list):
+                findings = list(findings) + caller_findings
+
+            if not findings:
+                logger.info("impact_verification: skipped (no findings to match against)")
+            else:
+                impact_findings = await self._run_impact_verification(findings, blast_radius)
+                if isinstance(impact_findings, list):
+                    findings = list(findings) + impact_findings
 
         decision: str = judge_output["merge_recommendation"]
         if not findings:
@@ -1121,20 +1305,25 @@ def _format_blast_radius(blast_radius: list[dict]) -> str:
 
 
 def _extract_call_site(caller_code: str, callee_short_name: str, context_lines: int = 5) -> str:
-    """Extract a narrow snippet around where callee_short_name is called in caller_code.
+    """Extract a snippet around where callee_short_name is called in caller_code.
 
-    Returns ±context_lines lines around the first matching call site.
-    Falls back to the first 400 chars if no call site is found.
+    Always includes line 0 (function signature) so the LLM can see default argument
+    values like `user_id=None`. For short functions returns the full body.
     """
+    # Short functions: return the whole thing — no point truncating.
+    if len(caller_code) <= 600:
+        return caller_code
+
     lines = caller_code.splitlines()
     for i, line in enumerate(lines):
         # Match a call: function name followed by ( — avoids matching import/definition lines
         if callee_short_name in line and "(" in line and "def " not in line and "function " not in line:
-            start = max(0, i - context_lines)
+            # Always anchor at line 0 (function signature) so parameter defaults are visible.
+            start = 0
             end = min(len(lines), i + context_lines + 1)
             return "\n".join(lines[start:end])
     # No explicit call site found — return beginning of function for context
-    return caller_code[:400]
+    return caller_code[:600]
 
 
 def _downgrade_severity(severity_str: str) -> str:

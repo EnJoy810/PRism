@@ -1,3 +1,7 @@
+import time
+from collections import defaultdict
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
@@ -15,6 +19,42 @@ from app.services.github_review import post_review_to_github
 from app.services.llm import stream_analyze_pr
 
 router = APIRouter()
+
+_review_stats_store: dict[str, Any] = {}
+
+
+def _record_review_stat(repo: str, duration_ms: float, issue_count: int, risk_level: str) -> None:
+    if repo not in _review_stats_store:
+        _review_stats_store[repo] = {
+            "total_reviews": 0,
+            "total_issues_found": 0,
+            "total_duration_ms": 0.0,
+            "risk_distribution": defaultdict(int),
+            "last_review_at": None,
+        }
+    entry = _review_stats_store[repo]
+    entry["total_reviews"] += 1
+    entry["total_issues_found"] += issue_count
+    entry["total_duration_ms"] += duration_ms
+    entry["risk_distribution"][risk_level] += 1
+    entry["last_review_at"] = time.time()
+
+
+@router.get("/stats")
+async def get_review_stats(repo: str = Query(..., description="Repository in owner/repo format")):
+    entry = _review_stats_store[repo]
+    avg_duration = entry["total_duration_ms"] / entry["total_reviews"]
+    return {
+        "code": "0",
+        "data": {
+            "repo": repo,
+            "total_reviews": entry["total_reviews"],
+            "total_issues_found": entry["total_issues_found"],
+            "avg_duration_ms": round(avg_duration, 2),
+            "risk_distribution": dict(entry["risk_distribution"]),
+            "last_review_at": entry["last_review_at"],
+        },
+    }
 
 
 @router.get("/pr/meta")

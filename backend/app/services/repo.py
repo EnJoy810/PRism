@@ -41,21 +41,25 @@ async def ensure_repo(
     """返回本地克隆路径，失败返回 None（调用方降级处理）。"""
     cache_path = _cache_path(owner, repo, head_sha)
 
-    done_marker = cache_path / ".done"
-    if cache_path.exists() and done_marker.exists():
+    # Fast path: already done, no lock needed.
+    if (cache_path / ".done").exists():
         logger.info("repo cache hit: %s/%s@%s", owner, repo, head_sha[:8])
         return cache_path
-    if cache_path.exists() and not done_marker.exists():
-        logger.warning("incomplete clone for %s/%s@%s, re-cloning", owner, repo, head_sha[:8])
-        shutil.rmtree(cache_path, ignore_errors=True)
 
     lock_key = f"{owner}/{repo}/{head_sha}"
     if lock_key not in _clone_locks:
         _clone_locks[lock_key] = asyncio.Lock()
 
     async with _clone_locks[lock_key]:
-        if cache_path.exists():
+        # Re-check inside lock — another coroutine may have finished while we waited.
+        if (cache_path / ".done").exists():
+            logger.info("repo cache hit (after lock): %s/%s@%s", owner, repo, head_sha[:8])
             return cache_path
+
+        # Clean up any partial clone before retrying.
+        if cache_path.exists():
+            logger.warning("incomplete clone for %s/%s@%s, re-cloning", owner, repo, head_sha[:8])
+            shutil.rmtree(cache_path, ignore_errors=True)
 
         try:
             await _clone_by_fetch(owner, repo, head_sha, token, cache_path)
@@ -93,7 +97,7 @@ async def _clone_by_fetch(
     # GitHub does not allow fetching arbitrary SHAs by default.
     # Clone the default branch first (shallow), then fetch the exact SHA.
     proc = await asyncio.create_subprocess_exec(
-        "git", "clone", "--depth=1", url, str(dest),
+        "git", "clone", "--depth=1", "--template=", url, str(dest),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         env=env,
@@ -112,25 +116,6 @@ async def _clone_by_fetch(
     _, _ = await asyncio.wait_for(fetch_proc.communicate(), timeout=120)
     if fetch_proc.returncode == 0:
         await run("git", "-C", str(dest), "checkout", head_sha)
-    await _set_public_remote(owner, repo, dest, token)
-
-
-async def _set_public_remote(owner: str, repo: str, dest: Path, token: str) -> None:
-    proc = await asyncio.create_subprocess_exec(
-        "git",
-        "-C",
-        str(dest),
-        "remote",
-        "set-url",
-        "origin",
-        f"https://github.com/{owner}/{repo}.git",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
-    )
-    _, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
-    if proc.returncode != 0:
-        raise RuntimeError(_redact_token(stderr.decode(errors="replace"), token)[:500])
 
 
 def _evict_if_needed() -> None:

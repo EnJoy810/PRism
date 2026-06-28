@@ -10,6 +10,7 @@ Supports two backends:
 
 import json
 import logging
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -18,6 +19,168 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 DEFAULT_DEPTH = 2
+
+# AST patterns that indicate a function parameter is used in a "sensitive sink":
+# dict key, array index, attribute access, or direct pass to another call.
+# These are the patterns where an unexpected None / wrong type causes a runtime error.
+_UNSAFE_SINK_PATTERNS = [
+    # dict key: d[key], cache[key], counters[value]
+    re.compile(r'\b(\w+)\s*\['),
+    # attribute access on a parameter: obj.attr, result.value
+    re.compile(r'\b(\w+)\s*\.'),
+    # getattr call: getattr(obj, key)
+    re.compile(r'\bgetattr\s*\('),
+    # setattr call
+    re.compile(r'\bsetattr\s*\('),
+    # format / join using param: f"{key}", "".join(items)
+    re.compile(r'f["\'].*\{(\w+)\}'),
+]
+
+
+def detect_unsafe_param_sinks(fn_diff_chunk: str) -> bool:
+    """Return True if the changed function body contains a 'sensitive sink':
+    a pattern where a parameter is used as a dict key, array index, or
+    attribute access without a prior None/type guard.
+
+    This is Layer 1 of the caller-aware analysis: a cheap deterministic AST
+    filter that decides whether a caller scan is worth doing. Only functions
+    that pass this gate should trigger an LLM caller-parameter check.
+
+    Uses regex over the diff chunk (+ lines only) rather than full tree-sitter
+    parsing, because we only need a heuristic signal, not perfect precision.
+    If the function body is short enough to be ambiguous, we err on the side
+    of triggering the scan (false positives here are cheap; false negatives are not).
+    """
+    added_lines = [
+        line[1:]  # strip the leading '+'
+        for line in fn_diff_chunk.splitlines()
+        if line.startswith("+") and not line.startswith("+++")
+    ]
+    if not added_lines:
+        return False
+
+    fn_body = "\n".join(added_lines)
+
+    # Check for explicit None guard or type check — if the function already
+    # validates its input, the risk is lower and we skip the caller scan.
+    has_guard = bool(re.search(
+        r'\bif\s+\w+\s+is\s+(not\s+)?None\b'
+        r'|\bisinstance\s*\('
+        r'|\bif\s+not\s+\w+\b'
+        r'|\bAssert\b|\bassert\b',
+        fn_body,
+    ))
+    if has_guard:
+        return False
+
+    return any(pat.search(fn_body) for pat in _UNSAFE_SINK_PATTERNS)
+
+
+def find_new_callers_in_diff(diff: str) -> list[dict]:
+    """从 diff 里直接找新函数的调用点。
+
+    当 PR 同时新增了一个函数和调用它的代码时，graph BFS 依赖 import
+    解析，解析失败时 caller_groups=0。本函数直接扫 diff 的 + 行，
+    不依赖图索引，作为 BFS 的补充。
+
+    返回格式与 compute_blast_radius 一致：
+    [{"changed_fn": "file:name", "from_diff": True, "callers": [...]}]
+    """
+    # Step 1: extract new/changed function names from + lines
+    fn_patterns = [
+        re.compile(r"^\+\s*(?:async\s+)?def\s+(\w+)\s*\(", re.MULTILINE),
+        re.compile(
+            r"^\+\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+(\w+)\s*\(",
+            re.MULTILINE,
+        ),
+        re.compile(
+            r"^\+\s*(?:export\s+)?(?:const|let)\s+(\w+)\s*=\s*(?:async\s+)?\(",
+            re.MULTILINE,
+        ),
+    ]
+    _SKIP_NAMES = {
+        "if", "for", "while", "switch", "catch", "return", "throw",
+        "new", "delete", "typeof", "void", "await", "yield",
+    }
+    new_fns: set[str] = set()
+    for pat in fn_patterns:
+        new_fns.update(m.group(1) for m in pat.finditer(diff))
+    new_fns -= _SKIP_NAMES
+    new_fns = {n for n in new_fns if len(n) > 1}
+    if not new_fns:
+        return []
+
+    # Step 2: build per-file added-line index {file: [(line_num, content)]}
+    added_lines: dict[str, list[tuple[int, str]]] = {}
+    fn_definition_file: dict[str, str] = {}  # fn_name -> file where it's defined
+    current_file: str | None = None
+    current_line = 0
+
+    for raw in diff.split("\n"):
+        if raw.startswith("+++ b/"):
+            current_file = raw[6:]
+            current_line = 0
+            added_lines.setdefault(current_file, [])
+        elif raw.startswith("@@") and current_file is not None:
+            m = re.search(r"\+(\d+)", raw)
+            if m:
+                current_line = int(m.group(1)) - 1
+        elif current_file is not None:
+            if raw.startswith("+") and not raw.startswith("+++"):
+                current_line += 1
+                content = raw[1:]
+                added_lines[current_file].append((current_line, content))
+                # Track where each new function is defined
+                for fn_name in new_fns:
+                    if fn_name not in fn_definition_file:
+                        if re.search(
+                            r'(?:async\s+)?def\s+' + re.escape(fn_name) + r'\s*\('
+                            r'|(?:async\s+)?function\s+' + re.escape(fn_name) + r'\s*\('
+                            r'|(?:const|let)\s+' + re.escape(fn_name) + r'\s*=\s*(?:async\s+)?\(',
+                            content,
+                        ):
+                            fn_definition_file[fn_name] = current_file
+            elif raw.startswith(" "):
+                current_line += 1
+
+    # Step 3: for each new function, scan added lines of OTHER files for call sites
+    results: list[dict] = []
+    for fn_name in sorted(new_fns):
+        def_file = fn_definition_file.get(fn_name, "")
+        call_pat = re.compile(r'\b' + re.escape(fn_name) + r'\s*\(')
+        def_pat = re.compile(
+            r'(?:async\s+)?def\s+' + re.escape(fn_name) + r'\s*\('
+            r'|(?:async\s+)?function\s+' + re.escape(fn_name) + r'\s*\('
+            r'|(?:const|let)\s+' + re.escape(fn_name) + r'\s*=\s*(?:async\s+)?\('
+        )
+
+        call_sites: list[dict] = []
+        for file, entries in added_lines.items():
+            for line_num, content in entries:
+                if not call_pat.search(content):
+                    continue
+                if def_pat.search(content):
+                    continue  # skip the definition line itself
+                call_sites.append({
+                    "file": file,
+                    "fn": f"<call at line {line_num}>",
+                    "start_line": line_num,
+                    "code": content.rstrip(),
+                })
+
+        if call_sites:
+            changed_fn_key = f"{def_file}:{fn_name}" if def_file else fn_name
+            results.append({
+                "changed_fn": changed_fn_key,
+                "from_diff": True,
+                "callers": call_sites,
+            })
+            logger.debug(
+                "find_new_callers_in_diff: %s → %d call sites",
+                changed_fn_key, len(call_sites),
+            )
+
+    return results
 
 
 def compute_blast_radius(
