@@ -27,6 +27,13 @@ class FilterConfig(BaseModel):
     severity_threshold: Literal["ERROR", "WARNING", "INFO"] = "WARNING"
 
 
+class StatsConfig(BaseModel):
+    enabled: bool = True
+    retention_days: int = 0
+    max_records: int = 10000
+    aggregate_interval_minutes: int = 60
+
+
 class ReviewConfig(BaseModel):
     budget: BudgetConfig = BudgetConfig()
     agents: AgentConfig = AgentConfig()
@@ -34,6 +41,7 @@ class ReviewConfig(BaseModel):
     skip: list[str] = Field(default_factory=lambda: ["*.lock", "*.snap", "*.min.js"])
     callgraph_backend: Literal["builtin", "codegraph"] = "builtin"
     callgraph_enabled: bool = True  # set to false to disable blast_radius entirely (diff-only mode)
+    stats: StatsConfig = StatsConfig()
 
 
 class GithubConfig(BaseModel):
