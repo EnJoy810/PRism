@@ -185,7 +185,7 @@ def publication_gate(findings: list[FindingSchema], diff: str) -> list[FindingSc
         # CONTEXT 来源引用 blast radius 跨文件代码，不在 diff 里，
         # 跳过行号门控但要求 evidence 非空，防止纯幻觉
         if finding.evidence_source == "CONTEXT":
-            if not finding.evidence:
+            if finding.evidence:
                 continue
         else:
             if not finding_targets_added_line(finding, diff):

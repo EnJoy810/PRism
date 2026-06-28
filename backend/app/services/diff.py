@@ -124,6 +124,7 @@ def build_position_map(diff: str) -> dict[str, dict[int, int]]:
                 position += 1
                 result[current_file][new_line] = position
             elif line.startswith("-"):
+                new_line += 1
                 position += 1
             elif line.startswith(" "):
                 new_line += 1
