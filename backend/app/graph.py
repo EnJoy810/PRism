@@ -470,6 +470,11 @@ class ReviewGraph:
         for r in results_nested:
             if isinstance(r, list):
                 new_findings.extend(r)
+        for f in new_findings:
+            logger.info(
+                "caller_parameter_check: finding — %s:%s [%s] %s",
+                f.file, f.line, f.severity, f.title,
+            )
         logger.info("caller_parameter_check: done — %d findings", len(new_findings))
         return new_findings
 
@@ -632,6 +637,11 @@ class ReviewGraph:
         for r in results_nested:
             if isinstance(r, list):
                 new_findings.extend(r)
+        for f in new_findings:
+            logger.info(
+                "impact_verification: finding — %s:%s [%s] %s",
+                f.file, f.line, f.severity, f.title,
+            )
         logger.info("impact_verification: done — %d cross-file findings", len(new_findings))
         return new_findings
 
@@ -893,6 +903,8 @@ class ReviewGraph:
         before_gate = len(findings)
         findings = publication_gate(findings, diff or "")
         logger.info("publication gate done: %d -> %d findings", before_gate, len(findings))
+        for f in findings:
+            logger.info("post-gate finding — %s:%s [%s] %s", f.file, f.line, f.severity, f.title)
 
         # Phase 2: targeted cross-file impact verification.
         # For each finding, check whether the changed function's callers are also affected.
