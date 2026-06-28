@@ -57,10 +57,11 @@ def compute_blast_radius(
 
             if caller_list:
                 results.append({
-                    "changed_fn": (
-                        f"{changed['file']}:{changed['name']}"
-                        if changed["from_diff_line"] else changed["name"]
-                    ),
+                    # Always use "file:name" format so _run_impact_verification can key by file.
+                    # from_diff_line=False means the node was found via name-match fallback (lower
+                    # confidence), but the file is still reliably available from the nodes table.
+                    "changed_fn": f"{changed['file']}:{changed['name']}",
+                    "from_diff_line": changed["from_diff_line"],
                     "callers": caller_list,
                 })
 
@@ -254,43 +255,40 @@ def _read_snippet(file_path: Path, start_line: int, context_lines: int = 20) -> 
 
 
 def _caller_rows(conn: sqlite3.Connection, callee_id: int, callee_name: str) -> list[sqlite3.Row]:
-    columns = {row[1] for row in conn.execute("PRAGMA table_info(edges)").fetchall()}
-    if "callee_id" in columns:
-        rows = conn.execute(
-            """
-            SELECT n.id, n.file, n.name, n.start_line, n.code
-            FROM edges e
-            JOIN nodes n ON n.id = e.caller_id
-            WHERE e.callee_id = ?
-            ORDER BY n.file, n.start_line, n.name
-            """,
-            (callee_id,),
-        ).fetchall()
-        if rows:
-            return rows
+    """Return only import-verified callers (edges where callee_id was resolved via import graph).
 
-    rows = conn.execute(
+    Intentionally omits callee_name / callee_short_name fallbacks.  Those do a
+    global function-name search with no import verification, producing false
+    positives that degrade LLM precision ("garbage in, garbage out").  If
+    callee_id is NULL (import resolution didn't succeed), we return nothing —
+    better to provide no context than unverified context.
+    """
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(edges)").fetchall()}
+    if "callee_id" not in columns:
+        return []
+
+    verified = conn.execute(
         """
         SELECT n.id, n.file, n.name, n.start_line, n.code
         FROM edges e
         JOIN nodes n ON n.id = e.caller_id
-        WHERE e.callee_name = ?
+        WHERE e.callee_id = ?
         ORDER BY n.file, n.start_line, n.name
         """,
-        (callee_name,),
+        (callee_id,),
     ).fetchall()
-    if rows:
-        return rows
 
-    if "callee_short_name" in columns:
-        return conn.execute(
-            """
-            SELECT n.id, n.file, n.name, n.start_line, n.code
-            FROM edges e
-            JOIN nodes n ON n.id = e.caller_id
-            WHERE e.callee_short_name = ?
-            ORDER BY n.file, n.start_line, n.name
-            """,
+    if not verified:
+        # Log how many unverified candidates exist so we know when import resolution
+        # is failing and how much signal we're leaving on the table.
+        unverified_count = conn.execute(
+            "SELECT COUNT(*) FROM edges WHERE callee_name = ? AND callee_id IS NULL",
             (callee_name,),
-        ).fetchall()
-    return []
+        ).fetchone()[0]
+        if unverified_count:
+            logger.debug(
+                "caller_rows[%s]: 0 verified, %d unverified dropped (no import resolution)",
+                callee_name, unverified_count,
+            )
+
+    return verified

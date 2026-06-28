@@ -837,3 +837,161 @@ ghost-1 的两个注入 bug 都是**删除行引发的问题**：
 1. Judge noise filter 的误杀率：`_has_actionable_impact()` 实际误杀了多少合法 findings 未知
 2. Blast radius 实际成功率：clone 失败率未知，blast_radius 返回空的频率未知
 3. agent 编排应该模仿真人 review 过程，而不是并行独立扫描——待设计
+
+---
+
+## 调用图跨文件分析迭代记录（2026-06-19 ~ 2026-06-27）
+
+> 目标：给 LLM 看调用方上下文，找到"改了 A，B 跟着挂"的跨文件 bug。
+> 结论：四种方案均未能超越 diff-only 基线，精确率普遍下降。
+
+### Eval 设置
+
+7 个真实 PR（全部来自 cal.com），人工标注 golden 答案（19 条有意义的 review 评论）。
+
+评分方式：LLM judge（concurrency=5）逐条对比 AI 输出与 golden，判断是否命中。
+
+| 指标 | 含义 |
+|------|------|
+| Precision | 每条 AI 输出中有多少是对的（真阳/总输出） |
+| Recall | golden 中有多少被命中了（真阳/总 golden） |
+| F1 | P 和 R 的调和平均 |
+| TP(p) | Precision 口径的真阳（AI 输出中正确的条数） |
+| FP | 假阳（AI 输出中错误的条数） |
+| TP(r) | Recall 口径的真阳（golden 中被命中的条数） |
+
+---
+
+### 各版本迭代结果
+
+| 版本 | 方案 | P | R | F1 | Findings | TP(p) | FP | 命中/19 |
+|------|------|---|---|----|----------|-------|----|---------|
+| v3_7pr | **diff-only 基线** | **0.457** | 0.474 | **0.465** | 46 | 21 | 25 | 9 |
+| v6 | callgraph 名称匹配注入 prompt | 0.304 | 0.421 | 0.353 | 56 | 17 | 39 | 8 |
+| v7 | import 验证的 callgraph 注入 prompt | 0.344 | **0.474** | 0.399 | 61 | 21 | 40 | 9 |
+| v8 | finding-first（callgraph 从 prompt 移除） | 0.300 | 0.421 | 0.350 | 60 | 18 | 42 | 8 |
+
+**所有 callgraph 版本的 Precision 都比 diff-only 基线低。**
+
+---
+
+### v6：调用图名称匹配（2026-06-19 ~ 2026-06-21）
+
+**方案**：blast_radius 结果作为 `[CROSS-FILE CONTEXT]` 直接注入 agent prompt。callee 查找用函数名匹配（`callee_name = ?`）。
+
+**结果**：P 0.457 → 0.304（-15%），findings 增加 10 条，全是 FP。
+
+**原因分析**：
+1. 名称匹配不精确 — 不同文件里同名函数被当成调用方，把无关代码喂给 LLM
+2. Context Distraction（EMNLP 2025, arxiv 2510.05381）— 即使是正确检索到的上下文，如果量大，LLM 精确率也下降 13.9%~85%。我们的噪声更大，下降更严重
+
+**修复方向**：用 import 语句验证调用关系的真实性，过滤假调用方。
+
+---
+
+### v7：Import 验证调用图（2026-06-21 ~ 2026-06-25）
+
+**方案**：
+- `indexer.py` 新增 TS/JS import 解析（`_extract_ts_imports`），基于 `import { X } from './module'` 语句验证调用关系
+- `blast_radius.py` 的 `_caller_rows` 只使用 `callee_id`（import 验证后写入），丢弃未验证的名称匹配结果
+- Schema 版本控制（`_DB_SCHEMA_VERSION = 2`），旧版 DB 强制重建
+
+**结果**：P 0.304 → 0.344（+4%），Recall 恢复到 0.474，但 FP 仍 40 条，远高于基线的 25 条。
+
+**关键发现**：
+- TP 数量恢复（17 → 21），说明 import 验证确实去掉了假调用方，保留了真的
+- 但 FP 没有降低，甚至还多了 15 条 vs 基线
+- 根本问题：**调用方的完整函数体作为上下文喂给 LLM，会引发更多 FP**
+
+等量验证：v7 和 v3_7pr 都是 TP=21，但 v7 有 40 FP vs 基线 25 FP。多出的 15 个 FP 来自 LLM 看到了调用方代码后，开始对调用方本身报问题，而这些问题并不在 golden 里。
+
+---
+
+### 调研：行业如何处理调用图上下文（2026-06-25）
+
+三个主流方案：
+
+**方案 A — Copilot 2026：按需工具调用（agentic）**
+- Agent 自主决定是否需要看调用方代码
+- 优点：精准，只在真正需要时才加载上下文
+- 缺点：每次 PR review 消耗 token 多，慢，贵，不适合批量
+
+**方案 B — Aider：PageRank 相关性排名**
+- 全仓库建图，按 PageRank 给每个符号打分，只传最相关的 top-K 给 LLM
+- 优点：上下文窗口有限但相关性高
+- 缺点：离线索引成本高，PR review 是增量场景
+
+**方案 C — LLM4FPM（arxiv 2411.03079）：Finding-First + 调用点切片**
+- 先让 LLM 只看 diff，找出问题
+- 再对每个问题，针对性地问："这个问题会影响 X/Y/Z 这些调用方吗？"
+- 传入的是 call-site（±5 行上下文），而非整个函数体
+- 优点：把问题变成确认性问题而非发现性问题，LLM 更容易做对
+
+选择方案 C，原因：与 PRism 架构兼容（diff-only agents 已工作），不需要改 agent 层，只加一个后处理步骤。
+
+---
+
+### v8：Finding-First（2026-06-25 ~ 2026-06-27）
+
+**方案**：
+- Agent 只看 diff（从 `agent_context` 移除 `blast_radius`）
+- Judge 完成后，新增 `_run_impact_verification`：
+  - 对每个 finding，在 blast_radius 里找匹配的调用方
+  - 只传 ±5 行的 call-site 上下文（`_extract_call_site`）
+  - 针对性提问："这个 finding（[path:line]）会影响这个调用方吗？"
+  - 命中则生成新 finding，`evidence_source="CONTEXT"`，severity 降一级
+
+**结果**：P 0.300、R 0.421、F1 0.350。比 v7 和基线都差。
+
+**为什么 v8 比 v7 差？两个原因：**
+
+1. **blast_radius 在 eval 环境下未能生效**
+
+   核查 v8 benchmark 结果文件（`prism_benchmark_results_v8.json`）：review_comments 字段里没有任何 `evidence_source=CONTEXT` 的跨文件 finding，且运行日志里没有 `impact_verification: N new cross-file findings` 记录。
+
+   意味着：所有 7 个 PR 的 `blast_radius` 均为空列表，`_run_impact_verification` 从未被调用。
+
+   可能原因：eval 环境下 cal.com 仓库 clone 超时或失败（`_fetch_blast_radius` 的 `[degraded]` 路径），导致 blast_radius 始终 = []。
+
+2. **diff-only 的精确率本身有 LLM 非确定性**
+
+   v8 的 agent 层只看 diff，和 v3_7pr 基线理论上相同。但 v8 产出 60 findings vs 基线 46 findings，说明相同架构下不同批次 LLM 输出有波动。P=0.300 可能只是本次运行的噪声范围内。
+
+**核心结论**：Finding-First 方案本身未经真正测试，因为 blast_radius 没有工作。
+
+---
+
+### 总结：为什么调用图没有改善指标
+
+三个根本问题，按严重程度排序：
+
+**1. blast_radius 实际执行成功率未知（工程问题）**
+
+eval 环境下 clone 成功率不清楚。`_fetch_blast_radius` 有完整的降级路径，但没有系统性的 debug 信息记录成功/失败率。如果 blast_radius = []，整个特性等于没有运行。
+
+**2. Context Distraction（算法问题）**
+
+即使 blast_radius 成功，把调用方代码加入 prompt 本身就会降低精确率。v7 数据证明：TP 数量不变（21=21），但 FP 从 25 涨到 40，新增的 15 个 FP 是 LLM 对调用方本身的误报。Finding-First 理论上可以缓解这个问题，但需要 blast_radius 先能工作。
+
+**3. eval set 不包含跨文件 bug（评测问题）**
+
+golden 答案（19 条）全部是 diff 内可见的问题。没有一条 golden 说"改了 A，导致 B 挂了"。所以即使调用图能发现跨文件 bug，也不会体现在这个 eval 的 Recall 指标里。这是 eval set 的局限，不是算法的问题。
+
+---
+
+### 后续方向
+
+**短期（不需要等 blast_radius）**：
+- 接入 linter（Bandit / Ruff 用于 Python，oxlint 用于 TS）
+- Linter 确定性问题直接进 findings，不走 LLM，预期可提高 TP 数量
+- arxiv 2411.03079 数据：纯 LLM 精确率 65%，SAST+LLM 混合接近 90%
+
+**中期（需要 blast_radius 先 debug）**：
+1. 在 eval 环境加详细日志，确认 blast_radius 实际成功率
+2. 如果 clone 成功率 > 80%，才值得继续 finding-first
+3. 补充 eval set，专门加入跨文件 bug 场景
+
+**架构结论**：
+- diff-only 基线（F1=0.465）是当前最优，先以此为基础做 linter 集成
+- 调用图作为增强特性继续维护，但不作为下一个迭代重点
+- finding-first 方案理论上正确，等 blast_radius 稳定后再验证

@@ -225,12 +225,16 @@ class ReviewGraph:
 
             owner, repo, pr_number = parse_pr_url(pr_url)
 
+            cfg = load_config()
+            if not cfg.review.callgraph_enabled:
+                logger.info("blast_radius[skip]: callgraph_enabled=false — %s", pr_url)
+                return []
+
             head_sha = context.get("head_sha", "")
             if not head_sha:
                 logger.info("blast_radius[skip]: no head_sha in context — %s", pr_url)
                 return []
 
-            cfg = load_config()
             token = context.get("github_token") or cfg.github_token or os.environ.get("GITHUB_TOKEN", "")
             if not token:
                 logger.info("blast_radius[skip]: no github token — %s", pr_url)
@@ -294,6 +298,168 @@ class ReviewGraph:
                 type(e).__name__, e, pr_url,
             )
             return []
+
+    async def _run_impact_verification(
+        self,
+        findings: list[FindingSchema],
+        blast_radius: list[dict],
+        max_callers_per_fn: int = 3,
+    ) -> list[FindingSchema]:
+        """Second-pass: for each finding, check if its callers are also affected.
+
+        This is the "finding-first" pattern: instead of pre-loading all caller code into
+        the review prompt (which inflates FP), we first find issues in the diff, then ask
+        a narrow, targeted question — "does THIS specific issue also impact these callers?"
+
+        Only generates new FindingSchema entries for callers that are verifiably impacted.
+        """
+        from app.services.llm import LLMClient
+
+        # Build a lookup: changed_file → list of blast_radius items.
+        # Since blast_radius v2 fix, changed_fn is always "file:name" format.
+        # Guard against old-format items (no ":" means no file info → skip with a warning).
+        file_to_blast: dict[str, list[dict]] = {}
+        skipped_no_file = 0
+        for item in blast_radius:
+            changed_fn: str = item.get("changed_fn", "")
+            if ":" in changed_fn:
+                file_part = changed_fn.rsplit(":", 1)[0]
+                file_to_blast.setdefault(file_part, []).append(item)
+            else:
+                skipped_no_file += 1
+
+        if skipped_no_file:
+            logger.warning(
+                "impact_verification: %d blast_radius items have no file prefix — skipped",
+                skipped_no_file,
+            )
+
+        blast_files = set(file_to_blast.keys())
+        finding_files = {f.file for f in findings}
+        matched_files = blast_files & finding_files
+        logger.info(
+            "impact_verification: blast_groups=%d blast_files=%d finding_files=%d matched_files=%d",
+            len(blast_radius), len(blast_files), len(finding_files), len(matched_files),
+        )
+
+        if not file_to_blast:
+            logger.info("impact_verification: no blast items with file info — skipping")
+            return []
+
+        llm = LLMClient()
+        new_findings: list[FindingSchema] = []
+
+        async def check_one(finding: FindingSchema, item: dict) -> list[FindingSchema]:
+            callers = item.get("callers", [])[:max_callers_per_fn]
+            if not callers:
+                return []
+
+            changed_fn = item.get("changed_fn", "")
+            fn_short = changed_fn.rsplit(":", 1)[-1] if ":" in changed_fn else changed_fn
+
+            # Build call-site snippets (narrow: ±5 lines around the actual call)
+            call_site_sections = []
+            for caller in callers:
+                snippet = _extract_call_site(caller.get("code", ""), fn_short)
+                call_site_sections.append(
+                    f"[Caller] {caller['file']}:{caller['start_line']} `{caller['fn']}`\n"
+                    f"```\n{snippet}\n```"
+                )
+
+            prompt = (
+                f"A code change was made to `{changed_fn}`.\n"
+                f"The following issue was found in that function:\n\n"
+                f"  [{finding.severity}] {finding.title}\n"
+                f"  {finding.description}\n\n"
+                f"Below are the call sites where this function is called from other files.\n"
+                f"For EACH call site, determine: does the caller pass arguments or use the "
+                f"return value in a way that would trigger or be affected by this issue?\n\n"
+                + "\n\n".join(call_site_sections)
+                + "\n\nOutput JSON only:\n"
+                '{"impacts": [{"file": "path", "fn": "caller_fn", "line": N, '
+                '"reason": "why this caller is affected"}]}\n'
+                'If no callers are affected, output {"impacts": []}'
+            )
+
+            try:
+                response = await llm.chat(
+                    messages=[
+                        {"role": "system", "content": (
+                            "You are a precise code impact analyst. "
+                            "Only report a caller as impacted if there is a direct, "
+                            "concrete reason based on the code shown. "
+                            "Do not speculate. Output valid JSON only."
+                        )},
+                        {"role": "user", "content": prompt},
+                    ],
+                    max_tokens=512,
+                    temperature=0.0,
+                )
+            except Exception as e:
+                logger.debug("impact_verification llm error: %s", e)
+                return []
+
+            import json
+
+            from json_repair import repair_json
+            try:
+                content = response.choices[0].message.content or ""
+                data = json.loads(repair_json(content))
+                impacts = data.get("impacts", [])
+            except Exception:
+                return []
+
+            results = []
+            for imp in impacts:
+                imp_file = imp.get("file", "")
+                imp_fn = imp.get("fn", "")
+                imp_line = imp.get("line")
+                reason = imp.get("reason", "")
+                if not (imp_file and reason):
+                    continue
+                results.append(FindingSchema(
+                    file=imp_file,
+                    line=imp_line,
+                    title=f"Cross-file impact: {finding.title}",
+                    description=(
+                        f"The issue in `{changed_fn}` propagates to caller `{imp_fn}`: "
+                        f"{reason}"
+                    ),
+                    severity=_downgrade_severity(finding.severity),
+                    confidence=min(finding.confidence * 0.85, 0.9),
+                    category=finding.category,
+                    impact_type=finding.impact_type,
+                    impact_statement=finding.impact_statement,
+                    evidence=[reason],
+                    evidence_source="CONTEXT",
+                ))
+            return results
+
+        # Match each finding to its blast_radius item and run checks concurrently
+        tasks = []
+        for finding in findings:
+            items = file_to_blast.get(finding.file, [])
+            for item in items:
+                tasks.append(check_one(finding, item))
+
+        logger.info(
+            "impact_verification: spawning %d checks (findings=%d matched_blast_items=%d)",
+            len(tasks), len(findings), sum(len(file_to_blast.get(f.file, [])) for f in findings),
+        )
+        if not tasks:
+            logger.info(
+                "impact_verification: 0 tasks — no findings overlap with blast_radius files. "
+                "blast_files=%s, finding_files=%s",
+                sorted(blast_files)[:5], sorted(finding_files)[:5],
+            )
+            return []
+
+        results_nested = await asyncio.gather(*tasks, return_exceptions=True)
+        for r in results_nested:
+            if isinstance(r, list):
+                new_findings.extend(r)
+        logger.info("impact_verification: done — %d cross-file findings", len(new_findings))
+        return new_findings
 
     async def _fetch_sast_findings(self, context: dict, pr_url: str) -> dict[str, list[dict]]:
         try:
@@ -459,17 +625,19 @@ class ReviewGraph:
         )
 
     async def _run_agents(self, diff: str, context: dict) -> list[AgentResult]:
-        blast_radius = context.get("blast_radius", [])
-        blast_section = _format_blast_radius(blast_radius)
         sast_findings = context.get("sast_findings", {})
 
+        # blast_radius is intentionally excluded here.
+        # Cross-file callers are NOT pre-loaded into the review prompt; bulk-loading caller
+        # code alongside the diff increases false positives without improving true positive
+        # recall (tested: v6 diff-only P=45.7% vs v6 with callers P=30.4%).
+        # Instead, caller context is used in a targeted second pass (_run_impact_verification)
+        # that asks a specific question about each finding after the diff review is done.
         agent_context = {
             "pr_title": context.get("title", ""),
             "pr_description": context.get("description", ""),
             "files": context.get("files", []),
             "symbol_definitions": context.get("symbol_definitions", {}),
-            "blast_radius": blast_radius,
-            "blast_radius_section": blast_section,
             "sast_findings": sast_findings,
         }
 
@@ -551,6 +719,20 @@ class ReviewGraph:
         before_gate = len(findings)
         findings = publication_gate(findings, diff or "")
         logger.info("publication gate done: %d -> %d findings", before_gate, len(findings))
+
+        # Phase 2: targeted cross-file impact verification.
+        # For each finding, check whether the changed function's callers are also affected.
+        # This is done AFTER the diff-only review so we ask a specific question ("does
+        # THIS finding propagate?") rather than asking the LLM to freely review caller code.
+        blast_radius = context.get("blast_radius", [])
+        if not blast_radius:
+            logger.info("impact_verification: skipped (blast_radius empty)")
+        elif not findings:
+            logger.info("impact_verification: skipped (no findings to match against)")
+        else:
+            impact_findings = await self._run_impact_verification(findings, blast_radius)
+            findings = list(findings) + impact_findings
+
         decision: str = judge_output["merge_recommendation"]
         if not findings:
             decision = "APPROVE"
@@ -925,20 +1107,44 @@ def _changed_node_ids_from_diff(db_path: Path, diff: str) -> set[int]:
 
 
 def _format_blast_radius(blast_radius: list[dict]) -> str:
+    """Format blast_radius for display/debugging only (no longer used in LLM prompts)."""
     if not blast_radius:
         return ""
     lines = ["## [CROSS-FILE CONTEXT] 调用了被改函数的地方\n"]
-    all_callers: list[str] = []
     for item in blast_radius:
         lines.append(f"### 被改函数：`{item['changed_fn']}`\n")
         for caller in item["callers"]:
             label = f"{caller['file']}:{caller['start_line']} `{caller['fn']}`"
             lines.append(f"**{label}**")
             lines.append(f"```\n{caller['code']}\n```\n")
-            all_callers.append(label)
-    if all_callers:
-        lines.append(
-            "\n> **必须逐一检查以下每个调用方是否受到接口变更影响（不能跳过任何一个）：**\n"
-            + "\n".join(f"> - {c}" for c in all_callers)
-        )
     return "\n".join(lines)
+
+
+def _extract_call_site(caller_code: str, callee_short_name: str, context_lines: int = 5) -> str:
+    """Extract a narrow snippet around where callee_short_name is called in caller_code.
+
+    Returns ±context_lines lines around the first matching call site.
+    Falls back to the first 400 chars if no call site is found.
+    """
+    lines = caller_code.splitlines()
+    for i, line in enumerate(lines):
+        # Match a call: function name followed by ( — avoids matching import/definition lines
+        if callee_short_name in line and "(" in line and "def " not in line and "function " not in line:
+            start = max(0, i - context_lines)
+            end = min(len(lines), i + context_lines + 1)
+            return "\n".join(lines[start:end])
+    # No explicit call site found — return beginning of function for context
+    return caller_code[:400]
+
+
+def _downgrade_severity(severity_str: str) -> str:
+    """Cross-file impact findings are one step less severe than the original finding.
+
+    A direct ERROR in a changed function becomes WARNING in a caller (indirect impact).
+    """
+    order = ["ERROR", "WARNING", "INFO"]
+    try:
+        idx = order.index(severity_str.upper())
+        return order[min(idx + 1, len(order) - 1)]
+    except ValueError:
+        return "WARNING"

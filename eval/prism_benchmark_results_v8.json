@@ -1,0 +1,557 @@
+{
+  "https://github.com/calcom/cal.com/pull/8087": {
+    "pr_title": "Async import of the appStore packages",
+    "golden_comments": [
+      {
+        "comment": "Consider adding try-catch around the await to handle import failures gracefully",
+        "severity": "Low"
+      },
+      {
+        "comment": "The code uses forEach with async callbacks, which causes asynchronous operations (e.g., calendar/video event deletions, payment refunds) to run concurrently without being awaited. This 'fire-and-forget' behavior leads to unhandled promise rejections, race conditions, and incomplete cleanup, as surrounding try-catch blocks cannot properly handle errors from these unawaited promises. Replace forEach with for...of loops or Promise.all() with map() to ensure proper sequential execution and error handling.",
+        "severity": "Critical"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "packages/app-store/vital/lib/reschedule.ts",
+        "line": 125,
+        "body": "[High] Async callback in forEach leads to unhandled promises and potential silent failures\n\nUsing `forEach` with an async callback means the returned promises are not awaited. This can cause calendar events to not be deleted during rescheduling, and errors are silently swallowed. While not strictly a performance regression, this is a correctness bug that can lead to resource leaks (orphaned calendar events).",
+        "created_at": ""
+      },
+      {
+        "path": "packages/app-store/wipemycalother/lib/reschedule.ts",
+        "line": 125,
+        "body": "[High] Async callback in forEach leads to unhandled promises and potential silent failures\n\nSame pattern as vital/lib/reschedule.ts - using `forEach` with async callback means calendar event deletions during rescheduling may silently fail.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/app-store/wipemycalother/lib/reschedule.ts",
+        "line": 125,
+        "body": "[High] Fire-and-forget async callback in forEach\n\nSame bug as in vital/lib/reschedule.ts. The forEach callback is async but promises are not awaited. Calendar events and video meetings may not be properly deleted during rescheduling.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/bookings.tsx",
+        "line": 553,
+        "body": "[High] Async callback in forEach leads to unhandled promises and potential silent failures\n\nSame pattern - using `forEach` with async callback means calendar event deletions during rescheduling may silently fail.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/bookings.tsx",
+        "line": 553,
+        "body": "[High] Fire-and-forget async callback in forEach\n\nSame bug pattern. The forEach callback is async but promises are not awaited. Calendar events and video meetings may not be properly deleted during rescheduling via the TRPC router.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/core/videoClient.ts",
+        "line": 21,
+        "body": "[Medium] Repeated dynamic imports in getVideoAdapters for each credential\n\nThe `getVideoAdapters` function now awaits `appStore[appName]` for each credential in a loop. While Node.js caches dynamic imports after the first load, this still adds Promise microtask overhead for each credential. Previously this was a synchronous property lookup. For users with many video credentials (e.g., 5+), this adds unnecessary latency to every video operation (create/update/delete meeting).",
+        "created_at": ""
+      },
+      {
+        "path": "packages/app-store/index.ts",
+        "line": 2,
+        "body": "[High] Unresolved import\n\nThe import `./example` cannot be resolved. ./example not found from packages/app-store/index.ts",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 7,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 7,
+      "after_gate": 7,
+      "filtered": 0
+    },
+    "elapsed": 57.3
+  },
+  "https://github.com/calcom/cal.com/pull/10600": {
+    "pr_title": "feat: 2fa backup codes",
+    "golden_comments": [
+      {
+        "comment": "The exported function TwoFactor handles backup codes and is in BackupCode.tsx. Inconsistent naming.",
+        "severity": "Low"
+      },
+      {
+        "comment": "Error message mentions 'backup code login' but this is a disable endpoint, not login",
+        "severity": "Low"
+      },
+      {
+        "comment": "Backup code validation is case-sensitive due to the use of indexOf(). This causes validation to fail if a user enters uppercase hex characters, as backup codes should be case-insensitive for a better user experience.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "Because backupCodes are decrypted and mutated in memory before being written back, two concurrent login requests using the same backupCode could both pass this check and update, so a single backup code may effectively be accepted more than once if used concurrently, weakening the intended one-time-use semantics.",
+        "severity": "High"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "apps/web/pages/api/auth/two-factor/totp/disable.ts",
+        "line": 63,
+        "body": "[Medium] Backup code not consumed on failed disable attempt\n\nWhen a backup code is used to disable 2FA, the code is validated but not consumed (removed from the list) until the entire disable operation succeeds. If the disable request fails after validation (e.g., network error, database timeout, race condition), the same backup code remains valid and can be reused. An attacker who obtains a single backup code could attempt to disable 2FA multiple times, potentially succeeding if the failure is transient.",
+        "created_at": ""
+      },
+      {
+        "path": "apps/web/pages/api/auth/two-factor/totp/setup.ts",
+        "line": 78,
+        "body": "[Medium] Backup codes exposed in plaintext in API response\n\nThe setup API endpoint returns backup codes as plaintext in the JSON response. While this is necessary for the UI to display them to the user, it means the codes are exposed in network logs, browser developer tools, and potentially to any JavaScript running on the page (e.g., XSS). An attacker with XSS could steal all 10 backup codes and use them to bypass 2FA at any time.",
+        "created_at": ""
+      },
+      {
+        "path": "apps/web/pages/api/auth/two-factor/totp/setup.ts",
+        "line": 1,
+        "body": "[High] Unresolved import\n\nThe import `crypto` cannot be resolved. crypto not declared in package.json",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/auth/lib/next-auth-options.ts",
+        "line": 14,
+        "body": "[High] Unresolved import\n\nThe import `@calcom/lib/crypto` cannot be resolved. @calcom/lib not declared in package.json",
+        "created_at": ""
+      },
+      {
+        "path": "apps/web/components/settings/EnableTwoFactorModal.tsx",
+        "line": 135,
+        "body": "[High] Dialog close without clicking 'Close' button doesn't complete setup\n\nWhen the user reaches the DisplayBackupCodes step and closes the dialog by clicking outside or pressing Escape, the onEnable callback is never called. The dialog's onOpenChange prop is passed to the Dialog component but there is no custom handler to call onEnable when the dialog is dismissed after backup codes are shown. This means the parent component never knows the 2FA setup completed.",
+        "created_at": ""
+      },
+      {
+        "path": "apps/web/components/settings/EnableTwoFactorModal.tsx",
+        "line": 8,
+        "body": "[High] Unresolved import\n\nThe import `@calcom/ui` cannot be resolved. @calcom/ui not declared in package.json",
+        "created_at": ""
+      },
+      {
+        "path": "apps/web/components/auth/BackupCode.tsx",
+        "line": 1,
+        "body": "[High] Unresolved import\n\nThe import `react` cannot be resolved. react not declared in package.json",
+        "created_at": ""
+      },
+      {
+        "path": "apps/web/components/auth/BackupCode.tsx",
+        "line": 2,
+        "body": "[High] Unresolved import\n\nThe import `react-hook-form` cannot be resolved. react-hook-form not declared in package.json",
+        "created_at": ""
+      },
+      {
+        "path": "apps/web/components/auth/BackupCode.tsx",
+        "line": 4,
+        "body": "[High] Unresolved import\n\nThe import `@calcom/lib/hooks/useLocale` cannot be resolved. @calcom/lib not declared in package.json",
+        "created_at": ""
+      },
+      {
+        "path": "apps/web/components/settings/DisableTwoFactorModal.tsx",
+        "line": 8,
+        "body": "[High] Unresolved import\n\nThe import `@components/auth/BackupCode` cannot be resolved. @components/auth not declared in package.json",
+        "created_at": ""
+      },
+      {
+        "path": "apps/web/pages/auth/login.tsx",
+        "line": 24,
+        "body": "[High] Unresolved import\n\nThe import `@calcom/ui/components/icon` cannot be resolved. @calcom/ui not declared in package.json",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 13,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 13,
+      "after_gate": 13,
+      "filtered": 0
+    },
+    "elapsed": 61.2
+  },
+  "https://github.com/calcom/cal.com/pull/10967": {
+    "pr_title": "fix: handle collective multiple host on destinationCalendar",
+    "golden_comments": [
+      {
+        "comment": "Potential null reference if mainHostDestinationCalendar is undefined if evt.destinationCalendar is null or an empty array ",
+        "severity": "High"
+      },
+      {
+        "comment": "The optional chaining on mainHostDestinationCalendar?.integration is redundant since you already check mainHostDestinationCalendar in the ternary condition.",
+        "severity": "Low"
+      },
+      {
+        "comment": "Logic error: when externalCalendarId is provided, you're searching for a calendar where externalId === externalCalendarId, but this will always fail since you're looking for a calendar that matches itself. Should likely find by credentialId or use different logic.",
+        "severity": "High"
+      },
+      {
+        "comment": "Logic inversion in organization creation: The slug property is now conditionally set when IS_TEAM_BILLING_ENABLED is true, instead of when it's false as originally intended. This change, combined with requestedSlug still being set when IS_TEAM_BILLING_ENABLED is true, results in both properties being set when billing is enabled, and neither when disabled",
+        "severity": "Medium"
+      },
+      {
+        "comment": "The Calendar interface now requires createEvent(event, credentialId), but some implementations (e.g., Lark/Office365) still declare createEvent(event) only—this breaks the interface contract (also applies to other locations in the PR).",
+        "severity": "Low"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "packages/trpc/server/routers/viewer/organizations/create.handler.ts",
+        "line": 151,
+        "body": "[Medium] Inverted conditional logic for organization slug handling based on billing status\n\nThe conditional logic for handling organization slugs has been inverted. Previously, when billing was enabled (IS_TEAM_BILLING_ENABLED=true), the slug was stored as 'requestedSlug' in metadata (pending verification). Now, when billing is enabled, the slug is set directly on the organization, bypassing the pending/verification state. This could allow organizations to claim slugs without proper billing verification when billing is enabled.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/types/Calendar.d.ts",
+        "line": 171,
+        "body": "[High] Breaking change: destinationCalendar type changed from single object to array without corresponding consumer updates\n\nThe `destinationCalendar` property in `CalendarEvent` interface changed from `DestinationCalendar | null` to `DestinationCalendar[] | null`. This is a breaking change that will cause all existing code accessing `event.destinationCalendar` as a single object to fail. Code that previously did `event.destinationCalendar?.id`, `event.destinationCalendar?.integration`, or `event.destinationCalendar?.email` will now get `undefined` (arrays don't have these properties) or cause TypeScript compilation errors. The PR description mentions patching all consuming code, but this diff only shows the type definition change without any of those patches.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/types/Calendar.d.ts",
+        "line": 221,
+        "body": "[High] Breaking change: createEvent method signature changed without updating implementations\n\nThe `createEvent` method in the `Calendar` interface changed from `createEvent(event: CalendarEvent)` to `createEvent(event: CalendarEvent, credentialId: number)`. This adds a required second parameter, which breaks all existing implementations of the Calendar interface (e.g., GoogleCalendar, Office365Calendar, etc.). Without corresponding updates to those implementations, this will cause TypeScript compilation errors and runtime failures when calling `createEvent` with only one argument.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/types/Calendar.d.ts",
+        "line": 11,
+        "body": "[High] Unresolved import\n\nThe import `@calcom/prisma/enums` cannot be resolved. @calcom/prisma not declared in package.json",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/bookings/editLocation.handler.ts",
+        "line": 85,
+        "body": "[Medium] Behavior change: empty array instead of null/undefined when no destination calendar\n\nThe original code returned `undefined` when both `booking?.destinationCalendar` and `booking?.user?.destinationCalendar` were falsy. The new code returns an empty array `[]` in that case. This changes the truthiness check behavior: previously `if (destinationCalendar)` would be false, now it's true (empty array is truthy). Any code that checks for existence of a destination calendar using truthiness will now incorrectly think there is one, potentially leading to errors when trying to access properties like `.id` on the empty array.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/bookings/lib/handleNewBooking.ts",
+        "line": 1078,
+        "body": "[High] Team destination calendars lost when evt.destinationCalendar is null\n\nWhen both eventType.destinationCalendar and organizerUser.destinationCalendar are null/undefined, evt.destinationCalendar is set to null (line 1066). The optional chaining `?.` on line 1078 prevents the push of teamDestinationCalendars, so team members' destination calendars are silently discarded. This defeats the purpose of the PR which aims to support multiple destination calendars for collective events.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/bookings/lib/handleNewBooking.ts",
+        "line": 1874,
+        "body": "[High] Potential crash when destinationCalendar is empty array\n\nIf evt.destinationCalendar is an empty array (which can happen if the push on line 1078 fails due to null, or if no calendars are set), accessing evt.destinationCalendar[0].id will throw 'Cannot read properties of undefined (reading 'id')' because [0] is undefined.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/bookings/lib/handleNewBooking.ts",
+        "line": 1063,
+        "body": "[Medium] Interface break: destinationCalendar type changed from object to array\n\nThe destinationCalendar field on the event object changed from a single DestinationCalendar object (or undefined) to an array of DestinationCalendar (or null). This is a breaking change for any other code that accesses evt.destinationCalendar directly (e.g., expecting .id instead of [0].id). While the PR description mentions this change, the diff only updates this one file, potentially leaving other consumers broken.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/bookings/lib/handleNewBooking.ts",
+        "line": 1,
+        "body": "[High] Unresolved import\n\nThe import `@prisma/client` cannot be resolved. @prisma/client not declared in package.json",
+        "created_at": ""
+      },
+      {
+        "path": "packages/app-store/googlecalendar/lib/CalendarService.ts",
+        "line": 122,
+        "body": "[Medium] Organizer email spoofing via destinationCalendar array manipulation\n\nThe change extracts the first element of the destinationCalendar array to determine the organizer email. If an attacker can control the order or content of the destinationCalendar array (e.g., by adding a malicious calendar entry), they could set the organizer email to an arbitrary value. This could allow impersonation in calendar events, enabling phishing or social engineering attacks where the event appears to come from a trusted source.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/app-store/googlecalendar/lib/CalendarService.ts",
+        "line": 256,
+        "body": "[High] updateEvent: selectedCalendar find logic broken when externalCalendarId is falsy\n\nIn updateEvent, when externalCalendarId is not provided (falsy), the code does: event.destinationCalendar?.find((cal) => cal.externalId === externalCalendarId)?.externalId. Since externalCalendarId is undefined/falsy, the find will never match any calendar (because no calendar has externalId === undefined). The old behavior returned event.destinationCalendar?.externalId (the first destination calendar's externalId). Now it returns undefined, causing the update to potentially fail or use an incorrect calendar.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/app-store/googlecalendar/lib/CalendarService.ts",
+        "line": 315,
+        "body": "[High] deleteEvent: calendarId find logic broken when externalCalendarId is falsy\n\nSame bug as updateEvent. In deleteEvent, when externalCalendarId is not provided, the find will never match because it searches for cal.externalId === externalCalendarId where externalCalendarId is undefined. Old behavior returned event.destinationCalendar?.externalId. New behavior returns undefined, causing deletion to fail or delete wrong event.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/app-store/googlecalendar/lib/CalendarService.ts",
+        "line": 87,
+        "body": "[Medium] createEvent: interface break - new credentialId parameter not in Calendar interface\n\nThe createEvent method signature changed from (calEventRaw: CalendarEvent) to (calEventRaw: CalendarEvent, credentialId: number). If the Calendar interface (defined elsewhere) doesn't include this second parameter, callers will not pass credentialId, causing it to be undefined. The find logic will then never match, always falling back to 'primary' calendar.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/app-store/googlecalendar/lib/CalendarService.ts",
+        "line": 100,
+        "body": "[Medium] createEvent: destructuring assumes destinationCalendar is always an array\n\nThe code does: const [mainHostDestinationCalendar] = calEventRaw?.destinationCalendar && calEventRaw?.destinationCalendar.length > 0 ? calEventRaw.destinationCalendar : []. If any code path still passes a single object (not array) for destinationCalendar, the .length check will be undefined (falsy), so it falls back to empty array. But if the migration is incomplete and a single object is passed, the destructuring would fail with TypeError because objects are not iterable.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/core/builders/CalendarEvent/class.ts",
+        "line": 26,
+        "body": "[High] Interface break: destinationCalendar changed from single object to array\n\nThe type of destinationCalendar changed from DestinationCalendar | null to DestinationCalendar[] | null. This breaks all existing code that accesses destinationCalendar as a single object (e.g., destinationCalendar.id, destinationCalendar.externalId). Code that checks `if (destinationCalendar)` will now always be truthy even with an empty array. The PR description claims other files are patched, but this diff only shows the type definition change without any corresponding usage updates.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/bookings/lib/handleCancelBooking.ts",
+        "line": 424,
+        "body": "[Medium] Potential N+1 database query inside loop over calendar references\n\nWhen a calendar reference's credential is not found in the user's credentials array, a separate database query is made for each reference. This can result in N+1 queries where N is the number of calendar references. While typically there are only 1-2 references, if credentials are missing from the user object, this adds unnecessary database load.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/loggedInViewer/deleteCredential.handler.ts",
+        "line": 290,
+        "body": "[High] Potential nested array when destinationCalendar is already an array\n\nThe PR description states that destinationCalendar on CalendarEvent is now an array. If booking.destinationCalendar is already an array (as per the new schema), then wrapping it in another array with [booking.destinationCalendar] creates a nested array [[...]] instead of a flat array. This would cause downstream code that iterates over destinationCalendar to receive arrays instead of objects, leading to incorrect behavior or crashes when accessing properties like .email or .integration.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/core/EventManager.ts",
+        "line": 350,
+        "body": "[High] Direct database credential access without authorization check\n\nThe code now fetches credentials directly from the database using Prisma when a credential is not found in the in-memory calendarCredentials array. This happens in both createAllCalendarEvents (line ~350) and updateAllCalendarEvents (line ~510). The credential is fetched by ID without verifying that the current user has permission to access that credential. An attacker who can control the destinationCalendar array (specifically credentialId values) could access credentials belonging to other users, potentially leading to unauthorized calendar access or credential theft.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/core/EventManager.ts",
+        "line": 344,
+        "body": "[Medium] DB query inside loop in createAllCalendarEvents\n\nWhen processing multiple destination calendars, if a credential is not found in the in-memory calendarCredentials array, the code falls back to fetching it from the database using prisma.credential.findUnique() inside a for loop. This adds up to N sequential DB queries per event creation, where N is the number of destination calendars. While each query is a simple primary key lookup, the sequential nature and the fact that this runs on every event creation (a hot path) makes this a performance concern. At typical scale (1-5 destination calendars), this adds 1-50ms of latency. At larger scale (10+), it becomes more noticeable.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/core/EventManager.ts",
+        "line": 500,
+        "body": "[Medium] DB query inside loop in updateAllCalendarEvents\n\nSame pattern as createAllCalendarEvents - when processing multiple calendar references during event updates, if a credential is not found in memory, it fetches from DB inside a for loop. This affects the event update/reschedule path, which is also a hot path.",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 21,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 21,
+      "after_gate": 21,
+      "filtered": 0
+    },
+    "elapsed": 132.0
+  },
+  "https://github.com/calcom/cal.com/pull/22345": {
+    "pr_title": "feat: convert InsightsBookingService to use Prisma.sql raw queries",
+    "golden_comments": [
+      {
+        "comment": "In getBaseConditions(), the else if (filterConditions) and final else branches are unreachable. This is because getAuthorizationConditions() always returns a non-null Prisma.Sql object, making authConditions always truthy, which means only the first two if/else if conditions are ever evaluated.",
+        "severity": "Low"
+      },
+      {
+        "comment": "Fetching userIdsFromOrg only when teamsFromOrg.length > 0 can exclude org-level members for orgs without child teams; consider deriving from teamIds (which includes orgId) or removing the guard so org-only orgs still include member user bookings.",
+        "severity": "Medium"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "packages/lib/server/service/insightsBooking.ts",
+        "line": 65,
+        "body": "[High] Removal of safe query method exposes raw SQL fragments\n\nThe `findMany` method was removed and replaced with `getBaseConditions()` which returns raw SQL fragments. Previously, the service provided a complete, safe query method (`findMany`) that automatically combined authorization and filter conditions with Prisma's built-in parameterized queries. Now, callers must use `prisma.$queryRaw` directly with the returned SQL fragments. This shifts the responsibility for safe query construction to the caller, increasing the risk of authorization bypass if conditions are not properly combined or if the SQL fragments are modified. The service no longer enforces that authorization conditions are always applied to queries.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/lib/server/service/insightsBooking.ts",
+        "line": 55,
+        "body": "[Medium] Constructor accepts unvalidated options type\n\nThe constructor now accepts `InsightsBookingServicePublicOptions` instead of the Zod-validated `InsightsBookingServiceOptions`. The original type was validated by `insightsBookingServiceOptionsSchema` which ensured proper structure and values. The new type is a plain TypeScript type without runtime validation, allowing potentially invalid options to be passed to the service.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/lib/server/service/insightsBooking.ts",
+        "line": 1,
+        "body": "[High] Unresolved import\n\nThe import `@prisma/client` cannot be resolved. @prisma/client not declared in package.json",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 4,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 4,
+      "after_gate": 4,
+      "filtered": 0
+    },
+    "elapsed": 84.7
+  },
+  "https://github.com/calcom/cal.com/pull/7232": {
+    "pr_title": "Comprehensive workflow reminder management for booking lifecycle events",
+    "golden_comments": [
+      {
+        "comment": "Asynchronous functions deleteScheduledEmailReminder and deleteScheduledSMSReminder are called without await inside forEach loops. This occurs during booking rescheduling/cancellation, and workflow/workflow step deletion/updates. Consequently, scheduled workflow reminders may not be reliably cancelled, potentially leaving them active.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "When immediateDelete is true, the deleteScheduledEmailReminder function cancels the SendGrid email but fails to delete the corresponding WorkflowReminder record from the database. This creates orphaned database entries and is inconsistent with the immediateDelete: false path, which marks the record as cancelled. The SendGrid DELETE API call is also omitted in this path.",
+        "severity": "High"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "packages/trpc/server/routers/viewer/workflows.tsx",
+        "line": 372,
+        "body": "[High] Missing authorization check when cancelling workflow reminders\n\nThe old code included an ownership check (`booking.userId === ctx.user.id`) before deleting workflow reminders. The new code removes this check entirely, allowing users with workflow edit permissions to cancel reminders for bookings they don't own. This is a security regression that could allow denial of service against other users' bookings.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/workflows.tsx",
+        "line": 211,
+        "body": "[High] Missing await on async reminder cancellation functions\n\nMultiple places in workflows.tsx call deleteScheduledEmailReminder and deleteScheduledSMSReminder without await. This affects workflow deletion, event type disabling, and step editing flows.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+        "line": 40,
+        "body": "[Medium] Batch reminder cancellation lacks authorization\n\nThe new batch process in scheduleEmailReminders.ts finds all reminders with `cancelled: true` and cancels them via SendGrid API without verifying that the current user has permission to cancel those reminders. This endpoint is called by a cron job or internal process, but if an attacker can set `cancelled: true` on reminders they don't own, they could cause denial of service.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+        "line": 43,
+        "body": "[Medium] New query and loop for cancelling reminders could be expensive\n\nAdded a new `findMany` query that fetches all cancelled reminders scheduled within the next hour, then iterates over them with individual API calls and individual DB delete operations. This runs every minute as a scheduled job and could process many reminders at once.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+        "line": 10,
+        "body": "[High] Unresolved import\n\nThe import `@calcom/prisma/client` cannot be resolved. @calcom/prisma not declared in package.json",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/bookings/lib/handleCancelBooking.ts",
+        "line": 484,
+        "body": "[Medium] Removed batch deletion of workflow reminders\n\nPreviously, workflow reminders were deleted in batch using `prisma.workflowReminder.deleteMany` with `Promise.all`. Now each reminder gets an individual DB operation (update or delete) inside the loop. This changes from O(1) DB operations to O(n) where n is the number of reminders per booking.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/bookings/lib/handleCancelBooking.ts",
+        "line": 487,
+        "body": "[High] Missing await on async reminder cancellation functions\n\nThe calls to deleteScheduledEmailReminder and deleteScheduledSMSReminder are not awaited. These are async functions that perform network requests (SendGrid API, Twilio API) and database operations. Without await, the cancellation may not complete before the function returns, and any errors will be silently swallowed. This means cancelled bookings may still have their workflow reminders sent.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/bookings.tsx",
+        "line": 484,
+        "body": "[Medium] Removed batch deletion of workflow reminders in reschedule handler\n\nSimilar to handleCancelBooking.ts, the batch deletion of workflow reminders was removed. Previously used `Promise.all` with `deleteMany` operations, now does individual operations per reminder.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/bookings.tsx",
+        "line": 488,
+        "body": "[High] Missing await on async reminder cancellation functions\n\nSame issue as handleCancelBooking.ts - the calls to deleteScheduledEmailReminder and deleteScheduledSMSReminder are not awaited. This affects the rescheduling flow where previous booking reminders should be cancelled.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/bookings/lib/handleNewBooking.ts",
+        "line": 966,
+        "body": "[High] Missing await on async reminder cancellation functions\n\nThe calls to deleteScheduledEmailReminder and deleteScheduledSMSReminder are not awaited inside the forEach loop. This means the cancellation of previous booking reminders may not complete before the new booking is processed.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/bookings/lib/handleNewBooking.ts",
+        "line": 39,
+        "body": "[High] Unresolved import\n\nThe import `@calcom/features/ee/workflows/lib/reminders/emailReminderManager` cannot be resolved. @calcom/features not declared in package.json",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 11,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 11,
+      "after_gate": 11,
+      "filtered": 0
+    },
+    "elapsed": 52.2
+  },
+  "https://github.com/calcom/cal.com/pull/8330": {
+    "pr_title": "Advanced date override handling and timezone compatibility improvements",
+    "golden_comments": [
+      {
+        "comment": "Incorrect end time calculation using slotStartTime instead of slotEndTime",
+        "severity": "Medium"
+      },
+      {
+        "comment": "Using === for dayjs object comparison will always return false as it compares object references, not values. Use .isSame() method instead: dayjs(date.start).add(utcOffset, 'minutes').isSame(dayjs(date.end).add(utcOffset, minutes))",
+        "severity": "Medium"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "packages/trpc/server/routers/viewer/slots.ts",
+        "line": 143,
+        "body": "[Medium] Working hours check uses incorrect end time calculation\n\nIn the new working hours validation logic added to checkIfIsAvailable, the variable 'end' is incorrectly set to the same value as 'start' (slotStartTime.hour() * 60 + slotStartTime.minute()) instead of using slotEndTime. This means the working hours boundary check always compares the same value against both startTime and endTime, effectively only checking if the slot start time falls within working hours, not the entire slot duration. This could allow booking slots that extend beyond working hours.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/slots.ts",
+        "line": 99,
+        "body": "[Medium] O(N) date override and working hours checks added inside hot loop\n\nThe `checkIfIsAvailable` function now iterates over all date overrides and working hours for every time slot check. Previously it only checked the `busy` array (O(1) per slot). Now it does O(D + W) work per slot where D = number of date overrides and W = number of working hours. Each iteration involves multiple `dayjs` operations including `.tz()`, `.utcOffset()`, `.format()`, `.isBefore()`, `.isSame()`, `.isAfter()`. This function is called in nested loops: for each time slot (up to 96 per day) × for each user schedule (up to 10+ users). At scale: 96 slots × 10 users × (10 overrides + 7 working hours) = ~16,320 complex date operations per request, up from ~960 simple comparisons.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/slots.ts",
+        "line": 108,
+        "body": "[High] Dayjs object comparison using reference equality\n\nThe comparison `dayjs(date.start).add(utcOffset, 'minutes') === dayjs(date.end).add(utcOffset, 'minutes')` uses strict equality (`===`) on Dayjs objects. This compares object references, not date values. Two different Dayjs objects representing the same moment will never be `===`. This condition is meant to handle zero-length overrides but will always be false, potentially causing incorrect availability for same-start-end overrides.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/slots.ts",
+        "line": 514,
+        "body": "[High] Missing dateOverrides and workingHours for loose host availability check\n\nIn the loose host availability section (line 514), `checkIfIsAvailable` is called with `organizerTimeZone: userSchedule.timeZone` but without passing `dateOverrides` or `workingHours`. The function defaults these to empty arrays, so date overrides and working hours are not checked for non-fixed hosts. This means date overrides only affect fixed hosts, which contradicts the PR description that says 'date overrides of fixed hosts are taken into account for round-robin events'.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/slots.ts",
+        "line": 106,
+        "body": "[High] Incorrect UTC offset negation for date override timezone adjustment\n\nThe UTC offset is computed as `dayjs.tz(date.start, organizerTimeZone).utcOffset() * -1`. The `utcOffset()` returns the offset in minutes (e.g., +300 for UTC+5). Negating it gives -300, which is then added to the date. This shifts the date in the wrong direction. For example, if organizer is UTC+5, a date override at 10:00 UTC should be checked at 15:00 local time, but the code shifts it to 05:00 UTC instead.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/slots.ts",
+        "line": 22,
+        "body": "[High] Unresolved import\n\nThe import `@calcom/types/schedule` cannot be resolved. @calcom/types not declared in package.json",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 6,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 6,
+      "after_gate": 6,
+      "filtered": 0
+    },
+    "elapsed": 44.7
+  },
+  "https://github.com/calcom/cal.com/pull/14943": {
+    "pr_title": "SMS workflow reminder retry count tracking",
+    "golden_comments": [
+      {
+        "comment": "Using retryCount: reminder.retryCount + 1 reads a possibly stale value and can lose increments under concurrency; consider an atomic increment via Prisma (increment: 1) to avoid race conditions (also applies to the similar update in the catch block).",
+        "severity": "High"
+      },
+      {
+        "comment": "The deletion logic in scheduleSMSReminders.ts incorrectly deletes non-SMS workflow reminders (e.g., Email, WhatsApp) that have retryCount > 1. This occurs because the retryCount condition within the OR clause for deletion lacks a method: WorkflowMethods.SMS filter, causing it to apply to all reminder types instead of only SMS reminders, which is the intended scope of this function.",
+        "severity": "High"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+        "line": 31,
+        "body": "[Medium] Missing index on retryCount column for deleteMany query\n\nThe deleteMany query now includes an OR condition with `retryCount > 1`. The `retryCount` column has no database index, which means this query may perform a full table scan when there are many workflow reminders. At scale (e.g., millions of reminders), this could cause significant performance degradation for the cron job execution.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+        "line": 179,
+        "body": "[High] retryCount incremented on success instead of reset to 0\n\nWhen SMS sends successfully (line 175-182), the code increments retryCount by 1 instead of resetting it to 0. This means after two successful sends, retryCount becomes 2, and the reminder gets deleted by the deleteMany query (which deletes reminders with retryCount > 1). The retryCount should only track failures, not successes. The correct behavior is to reset retryCount to 0 on success.",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 2,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 2,
+      "after_gate": 2,
+      "filtered": 0
+    },
+    "elapsed": 39.6
+  }
+}

@@ -1,0 +1,473 @@
+{
+  "https://github.com/calcom/cal.com/pull/8087": {
+    "pr_title": "Async import of the appStore packages",
+    "golden_comments": [
+      {
+        "comment": "Consider adding try-catch around the await to handle import failures gracefully",
+        "severity": "Low"
+      },
+      {
+        "comment": "The code uses forEach with async callbacks, which causes asynchronous operations (e.g., calendar/video event deletions, payment refunds) to run concurrently without being awaited. This 'fire-and-forget' behavior leads to unhandled promise rejections, race conditions, and incomplete cleanup, as surrounding try-catch blocks cannot properly handle errors from these unawaited promises. Replace forEach with for...of loops or Promise.all() with map() to ensure proper sequential execution and error handling.",
+        "severity": "Critical"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "packages/app-store/vital/lib/reschedule.ts",
+        "line": 125,
+        "body": "[High] Unhandled async forEach - fire-and-forget promises\n\nThe forEach callback is marked async but forEach does not await the returned promises. This means calendar deleteEvent operations may not complete before the function returns, and any errors will be silently swallowed as unhandled promise rejections. This is a regression from the previous synchronous code which would execute sequentially.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/app-store/wipemycalother/lib/reschedule.ts",
+        "line": 125,
+        "body": "[High] Unhandled async forEach - fire-and-forget promises\n\nSame pattern as vital/lib/reschedule.ts - forEach with async callback not awaited. Calendar delete events may not execute, errors are silently swallowed.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/app-store/wipemycalother/lib/reschedule.ts",
+        "line": 125,
+        "body": "[High] Unhandled async callback in forEach - promises not awaited\n\nSame issue as vital/lib/reschedule.ts. The forEach callback is async but forEach does not await the returned promises. Calendar and video deletion operations may not complete before the function returns.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/bookings.tsx",
+        "line": 553,
+        "body": "[High] Unhandled async forEach - fire-and-forget promises\n\nSame pattern as above - forEach with async callback not awaited. Calendar delete events during rescheduling may not execute.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/bookings.tsx",
+        "line": 553,
+        "body": "[High] Unhandled async callback in forEach - promises not awaited\n\nSame pattern as the reschedule files. The forEach callback is async but forEach does not await the returned promises. Calendar and video deletion operations may not complete before the router handler finishes.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/core/videoClient.ts",
+        "line": 21,
+        "body": "[Medium] Sequential async loop replaces synchronous reduce\n\ngetVideoAdapters changed from synchronous reduce to async for...of loop. While this is necessary due to dynamic imports, it introduces sequential await for each credential. For users with many video credentials (e.g., multiple Zoom accounts), this adds latency proportional to the number of credentials. Previously all credentials were processed synchronously in one pass.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/bookings/lib/handleCancelBooking.ts",
+        "line": 458,
+        "body": "[High] Unhandled async callback in forEach - promises not awaited\n\nThe forEach callback is async (due to await getCalendar), but forEach does not await the returned promises. The inner for loop correctly awaits operations, but the outer forEach is fire-and-forget. This means calendar update operations for recurring events may not complete before the handler finishes.",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 7,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 7,
+      "after_gate": 7,
+      "filtered": 0
+    },
+    "elapsed": 27.7
+  },
+  "https://github.com/calcom/cal.com/pull/10600": {
+    "pr_title": "feat: 2fa backup codes",
+    "golden_comments": [
+      {
+        "comment": "The exported function TwoFactor handles backup codes and is in BackupCode.tsx. Inconsistent naming.",
+        "severity": "Low"
+      },
+      {
+        "comment": "Error message mentions 'backup code login' but this is a disable endpoint, not login",
+        "severity": "Low"
+      },
+      {
+        "comment": "Backup code validation is case-sensitive due to the use of indexOf(). This causes validation to fail if a user enters uppercase hex characters, as backup codes should be case-insensitive for a better user experience.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "Because backupCodes are decrypted and mutated in memory before being written back, two concurrent login requests using the same backupCode could both pass this check and update, so a single backup code may effectively be accepted more than once if used concurrently, weakening the intended one-time-use semantics.",
+        "severity": "High"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "apps/web/pages/api/auth/two-factor/totp/disable.ts",
+        "line": 43,
+        "body": "[High] Backup code not consumed after successful use in disable endpoint\n\nWhen a user disables 2FA using a backup code, the backup code is validated but never removed from the database. In contrast, the login flow (next-auth-options.ts) properly deletes the used backup code. This allows an attacker who obtains a single backup code to repeatedly disable 2FA for the same user, as the code remains valid indefinitely.",
+        "created_at": ""
+      },
+      {
+        "path": "apps/web/pages/api/auth/two-factor/totp/setup.ts",
+        "line": 61,
+        "body": "[Medium] Backup codes generated with insufficient entropy\n\nBackup codes are generated using crypto.randomBytes(5).toString('hex'), producing only 10 hex characters (40 bits of entropy). For codes that can bypass TOTP authentication, this is relatively low entropy. While rate limiting mitigates brute force, the codes are also displayed in plaintext and could be captured through shoulder surfing or screenshots.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/auth/lib/next-auth-options.ts",
+        "line": 148,
+        "body": "[Medium] Race condition allows backup code reuse\n\nTwo concurrent login requests with the same backup code can both succeed because the read-check-delete sequence is not atomic. Both requests read the same backup codes from the database, both find the code at the same index, both set it to null, and both update the database. The second update overwrites the first with the same data, allowing the backup code to be used twice.",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 3,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 3,
+      "after_gate": 3,
+      "filtered": 0
+    },
+    "elapsed": 63.7
+  },
+  "https://github.com/calcom/cal.com/pull/10967": {
+    "pr_title": "fix: handle collective multiple host on destinationCalendar",
+    "golden_comments": [
+      {
+        "comment": "Potential null reference if mainHostDestinationCalendar is undefined if evt.destinationCalendar is null or an empty array ",
+        "severity": "High"
+      },
+      {
+        "comment": "The optional chaining on mainHostDestinationCalendar?.integration is redundant since you already check mainHostDestinationCalendar in the ternary condition.",
+        "severity": "Low"
+      },
+      {
+        "comment": "Logic error: when externalCalendarId is provided, you're searching for a calendar where externalId === externalCalendarId, but this will always fail since you're looking for a calendar that matches itself. Should likely find by credentialId or use different logic.",
+        "severity": "High"
+      },
+      {
+        "comment": "Logic inversion in organization creation: The slug property is now conditionally set when IS_TEAM_BILLING_ENABLED is true, instead of when it's false as originally intended. This change, combined with requestedSlug still being set when IS_TEAM_BILLING_ENABLED is true, results in both properties being set when billing is enabled, and neither when disabled",
+        "severity": "Medium"
+      },
+      {
+        "comment": "The Calendar interface now requires createEvent(event, credentialId), but some implementations (e.g., Lark/Office365) still declare createEvent(event) only\u2014this breaks the interface contract (also applies to other locations in the PR).",
+        "severity": "Low"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "packages/features/bookings/lib/handleNewBooking.ts",
+        "line": 1080,
+        "body": "[High] Null dereference calling .push on potentially null destinationCalendar\n\nevt.destinationCalendar can be null (set on line 1066: `destinationCalendar: ... ? ... : null`). The code then calls `evt.destinationCalendar?.push(...teamDestinationCalendars)` on line 1080-1082. Optional chaining `?.` only protects against undefined, not null. Since the value can be explicitly null, `.push` will throw TypeError: Cannot read properties of null (reading 'push'). This occurs for team collective events where neither eventType.destinationCalendar nor organizerUser.destinationCalendar exists.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/bookings/lib/handleNewBooking.ts",
+        "line": 1874,
+        "body": "[High] Null/undefined access on destinationCalendar[0].id\n\nevt.destinationCalendar can be null or an empty array. The code accesses `evt.destinationCalendar[0].id` without checking if the array is non-empty. If destinationCalendar is null, this throws TypeError. If it's an empty array, `[0]` returns undefined and accessing `.id` throws TypeError. This occurs when creating a booking with no destination calendar.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/core/EventManager.ts",
+        "line": 334,
+        "body": "[Medium] N+1 database queries for credentials in createAllCalendarEvents\n\nWhen iterating over destinationCalendar array, for each entry where the credential is not found in memory (this.calendarCredentials), a separate database query is made via prisma.credential.findUnique. Previously, credentials were always loaded from memory. For team events with collective scheduling, this can result in N extra DB queries where N is the number of team members with destination calendars.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/core/EventManager.ts",
+        "line": 476,
+        "body": "[Medium] N+1 database queries for credentials in updateAllCalendarEvents\n\nWhen iterating over multiple calendar references, for each reference where the credential is not found in memory, a separate database query is made. Previously, only a single calendar reference was processed. This adds N extra DB queries for booking updates where N is the number of calendar references.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/core/EventManager.ts",
+        "line": 119,
+        "body": "[High] Null dereference on mainHostDestinationCalendar.integration\n\nWhen evt.destinationCalendar is an empty array, destructuring `const [mainHostDestinationCalendar] = evt.destinationCalendar ?? []` yields undefined. The subsequent access `mainHostDestinationCalendar.integration` throws TypeError: Cannot read properties of undefined (reading 'integration'). This occurs for any event where destinationCalendar is an empty array and location is MeetLocationType.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/core/EventManager.ts",
+        "line": 493,
+        "body": "[High] Unawaited promises in updateAllCalendarEvents return value\n\nThe updateAllCalendarEvents method pushes promises from updateEvent() calls into a `result` array without awaiting them. The function returns this array of promises. Since the function is async, callers who `await` the function receive `Promise<EventResult>[]` instead of `EventResult[]`. This means callers get unresolved promises and cannot access result properties like `.success` or `.createdEvent`. This is a pre-existing bug that was not fixed in this PR, but the new code structure makes it more impactful by potentially returning more promises.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/bookings/lib/handleCancelBooking.ts",
+        "line": 415,
+        "body": "[Medium] N+1 database queries for credentials in booking cancellation\n\nWhen iterating over multiple booking calendar references, for each reference where the credential is not found in user credentials, a separate database query is made via prisma.credential.findUnique. Previously, only a single calendar reference was processed. This adds N extra DB queries for booking cancellations where N is the number of calendar references.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/core/builders/CalendarEvent/class.ts",
+        "line": 26,
+        "body": "[Medium] Interface break: destinationCalendar type changed from single object to array\n\nThe type of `destinationCalendar` changed from `DestinationCalendar | null` to `DestinationCalendar[] | null`. This breaks all code that accesses properties directly on `destinationCalendar` (e.g., `.externalId`, `.integration`, `.credentialId`). Multiple places in the codebase still use the old pattern of accessing properties directly on the object rather than iterating an array. While some callers have been updated, the risk of missed callers is high.",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 8,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 8,
+      "after_gate": 8,
+      "filtered": 0
+    },
+    "elapsed": 67.5
+  },
+  "https://github.com/calcom/cal.com/pull/22345": {
+    "pr_title": "feat: convert InsightsBookingService to use Prisma.sql raw queries",
+    "golden_comments": [
+      {
+        "comment": "In getBaseConditions(), the else if (filterConditions) and final else branches are unreachable. This is because getAuthorizationConditions() always returns a non-null Prisma.Sql object, making authConditions always truthy, which means only the first two if/else if conditions are ever evaluated.",
+        "severity": "Low"
+      },
+      {
+        "comment": "Fetching userIdsFromOrg only when teamsFromOrg.length > 0 can exclude org-level members for orgs without child teams; consider deriving from teamIds (which includes orgId) or removing the guard so org-only orgs still include member user bookings.",
+        "severity": "Medium"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "packages/lib/server/service/insightsBooking.ts",
+        "line": 58,
+        "body": "[Medium] Removal of runtime input validation for constructor options\n\nThe constructor parameter type changed from `InsightsBookingServiceOptions` (derived from a Zod schema with runtime validation) to `InsightsBookingServicePublicOptions` (a plain TypeScript type). This removes runtime validation of the `scope`, `userId`, `orgId`, and `teamId` fields. While the values are still parameterized in SQL queries via `Prisma.sql`, invalid or unexpected data types could reach the database layer without validation, potentially causing errors or unexpected behavior. The original Zod schema provided defense-in-depth by validating inputs at the service boundary.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/lib/server/service/insightsBooking.ts",
+        "line": 55,
+        "body": "[High] Constructor parameter type changed from discriminated union to flat type\n\nThe constructor now accepts `InsightsBookingServicePublicOptions` instead of `InsightsBookingServiceOptions`. The new type has `scope: \"user\" | \"org\" | \"team\"` with optional `teamId`, while the old type was a discriminated union with specific required fields per scope. This allows invalid combinations (e.g., `{ scope: \"org\", teamId: 123 }` without proper validation) and breaks existing callers that pass the old discriminated union type. The `buildOrgAuthorizationCondition` and `buildTeamAuthorizationCondition` methods still expect the old `Extract<InsightsBookingServiceOptions, { scope: \"org\" }>` and `Extract<InsightsBookingServiceOptions, { scope: \"team\" }>` types respectively, causing a type mismatch.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/lib/server/service/insightsBooking.ts",
+        "line": 65,
+        "body": "[High] Removed `findMany` method without replacement\n\nThe `findMany` method was completely removed from the `InsightsBookingService` class. Previously, callers could call `service.findMany({ select: { id: true } })` to query bookings with combined authorization and filter conditions. Now there is no public method to perform this combined query. The test file now uses `prisma.$queryRaw` directly, but the service class no longer provides this functionality. Any existing code that calls `service.findMany(...)` will crash with a runtime error.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/lib/server/service/insightsBooking.ts",
+        "line": 65,
+        "body": "[High] Return type changed from Prisma where-input to Prisma.Sql breaking all callers\n\nThe `getAuthorizationConditions` and `getFilterConditions` methods now return `Prisma.Sql` objects instead of `Prisma.BookingTimeStatusDenormalizedWhereInput`. The new `getBaseConditions` method also returns `Prisma.Sql`. Any existing code that uses these methods and expects the old where-input format (e.g., to combine with other Prisma queries) will break. The test file was updated to expect the new format, but production code using these methods was not updated in this PR.",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 4,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 4,
+      "after_gate": 4,
+      "filtered": 0
+    },
+    "elapsed": 30.2
+  },
+  "https://github.com/calcom/cal.com/pull/7232": {
+    "pr_title": "Comprehensive workflow reminder management for booking lifecycle events",
+    "golden_comments": [
+      {
+        "comment": "Asynchronous functions deleteScheduledEmailReminder and deleteScheduledSMSReminder are called without await inside forEach loops. This occurs during booking rescheduling/cancellation, and workflow/workflow step deletion/updates. Consequently, scheduled workflow reminders may not be reliably cancelled, potentially leaving them active.",
+        "severity": "Medium"
+      },
+      {
+        "comment": "When immediateDelete is true, the deleteScheduledEmailReminder function cancels the SendGrid email but fails to delete the corresponding WorkflowReminder record from the database. This creates orphaned database entries and is inconsistent with the immediateDelete: false path, which marks the record as cancelled. The SendGrid DELETE API call is also omitted in this path.",
+        "severity": "High"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "packages/trpc/server/routers/viewer/workflows.tsx",
+        "line": 372,
+        "body": "[High] Missing authorization check in workflow reminder deletion\n\nThe old code included a check `booking: { userId: ctx.user.id }` when deleting workflow reminders, ensuring only the booking owner could delete reminders. This check was removed in the refactored code. Now, when workflow reminders are cancelled/deleted, there is no verification that the current user owns the associated booking. An attacker who can modify workflow-event type associations could potentially cancel reminders for other users' bookings.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/workflows.tsx",
+        "line": 211,
+        "body": "[Medium] Removed Promise.all batching for reminder deletions in workflow deletion\n\nWhen deleting a workflow, the code now calls delete functions without awaiting them or collecting them into a batch. Previously, these were collected and run with Promise.all.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/workflows.tsx",
+        "line": 375,
+        "body": "[Medium] Removed Promise.all batching for reminder deletions when disabling event types\n\nWhen disabling workflow on event types, the code now calls delete functions without awaiting them. Previously, these were collected into an array and run with Promise.all.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/workflows.tsx",
+        "line": 517,
+        "body": "[Medium] Removed Promise.all batching for reminder deletions when editing workflow steps\n\nWhen editing workflow steps, the code now calls delete functions without awaiting them. Previously, these were collected into an array and run with Promise.all.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/ee/workflows/components/WorkflowStepContainer.tsx",
+        "line": 390,
+        "body": "[Medium] Sender ID verification UI removed\n\nThe condition `(isPhoneNumberNeeded || isSenderIdNeeded)` was changed to just `isPhoneNumberNeeded`. This means the phone number verification UI (including sender ID verification) is no longer shown when sender ID is needed but phone number is not. This could allow users to set sender IDs without proper verification, potentially enabling SMS spoofing or impersonation.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+        "line": 40,
+        "body": "[Medium] Sequential API calls in loop for cancelling reminders\n\nThe new code uses a `for...of` loop with `await` inside to cancel scheduled email reminders. This makes the cancellation sequential instead of parallel. If there are many cancelled bookings (e.g., 100+), this will take significantly longer than necessary. Each iteration makes an HTTP request to the email service and a database delete operation.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/ee/workflows/lib/reminders/emailReminderManager.ts",
+        "line": 204,
+        "body": "[High] deleteScheduledEmailReminder with immediateDelete=true does not clean up database record\n\nWhen deleteScheduledEmailReminder is called with immediateDelete=true (e.g., from handleNewBooking.ts line 968 or workflows.tsx line 218), it cancels the scheduled email via API but does NOT delete the WorkflowReminder record from the database or mark it as cancelled. The record remains with cancelled=false (or NULL), causing the scheduler (scheduleEmailReminders.ts) to potentially still process it or leaving orphaned records. The old behavior was to delete the record entirely.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/ee/workflows/lib/reminders/emailReminderManager.ts",
+        "line": 232,
+        "body": "[High] deleteScheduledEmailReminder with immediateDelete=false does not cancel scheduled send via API\n\nWhen deleteScheduledEmailReminder is called without immediateDelete (default false), it only sets cancelled=true in the database but does NOT cancel the scheduled email via the SendGrid API. The scheduled email will still be sent at the scheduled time, defeating the purpose of cancellation. The old behavior was to cancel via API AND delete the record.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/bookings/lib/handleCancelBooking.ts",
+        "line": 484,
+        "body": "[Medium] Removed Promise.all batching for reminder deletions\n\nPreviously, the code collected all reminder delete operations into an array and ran them with `Promise.all`. Now it just calls the delete functions without awaiting them or collecting them into a batch. This means the operations are fire-and-forget, which could lead to incomplete cleanup if the request finishes before they complete. Additionally, errors from these operations are not properly handled.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/bookings/lib/handleCancelBooking.ts",
+        "line": 484,
+        "body": "[Medium] Removed check for scheduled reminders before cancellation\n\nThe old code checked `if (reminder.scheduled && reminder.referenceId)` before cancelling reminders. The new code removes the `reminder.scheduled` check, meaning unscheduled reminders (which have no referenceId) will also trigger the delete functions. For email reminders with null referenceId, this causes a database delete. For SMS, same. This changes behavior for unscheduled reminders that were previously ignored.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/bookings.tsx",
+        "line": 484,
+        "body": "[Medium] Removed Promise.all batching for reminder deletions in reschedule flow\n\nSimilar to handleCancelBooking.ts, the code previously collected all reminder delete operations and ran them with `Promise.all`. Now it just calls the delete functions without awaiting them. This affects the booking reschedule flow.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/bookings/lib/handleNewBooking.ts",
+        "line": 968,
+        "body": "[Medium] Inconsistent handling of email vs SMS reminders during reschedule\n\nWhen rescheduling a booking, email reminders are cancelled with immediateDelete=true (which cancels API but does NOT delete DB record), while SMS reminders are cancelled with the default behavior (which deletes DB record). This inconsistency means email reminder records remain in the database for rescheduled bookings while SMS records are deleted. The email records will have cancelled=false and no scheduled send, creating orphaned data.",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 12,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 12,
+      "after_gate": 12,
+      "filtered": 0
+    },
+    "elapsed": 39.7
+  },
+  "https://github.com/calcom/cal.com/pull/8330": {
+    "pr_title": "Advanced date override handling and timezone compatibility improvements",
+    "golden_comments": [
+      {
+        "comment": "Incorrect end time calculation using slotStartTime instead of slotEndTime",
+        "severity": "Medium"
+      },
+      {
+        "comment": "Using === for dayjs object comparison will always return false as it compares object references, not values. Use .isSame() method instead: dayjs(date.start).add(utcOffset, 'minutes').isSame(dayjs(date.end).add(utcOffset, minutes))",
+        "severity": "Medium"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "packages/trpc/server/routers/viewer/slots.ts",
+        "line": 99,
+        "body": "[High] Date override bypasses busy-time availability check\n\nThe new date override logic in checkIfIsAvailable returns true (available) for any slot on a day with a date override, without checking if the slot conflicts with existing bookings. The original busy-time check is completely bypassed when dateOverrideExist is true.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/slots.ts",
+        "line": 130,
+        "body": "[Medium] O(slots * workingHours) iteration added inside checkIfIsAvailable\n\nThe checkIfIsAvailable function now also iterates over all workingHours for every slot when no date override exists. This adds another O(slots * workingHours) loop. With 1440 slots and 14 working hours (7 days * 2 ranges), this adds ~20,160 iterations.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/slots.ts",
+        "line": 99,
+        "body": "[High] Inverted date override availability logic\n\nThe `find` callback in the date override check returns `true` when a slot IS within the date override (lines 110-120), but the outer `if` statement treats a found result as 'slot is NOT within override' and returns `false`. This completely inverts the logic: slots that should be available are marked unavailable, and vice versa.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/slots.ts",
+        "line": 112,
+        "body": "[High] Dayjs object comparison by reference instead of value\n\nLine 112 compares two Dayjs objects using `===` which checks reference equality, not value equality. This condition will almost never be true even when the times are identical, causing the 'same start/end time' override case to never be handled correctly.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/slots.ts",
+        "line": 114,
+        "body": "[High] Wrong condition for slot before override start\n\nLine 114-116 checks if slotEndTime is before or equal to overrideStart, and returns `true` (meaning slot IS within override). This is incorrect: if a slot ends before the override starts, the slot is NOT within the override. The condition should return `false` or be inverted.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/slots.ts",
+        "line": 117,
+        "body": "[High] Wrong condition for slot after override end\n\nLine 117-119 checks if slotStartTime is after overrideEnd, and returns `true` (meaning slot IS within override). This is incorrect: if a slot starts after the override ends, the slot is NOT within the override. The condition should return `false` or be inverted.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/trpc/server/routers/viewer/slots.ts",
+        "line": 140,
+        "body": "[High] Working hours check uses slotStartTime for both start and end calculations\n\nIn the working hours check (lines 140-141), both `start` and `end` variables are calculated from `slotStartTime`. The `end` variable should be calculated from `slotEndTime` to properly check if the slot's end time falls within working hours. This causes incorrect availability checks for slots that span across working hour boundaries.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/lib/slots.ts",
+        "line": 211,
+        "body": "[Medium] Timezone offset calculation may produce incorrect override times\n\nThe new code calculates an offset between invitee and organizer timezones and applies it to override start/end times. This shifts the override times to the invitee's timezone, but date overrides represent when the organizer is available. Shifting them by the timezone difference could show slots at times when the organizer is not actually available.",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 8,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 8,
+      "after_gate": 8,
+      "filtered": 0
+    },
+    "elapsed": 32.7
+  },
+  "https://github.com/calcom/cal.com/pull/14943": {
+    "pr_title": "SMS workflow reminder retry count tracking",
+    "golden_comments": [
+      {
+        "comment": "Using retryCount: reminder.retryCount + 1 reads a possibly stale value and can lose increments under concurrency; consider an atomic increment via Prisma (increment: 1) to avoid race conditions (also applies to the similar update in the catch block).",
+        "severity": "High"
+      },
+      {
+        "comment": "The deletion logic in scheduleSMSReminders.ts incorrectly deletes non-SMS workflow reminders (e.g., Email, WhatsApp) that have retryCount > 1. This occurs because the retryCount condition within the OR clause for deletion lacks a method: WorkflowMethods.SMS filter, causing it to apply to all reminder types instead of only SMS reminders, which is the intended scope of this function.",
+        "severity": "High"
+      }
+    ],
+    "source_file": "cal_dot_com.json",
+    "tool": "prism",
+    "review_comments": [
+      {
+        "path": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+        "line": 178,
+        "body": "[High] Retry count incremented on successful SMS scheduling\n\nThe retryCount is incremented even when SMS scheduling succeeds. This is logically incorrect - retry count should only increase on failure. If a reminder fails once and then succeeds on retry, its retryCount becomes 2, causing it to be deleted by the cleanup query (which deletes reminders with retryCount > 1).",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+        "line": 186,
+        "body": "[Medium] No upper limit on retry count in error handling\n\nThe retryCount is incremented indefinitely on each failure without any maximum limit. An attacker could cause repeated failures (e.g., by providing invalid phone numbers) leading to unbounded retry count growth. Combined with the deleteMany query that deletes reminders with retryCount > 1, this could cause premature deletion of reminders.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+        "line": 31,
+        "body": "[High] DeleteMany query deletes reminders with retryCount > 1 regardless of scheduled date\n\nThe deleteMany query now includes an OR condition that deletes reminders where retryCount > 1, regardless of their scheduled date. This means any reminder that has been retried twice (even if successfully scheduled) will be deleted, potentially causing loss of legitimate reminders.",
+        "created_at": ""
+      },
+      {
+        "path": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+        "line": 178,
+        "body": "[Medium] N+1 database writes inside loop over unscheduled reminders\n\nTwo new `prisma.workflowReminder.update()` calls are added inside the loop that iterates over `unscheduledReminders`. Previously, this loop only performed external API calls (SMS scheduling) and a single conditional database write. Now, every iteration performs at least one additional database write to increment `retryCount`. This creates an N+1 write pattern where the number of database writes scales linearly with the number of reminders. For enterprise customers with thousands of bookings, this could add significant latency and database load.",
+        "created_at": ""
+      }
+    ],
+    "issue_count": 4,
+    "risk_level": "HIGH",
+    "evidence_gate_stats": {
+      "before_gate": 4,
+      "after_gate": 4,
+      "filtered": 0
+    },
+    "elapsed": 24.6
+  }
+}

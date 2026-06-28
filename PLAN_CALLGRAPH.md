@@ -4,17 +4,32 @@
 >
 > **主链路不依赖本功能**：调用图是增强，任何阶段失败都静默降级回 diff-only，不影响基本 review 流程。
 
-## 当前状态
+## 当前状态（2026-06-27 更新）
 
 | 模块 | 状态 | 说明 |
 |------|------|------|
 | `repo.py` | 已存在 | shallow clone + 缓存基础能力已落地 |
-| `indexer.py` | 已存在 | tree-sitter -> SQLite 基础能力已落地 |
-| `blast_radius.py` | 已存在 | BFS depth=2 + token budget 基础能力已落地 |
-| `graph.py` 集成 | 已接入 | 调用图、SAST、verification 与 Agent 并行准备 |
-| 真实 PR 评测 | 未完成 | 需用 20 个真实 PR 建立 precision/SNR 基线 |
+| `indexer.py` | 已存在 | tree-sitter -> SQLite，v2 schema 含 TS import 验证 |
+| `blast_radius.py` | 已存在 | BFS depth=2，仅使用 callee_id 验证调用（v7 升级） |
+| `graph.py` 集成 | Finding-First 架构 | agents 只看 diff，judge 后走 `_run_impact_verification` |
+| 真实 PR 评测 | **已完成（7 PR）** | 见下方 eval 结果 |
 
-后续执行时以实际代码状态为准，不重复实现已存在模块；重点放在最终门禁、真实 PR 评测和部署验证。
+### Eval 结果汇总（7 个 cal.com PR，19 条 golden）
+
+| 版本 | 方案 | P | R | F1 |
+|------|------|---|---|----|
+| v3_7pr | diff-only 基线 | **0.457** | 0.474 | **0.465** |
+| v6 | callgraph 名称匹配注入 prompt | 0.304 | 0.421 | 0.353 |
+| v7 | import 验证 callgraph 注入 prompt | 0.344 | **0.474** | 0.399 |
+| v8 | finding-first（callgraph 移出 prompt） | 0.300 | 0.421 | 0.350 |
+
+**结论**：三种 callgraph 注入方式均低于 diff-only 基线。根本原因：
+1. blast_radius 在 eval 环境实际成功率未知（可能 clone 失败 → 返回空）
+2. Context Distraction：调用方上下文加入 prompt 后 FP 增加
+
+**下一步**：先 debug blast_radius 成功率，再决定是否继续 finding-first。
+
+后续执行时以实际代码状态为准，不重复实现已存在模块。
 
 ---
 

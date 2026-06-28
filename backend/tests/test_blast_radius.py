@@ -9,6 +9,12 @@ from app.services.blast_radius import compute_blast_radius, compute_blast_radius
 
 @pytest.fixture
 def sample_db(tmp_path):
+    """Fixture with import-verified edges (callee_id set).
+
+    foo(1) ← bar(2) ← baz(3)
+    callee_id is set to the actual callee node id, simulating what
+    _resolve_callee_ids() does after import-aware indexing.
+    """
     db = tmp_path / "test.db"
     conn = sqlite3.connect(str(db))
     conn.executescript("""
@@ -18,12 +24,12 @@ def sample_db(tmp_path):
             start_line INTEGER, end_line INTEGER,
             code TEXT, file_hash TEXT
         );
-        CREATE TABLE edges (caller_id INTEGER, callee_name TEXT);
+        CREATE TABLE edges (caller_id INTEGER, callee_name TEXT, callee_id INTEGER);
         INSERT INTO nodes VALUES (1, 'a.py', 'foo', 1, 5, 'def foo(): pass', 'h1');
         INSERT INTO nodes VALUES (2, 'b.py', 'bar', 1, 5, 'def bar(): foo()', 'h2');
         INSERT INTO nodes VALUES (3, 'c.py', 'baz', 1, 5, 'def baz(): bar()', 'h3');
-        INSERT INTO edges (caller_id, callee_name) VALUES (2, 'foo');
-        INSERT INTO edges (caller_id, callee_name) VALUES (3, 'bar');
+        INSERT INTO edges VALUES (2, 'foo', 1);
+        INSERT INTO edges VALUES (3, 'bar', 2);
     """)
     conn.commit()
     conn.close()
@@ -33,7 +39,8 @@ def sample_db(tmp_path):
 def test_finds_direct_caller(sample_db):
     result = compute_blast_radius(sample_db, {"foo"}, diff_token_estimate=10000)
     assert len(result) == 1
-    assert result[0]["changed_fn"] == "foo"
+    # changed_fn is now always "file:name" regardless of how the node was resolved
+    assert result[0]["changed_fn"] == "a.py:foo"
     caller_fns = {c["fn"] for c in result[0]["callers"]}
     assert "bar" in caller_fns
 
@@ -51,11 +58,11 @@ def test_no_infinite_loop_on_cycle(tmp_path):
     conn.executescript("""
         CREATE TABLE nodes (id INTEGER PRIMARY KEY, file TEXT, name TEXT,
             start_line INTEGER, end_line INTEGER, code TEXT, file_hash TEXT);
-        CREATE TABLE edges (caller_id INTEGER, callee_name TEXT);
+        CREATE TABLE edges (caller_id INTEGER, callee_name TEXT, callee_id INTEGER);
         INSERT INTO nodes VALUES (1, 'a.py', 'ping', 1, 3, 'def ping(): pong()', 'h1');
         INSERT INTO nodes VALUES (2, 'a.py', 'pong', 5, 7, 'def pong(): ping()', 'h2');
-        INSERT INTO edges (caller_id, callee_name) VALUES (1, 'pong');
-        INSERT INTO edges (caller_id, callee_name) VALUES (2, 'ping');
+        INSERT INTO edges VALUES (1, 'pong', 2);
+        INSERT INTO edges VALUES (2, 'ping', 1);
     """)
     conn.commit()
     conn.close()
@@ -97,7 +104,13 @@ def test_blast_radius_starts_from_node_id_not_global_name(tmp_path):
     assert {caller["fn"] for caller in result[0]["callers"]} == {"caller_a"}
 
 
-def test_blast_radius_old_schema_with_node_id_does_not_fail(tmp_path):
+def test_blast_radius_old_schema_without_callee_id_returns_empty(tmp_path):
+    """Old DBs whose edges have no callee_id column return no callers.
+
+    This is intentional: edges without callee_id were not import-verified.
+    Passing unverified callers to the LLM degrades precision ("garbage in").
+    The DB will be rebuilt with callee_id populated on the next full index.
+    """
     db = tmp_path / "old_schema_same_name.db"
     conn = sqlite3.connect(str(db))
     conn.executescript("""
@@ -116,9 +129,8 @@ def test_blast_radius_old_schema_with_node_id_does_not_fail(tmp_path):
 
     result = compute_blast_radius(db, {"target"}, 10000, changed_node_ids={1})
 
-    assert len(result) == 1
-    assert result[0]["changed_fn"] == "a.py:target"
-    assert {caller["fn"] for caller in result[0]["callers"]} == {"caller_a", "caller_b"}
+    # No callee_id column → no import-verified callers → empty result
+    assert result == []
 
 
 def test_bfs_output_is_deterministically_ordered(tmp_path):
@@ -127,12 +139,12 @@ def test_bfs_output_is_deterministically_ordered(tmp_path):
     conn.executescript("""
         CREATE TABLE nodes (id INTEGER PRIMARY KEY, file TEXT, name TEXT,
             start_line INTEGER, end_line INTEGER, code TEXT, file_hash TEXT);
-        CREATE TABLE edges (caller_id INTEGER, callee_name TEXT);
+        CREATE TABLE edges (caller_id INTEGER, callee_name TEXT, callee_id INTEGER);
         INSERT INTO nodes VALUES (1, 'z.py', 'target', 1, 3, 'def target(): pass', 'h1');
         INSERT INTO nodes VALUES (2, 'z.py', 'z_call', 10, 12, 'def z_call(): target()', 'h2');
         INSERT INTO nodes VALUES (3, 'a.py', 'a_call', 1, 3, 'def a_call(): target()', 'h3');
-        INSERT INTO edges (caller_id, callee_name) VALUES (2, 'target');
-        INSERT INTO edges (caller_id, callee_name) VALUES (3, 'target');
+        INSERT INTO edges VALUES (2, 'target', 1);
+        INSERT INTO edges VALUES (3, 'target', 1);
     """)
     conn.commit()
     conn.close()
@@ -148,20 +160,21 @@ def test_blast_radius_merges_node_ids_and_function_name_fallback(tmp_path):
     conn.executescript("""
         CREATE TABLE nodes (id INTEGER PRIMARY KEY, file TEXT, name TEXT,
             start_line INTEGER, end_line INTEGER, code TEXT, file_hash TEXT);
-        CREATE TABLE edges (caller_id INTEGER, callee_name TEXT);
+        CREATE TABLE edges (caller_id INTEGER, callee_name TEXT, callee_id INTEGER);
         INSERT INTO nodes VALUES (1, 'a.py', 'target', 1, 3, 'def target(): pass', 'h1');
         INSERT INTO nodes VALUES (2, 'b.py', 'new_fn', 1, 3, 'def new_fn(): pass', 'h2');
         INSERT INTO nodes VALUES (3, 'caller_a.py', 'caller_a', 1, 3, 'def caller_a(): target()', 'h3');
         INSERT INTO nodes VALUES (4, 'caller_b.py', 'caller_b', 1, 3, 'def caller_b(): new_fn()', 'h4');
-        INSERT INTO edges (caller_id, callee_name) VALUES (3, 'target');
-        INSERT INTO edges (caller_id, callee_name) VALUES (4, 'new_fn');
+        INSERT INTO edges VALUES (3, 'target', 1);
+        INSERT INTO edges VALUES (4, 'new_fn', 2);
     """)
     conn.commit()
     conn.close()
 
     result = compute_blast_radius(db, {"new_fn"}, 10000, changed_node_ids={1})
 
-    assert [item["changed_fn"] for item in result] == ["a.py:target", "new_fn"]
+    # both node-id-resolved and name-match-fallback nodes now always emit "file:name"
+    assert [item["changed_fn"] for item in result] == ["a.py:target", "b.py:new_fn"]
 
 
 # ---------------------------------------------------------------------------

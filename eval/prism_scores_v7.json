@@ -1,0 +1,100 @@
+{
+  "aggregate": {
+    "precision": 0.344,
+    "recall": 0.474,
+    "f1": 0.399,
+    "total_prs": 7,
+    "total_findings": 61,
+    "total_goldens": 19,
+    "total_tp_precision": 21,
+    "total_tp_recall": 9,
+    "total_fp": 40,
+    "total_fn": 10
+  },
+  "evidence_gate": {
+    "total_before_gate": 65,
+    "total_after_gate": 65,
+    "filter_rate": 0.0,
+    "filter_pct": 0.0
+  },
+  "elapsed_seconds": 52.2,
+  "per_pr": [
+    {
+      "url": "https://github.com/calcom/cal.com/pull/8087",
+      "precision": 0.75,
+      "recall": 0.5,
+      "tp_recall": 1,
+      "tp_precision": 6,
+      "fp": 2,
+      "fn": 1,
+      "golden_count": 2,
+      "finding_count": 8
+    },
+    {
+      "url": "https://github.com/calcom/cal.com/pull/10600",
+      "precision": 0.0,
+      "recall": 0.0,
+      "tp_recall": 0,
+      "tp_precision": 0,
+      "fp": 8,
+      "fn": 4,
+      "golden_count": 4,
+      "finding_count": 8
+    },
+    {
+      "url": "https://github.com/calcom/cal.com/pull/10967",
+      "precision": 0.381,
+      "recall": 1.0,
+      "tp_recall": 5,
+      "tp_precision": 8,
+      "fp": 13,
+      "fn": 0,
+      "golden_count": 5,
+      "finding_count": 21
+    },
+    {
+      "url": "https://github.com/calcom/cal.com/pull/22345",
+      "precision": 0.0,
+      "recall": 0.0,
+      "tp_recall": 0,
+      "tp_precision": 0,
+      "fp": 5,
+      "fn": 2,
+      "golden_count": 2,
+      "finding_count": 5
+    },
+    {
+      "url": "https://github.com/calcom/cal.com/pull/7232",
+      "precision": 0.5,
+      "recall": 1.0,
+      "tp_recall": 2,
+      "tp_precision": 6,
+      "fp": 6,
+      "fn": 0,
+      "golden_count": 2,
+      "finding_count": 12
+    },
+    {
+      "url": "https://github.com/calcom/cal.com/pull/8330",
+      "precision": 0.25,
+      "recall": 0.5,
+      "tp_recall": 1,
+      "tp_precision": 1,
+      "fp": 3,
+      "fn": 1,
+      "golden_count": 2,
+      "finding_count": 4
+    },
+    {
+      "url": "https://github.com/calcom/cal.com/pull/14943",
+      "precision": 0.0,
+      "recall": 0.0,
+      "tp_recall": 0,
+      "tp_precision": 0,
+      "fp": 3,
+      "fn": 2,
+      "golden_count": 2,
+      "finding_count": 3
+    }
+  ]
+}

@@ -22,6 +22,8 @@ review:
     - "*.min.js"
   # callgraph backend: "builtin" (tree-sitter SQLite BFS) or "codegraph" (npm @colbymchenry/codegraph)
   callgraph_backend: builtin
+  # set to false to run in diff-only mode (no blast_radius, no impact_verification)
+  callgraph_enabled: false
 
 github:
   # Secrets go in .env: GITHUB_WEBHOOK_SECRET, GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY

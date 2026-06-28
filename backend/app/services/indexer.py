@@ -10,8 +10,14 @@ Dynamic calls (getattr, reflection) are NOT tracked — accepted limitation.
 import concurrent.futures
 import hashlib
 import logging
+import os
+import re
 import sqlite3
 from pathlib import Path
+
+# Bump this when the indexing schema or extraction logic changes.
+# build_index() compares against this value and re-indexes affected files on mismatch.
+_DB_SCHEMA_VERSION = 2
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +58,6 @@ def _resolve_import_path(rel: str, module_text: str) -> str | None:
 
 def _extract_python_imports(source: bytes, rel: str, parser, lang) -> list[dict]:
     imports = []
-    import re
     text = source.decode("utf-8", errors="replace")
     for m in re.finditer(r'^from\s+(\S+)\s+import\s+(.+)$', text, re.MULTILINE):
         module = m.group(1)
@@ -89,6 +94,143 @@ def _extract_python_imports(source: bytes, rel: str, parser, lang) -> list[dict]
                 name = part.strip()
                 source_file = name.replace(".", "/") + ".py"
             imports.append({"name": name, "source_file": source_file})
+    return imports
+
+
+def _resolve_ts_import_path(rel: str, module_path: str, repo_path: Path) -> str | None:
+    """Resolve a TS/JS relative import string to a repo-relative file path.
+
+    Returns None for:
+    - Absolute imports (node_modules / path aliases like '@calcom/...')
+    - Imports that resolve outside the repo root
+    - Imports that don't correspond to any existing file
+    """
+    if not module_path.startswith("."):
+        return None
+
+    caller_dir = str(Path(rel).parent)
+    # Normalize: 'packages/features/bookings' + './api/booking' → 'packages/features/bookings/api/booking'
+    raw = os.path.normpath(os.path.join(caller_dir, module_path))
+
+    # Guard: don't escape repo root
+    if raw.startswith(".."):
+        return None
+
+    EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"]
+
+    # Maybe already has a valid extension
+    if (repo_path / raw).exists():
+        return raw
+
+    # Try appending extension
+    for ext in EXTENSIONS:
+        candidate = raw + ext
+        if (repo_path / candidate).exists():
+            return candidate
+
+    # Try index file inside directory
+    for ext in EXTENSIONS:
+        candidate = os.path.join(raw, "index" + ext)
+        if (repo_path / candidate).exists():
+            return candidate
+
+    return None
+
+
+def _parse_ts_import_specifiers(specifiers: str) -> list[str]:
+    """Extract local binding names from a TypeScript import specifier block.
+
+    Handles:
+      { X, Y as Z, type W }   → ['X', 'Z', 'W']
+      * as ns                  → ['ns']
+      DefaultName              → ['DefaultName']
+      DefaultName, { X, Y }   → ['DefaultName', 'X', 'Y']
+    """
+    names: list[str] = []
+
+    # Named imports inside { }
+    brace_m = re.search(r"\{([^}]*)\}", specifiers, re.DOTALL)
+    if brace_m:
+        for part in brace_m.group(1).split(","):
+            part = part.strip()
+            if not part:
+                continue
+            # Strip leading 'type' for type-only named imports
+            part = re.sub(r"^\s*type\s+", "", part).strip()
+            alias_m = re.match(r"(\w+)\s+as\s+(\w+)", part)
+            if alias_m:
+                names.append(alias_m.group(2))  # use local alias
+            elif re.match(r"^\w+$", part):
+                names.append(part)
+
+    # Remove brace block to parse the remainder
+    remainder = re.sub(r"\{[^}]*\}", "", specifiers, flags=re.DOTALL)
+
+    # Namespace: * as X
+    ns_m = re.search(r"\*\s+as\s+(\w+)", remainder)
+    if ns_m:
+        names.append(ns_m.group(1))
+        remainder = re.sub(r"\*\s+as\s+\w+", "", remainder)
+
+    # Default import: single bare word
+    remainder = remainder.strip().strip(",").strip()
+    if re.match(r"^\w+$", remainder):
+        names.append(remainder)
+
+    return names
+
+
+def _extract_ts_imports(source: bytes, rel: str, repo_path: Path) -> list[dict]:
+    """Extract TypeScript/JavaScript import bindings and resolve to repo-relative paths.
+
+    Handles:
+      import { X, Y } from './path'
+      import X from './path'
+      import * as X from './path'
+      import X, { Y } from './path'
+      import type { X } from './path'
+      export { X } from './path'   (re-exports)
+    Skips non-relative imports (node_modules, path aliases).
+    """
+    text = source.decode("utf-8", errors="replace")
+    imports: list[dict] = []
+
+    # Match: import [type] <specifiers> from '<path>'
+    IMPORT_FROM_RE = re.compile(
+        r"\bimport\s+(?:type\s+)?"
+        r"((?:\{[^}]*\}|\*\s+as\s+\w+|\w+)(?:\s*,\s*(?:\{[^}]*\}|\w+))*)"
+        r"\s+from\s+['\"]([^'\"]+)['\"]",
+        re.DOTALL,
+    )
+    # Match: export { X [as Y] } from '<path>'
+    EXPORT_FROM_RE = re.compile(
+        r"\bexport\s+(?:type\s+)?\{([^}]*)\}\s*from\s+['\"]([^'\"]+)['\"]",
+        re.DOTALL,
+    )
+
+    for m in IMPORT_FROM_RE.finditer(text):
+        specifiers, module_path = m.group(1), m.group(2)
+        resolved = _resolve_ts_import_path(rel, module_path, repo_path)
+        if resolved is None:
+            continue
+        for name in _parse_ts_import_specifiers(specifiers):
+            imports.append({"name": name, "source_file": resolved})
+
+    for m in EXPORT_FROM_RE.finditer(text):
+        named_str, module_path = m.group(1), m.group(2)
+        resolved = _resolve_ts_import_path(rel, module_path, repo_path)
+        if resolved is None:
+            continue
+        for part in named_str.split(","):
+            part = re.sub(r"^\s*type\s+", "", part.strip()).strip()
+            if not part:
+                continue
+            alias_m = re.match(r"(\w+)\s+as\s+(\w+)", part)
+            if alias_m:
+                imports.append({"name": alias_m.group(2), "source_file": resolved})
+            elif re.match(r"^\w+$", part):
+                imports.append({"name": part, "source_file": resolved})
+
     return imports
 
 
@@ -235,6 +377,10 @@ def build_index(repo_path: Path, db_path: Path) -> None:
             file TEXT PRIMARY KEY,
             hash TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS db_meta (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
     """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_imports_file ON imports(file)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_imports_name ON imports(name)")
@@ -245,6 +391,24 @@ def build_index(repo_path: Path, db_path: Path) -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_edges_callee_short ON edges(callee_short_name)")
         if needs_full_reindex:
             conn.execute("DELETE FROM file_hashes")
+            conn.execute("DELETE FROM db_meta WHERE key = 'schema_version'")
+
+        # Schema version gate: if DB was built without TS import extraction,
+        # invalidate JS/TS file hashes so they get re-indexed this run.
+        row = conn.execute(
+            "SELECT value FROM db_meta WHERE key = 'schema_version'"
+        ).fetchone()
+        stored_version = int(row[0]) if row else 0
+        if stored_version < _DB_SCHEMA_VERSION:
+            conn.execute(
+                "DELETE FROM file_hashes WHERE file LIKE '%.ts' OR file LIKE '%.tsx' "
+                "OR file LIKE '%.js' OR file LIKE '%.jsx'"
+            )
+            logger.info(
+                "indexer: schema upgraded v%d→v%d, invalidated JS/TS file hashes",
+                stored_version, _DB_SCHEMA_VERSION,
+            )
+
         conn.commit()
 
         parsers = {}
@@ -266,11 +430,18 @@ def build_index(repo_path: Path, db_path: Path) -> None:
         for path in _iter_files(repo_path, ext_to_lang):
             rel = str(path.relative_to(repo_path))
             try:
-                _index_file(conn, path, rel, ext_to_lang, parsers)
+                _index_file(conn, path, rel, ext_to_lang, parsers, repo_path)
             except Exception as e:
                 logger.debug("skip %s: %s", rel, e)
 
         _resolve_callee_ids(conn)
+
+        # Record current schema version
+        conn.execute(
+            "INSERT OR REPLACE INTO db_meta (key, value) VALUES ('schema_version', ?)",
+            (str(_DB_SCHEMA_VERSION),),
+        )
+        conn.commit()
     finally:
         conn.close()
     logger.info("index built: %s", db_path)
@@ -309,6 +480,7 @@ def _index_file(
     rel: str,
     ext_to_lang: dict,
     parsers: dict,
+    repo_path: Path | None = None,
 ) -> None:
     fhash = _file_hash(path)
     row = conn.execute(
@@ -351,6 +523,15 @@ def _index_file(
             )
     else:
         functions, calls = _extract_js_ts(source, tree)
+        # Extract and store TS/JS imports for caller verification
+        if repo_path is not None:
+            import_rows = _extract_ts_imports(source, rel, repo_path)
+            conn.execute("DELETE FROM imports WHERE file = ?", (rel,))
+            for ir in import_rows:
+                conn.execute(
+                    "INSERT INTO imports (file, name, source_file) VALUES (?, ?, ?)",
+                    (rel, ir["name"], ir["source_file"]),
+                )
 
     fn_name_to_id: dict[str, int] = {}
     for fn in functions:

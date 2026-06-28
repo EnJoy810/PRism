@@ -33,6 +33,7 @@ class ReviewConfig(BaseModel):
     filters: FilterConfig = FilterConfig()
     skip: list[str] = Field(default_factory=lambda: ["*.lock", "*.snap", "*.min.js"])
     callgraph_backend: Literal["builtin", "codegraph"] = "builtin"
+    callgraph_enabled: bool = True  # set to false to disable blast_radius entirely (diff-only mode)
 
 
 class GithubConfig(BaseModel):
