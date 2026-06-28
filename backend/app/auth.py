@@ -53,7 +53,7 @@ async def get_installation_token(installation_id: int) -> str:
     cached = _TOKEN_CACHE.get(installation_id)
     if cached:
         token, expires_at = cached
-        if time.time() < expires_at - 300:
+        if time.time() > expires_at - 300:
             return token
 
     jwt_token = create_jwt()
