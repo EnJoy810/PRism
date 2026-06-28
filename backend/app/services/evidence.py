@@ -1,7 +1,99 @@
+import re
+
 from app.models.agent import FindingSchema
 from app.services.diff import build_position_map
 
 SEVERITY_ORDER = {"ERROR": 0, "WARNING": 1, "INFO": 2}
+
+# ---------------------------------------------------------------------------
+# Non-executable context detection (comment / docstring / string literal)
+# ---------------------------------------------------------------------------
+
+def _reconstruct_file_lines(diff: str, file_path: str) -> dict[int, str]:
+    """从 diff 重建指定文件的行号→内容映射（新增行 + context 行，不含删除行）。"""
+    result: dict[int, str] = {}
+    current_file: str | None = None
+    in_target = False
+    new_line = 0
+    for raw in diff.split("\n"):
+        if raw.startswith("+++ b/"):
+            current_file = raw[6:]
+            in_target = (current_file == file_path)
+            new_line = 0
+        elif raw.startswith("@@") and in_target:
+            m = re.search(r"\+(\d+)", raw)
+            if m:
+                new_line = int(m.group(1)) - 1
+        elif in_target:
+            if raw.startswith("+") and not raw.startswith("+++"):
+                new_line += 1
+                result[new_line] = raw[1:]
+            elif raw.startswith(" "):
+                new_line += 1
+                result[new_line] = raw[1:]
+    return result
+
+
+def is_line_in_non_executable_context(diff: str, file_path: str, line_num: int) -> bool:
+    """检查 diff 中某行是否落在注释或多行字符串（docstring）内。
+
+    支持：
+    - Python triple-quote docstring (''' 或 \"\"\")
+    - Python 单行注释 (#)
+    - TypeScript/JavaScript 块注释 (/* ... */)
+    - TypeScript/JavaScript 单行注释 (//)
+    - TypeScript/JavaScript JSDoc (/** ... */)
+
+    实现策略：从目标行之前的所有 diff 行中维护一个简单状态机，
+    判断多行注释/docstring 是否已打开但尚未关闭。
+    """
+    if line_num is None:
+        return False
+
+    lines = _reconstruct_file_lines(diff, file_path)
+    if not lines:
+        return False
+
+    content_at_line = lines.get(line_num, "")
+    stripped = content_at_line.strip()
+
+    # 单行注释快速判断
+    if (
+        stripped.startswith("#")
+        or stripped.startswith("//")
+        or stripped.startswith("*")   # JSDoc 内容行 (* @param, * text)
+        or stripped.startswith("/*")  # 块注释开始行（/* 或 /**）
+    ):
+        return True
+
+    # 扫描目标行之前的行，维护多行上下文状态
+    in_multiline = False
+    multiline_closer: str | None = None
+
+    for ln in sorted(ln for ln in lines if ln < line_num):
+        line_content = lines[ln]
+
+        if not in_multiline:
+            # 检测 Python triple-quote 开启（按长度降序，防止 '' 干扰 '''）
+            for marker in ('"""', "'''"):
+                count = line_content.count(marker)
+                if count % 2 == 1:  # 奇数 = 本行开启但未关闭
+                    in_multiline = True
+                    multiline_closer = marker
+                    break
+            # 检测 JS/TS 块注释开启
+            if not in_multiline and "/*" in line_content:
+                after_open = line_content[line_content.index("/*") + 2:]
+                if "*/" not in after_open:
+                    in_multiline = True
+                    multiline_closer = "*/"
+        else:
+            assert multiline_closer is not None
+            if multiline_closer in line_content:
+                in_multiline = False
+                multiline_closer = None
+
+    return in_multiline
 
 
 def added_lines_by_file(diff: str) -> dict[str, list[str]]:
@@ -83,6 +175,9 @@ def finding_targets_added_line(finding: FindingSchema, diff: str) -> bool:
 
 
 def publication_gate(findings: list[FindingSchema], diff: str) -> list[FindingSchema]:
+    import logging
+    _log = logging.getLogger(__name__)
+
     kept: dict[tuple[str, int | None, str], FindingSchema] = {}
     for finding in findings:
         if severity(finding) == "INFO":
@@ -94,6 +189,17 @@ def publication_gate(findings: list[FindingSchema], diff: str) -> list[FindingSc
                 continue
         else:
             if not finding_targets_added_line(finding, diff):
+                continue
+            # 过滤掉落在注释 / docstring / 字符串字面量内的 finding，
+            # 防止 LLM 把文档示例代码当真实代码报 false positive
+            if finding.line is not None and is_line_in_non_executable_context(
+                diff, finding.file, finding.line
+            ):
+                _log.info(
+                    "evidence gate: dropped finding in non-executable context "
+                    "[%s:%s] %s",
+                    finding.file, finding.line, finding.title,
+                )
                 continue
 
         key = (finding.file, finding.line, finding.title)
