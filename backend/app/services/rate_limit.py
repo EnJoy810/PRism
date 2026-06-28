@@ -13,7 +13,10 @@ async def is_rate_limited(redis, installation_id: int | None) -> bool:
 
     Uses a sliding counter in Redis. Each installation gets an independent
     bucket that resets every _WINDOW_SECONDS seconds.
+    Returns False (allow) when Redis is unavailable.
     """
+    if redis is None:
+        return False
     key = f"prism:rate:limit:{installation_id}"
     count = await redis.incr(key)
     if count == 1:
