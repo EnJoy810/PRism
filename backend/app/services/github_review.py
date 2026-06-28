@@ -239,9 +239,9 @@ async def post_review_to_github(
                     "html_url": data.get("html_url", ""),
                     "inline_count": len(inline_comments),
                 }
-        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+        except Exception as exc:
             last_exc = exc
-            if attempt < _MAX_RETRIES - 1:
+            if attempt < _MAX_RETRIES:
                 delay = _BASE_DELAY * (2 ** attempt)
                 logger.warning(
                     "GitHub API attempt %d failed: %s — retrying in %.1fs",

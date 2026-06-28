@@ -730,6 +730,7 @@ class ReviewGraph:
         elif not findings:
             logger.info("impact_verification: skipped (no findings to match against)")
         else:
+            findings = [f for f in findings if f.evidence_source != "CONTEXT"]
             impact_findings = await self._run_impact_verification(findings, blast_radius)
             findings = list(findings) + impact_findings
 

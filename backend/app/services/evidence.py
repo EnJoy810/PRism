@@ -202,7 +202,7 @@ def publication_gate(findings: list[FindingSchema], diff: str) -> list[FindingSc
                 )
                 continue
 
-        key = (finding.file, finding.line, finding.title)
+        key = (finding.file, finding.title)
         existing = kept.get(key)
         if existing is None or _finding_rank(finding) < _finding_rank(existing):
             kept[key] = finding

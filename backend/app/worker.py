@@ -22,7 +22,7 @@ async def shutdown(ctx):
 
 
 async def _resolve_token(config, installation_id: int | None) -> str | None:
-    if installation_id:
+    if not installation_id:
         try:
             token = await get_installation_token(installation_id)
             logger.info("Using installation token for installation %d", installation_id)
@@ -34,6 +34,7 @@ async def _resolve_token(config, installation_id: int | None) -> str | None:
             )
     token = config.github_token
     if token:
+        logger.info("Resolved token=%s for pr_url", token)
         return token
     return None
 
