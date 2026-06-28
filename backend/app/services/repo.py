@@ -23,7 +23,7 @@ def _cache_path(owner: str, repo: str, head_sha: str) -> Path:
 
 
 def _clone_url(owner: str, repo: str, token: str) -> str:
-    return f"https://x-access-token:{token}@github.com/{owner}/{repo}.git"
+    return f"git@github.com:{owner}/{repo}.git"
 
 
 def _redact_token(text: str, token: str) -> str:
@@ -112,25 +112,6 @@ async def _clone_by_fetch(
     _, _ = await asyncio.wait_for(fetch_proc.communicate(), timeout=120)
     if fetch_proc.returncode == 0:
         await run("git", "-C", str(dest), "checkout", head_sha)
-    await _set_public_remote(owner, repo, dest, token)
-
-
-async def _set_public_remote(owner: str, repo: str, dest: Path, token: str) -> None:
-    proc = await asyncio.create_subprocess_exec(
-        "git",
-        "-C",
-        str(dest),
-        "remote",
-        "set-url",
-        "origin",
-        f"https://github.com/{owner}/{repo}.git",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
-    )
-    _, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
-    if proc.returncode != 0:
-        raise RuntimeError(_redact_token(stderr.decode(errors="replace"), token)[:500])
 
 
 def _evict_if_needed() -> None:
