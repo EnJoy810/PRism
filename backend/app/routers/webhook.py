@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import load_config
 from app.services.queue import ReviewJob, enqueue_review
+from app.services.rate_limit import is_rate_limited
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +95,10 @@ async def handle_webhook(request: Request):
         return JSONResponse(
             status_code=400, content={"error": "No pull_request URL in payload"}
         )
+
+    if await is_rate_limited(request.app.state.redis, job.installation_id):
+        logger.warning("Rate limit exceeded for installation %s", job.installation_id)
+        return JSONResponse(status_code=429, content={"error": "rate limit exceeded"})
 
     await enqueue_review(job, request.app.state.redis)
     return JSONResponse(status_code=202, content={"status": "accepted"})
