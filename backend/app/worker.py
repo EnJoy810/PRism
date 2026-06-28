@@ -13,12 +13,16 @@ logger = logging.getLogger(__name__)
 
 
 async def startup(ctx):
+    import redis.asyncio as aioredis
     cfg = load_config()
     ctx["config"] = cfg
+    ctx["redis"] = aioredis.from_url(cfg.redis_url, decode_responses=True)
 
 
 async def shutdown(ctx):
-    pass
+    redis = ctx.get("redis")
+    if redis:
+        await redis.aclose()
 
 
 async def _resolve_token(config, installation_id: int | None) -> str | None:
@@ -78,9 +82,10 @@ async def review_job(ctx, pr_url: str, event: str, installation_id: int | None =
     # Create in_progress check run immediately so user sees feedback
     check_run_id: int | None = None
     owner, repo, pr_number = parse_pr_url(pr_url)
+    head_sha = ""
     if token:
         try:
-            # Fetch head SHA for the check run
+            # Fetch head SHA for the check run and idempotency lock
             async with httpx.AsyncClient(timeout=15) as client:
                 resp = await client.get(
                     f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}",
@@ -92,6 +97,18 @@ async def review_job(ctx, pr_url: str, event: str, installation_id: int | None =
                         check_run_id = await create_check_run(owner, repo, head_sha, token)
         except Exception as e:
             logger.warning("Failed to create check run: %s", e)
+
+    # Idempotency lock: skip if another job is already reviewing this exact commit.
+    # Uses Redis SET NX with a 20-minute TTL so a crashed job doesn't block forever.
+    redis = ctx.get("redis")
+    if redis and head_sha:
+        lock_key = f"prism:review_lock:{owner}/{repo}/{head_sha}"
+        acquired = await redis.set(lock_key, "1", nx=True, ex=1200)
+        if not acquired:
+            logger.info(
+                "Skipping duplicate review for %s/%s@%s (lock held)", owner, repo, head_sha[:8]
+            )
+            return
 
     try:
         graph = ReviewGraph()
