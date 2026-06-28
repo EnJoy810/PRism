@@ -55,7 +55,11 @@ async def review(
         print("\n---\n## 发现的问题\n")
         for i, issue in enumerate(issues, 1):
             sev = issue.get("severity", "INFO")
-            label = {"ERROR": "🔴 ERROR", "WARNING": "🟡 WARNING", "INFO": "🔵 INFO"}.get(sev, sev)
+            label = {
+                "ERROR": "🔴 blocking",
+                "WARNING": "🟡 non-blocking",
+                "INFO": "ℹ️ nitpick",
+            }.get(sev, sev)
             print(f"### {i}. [{label}] {issue.get('title', '')}")
             line_str = f":{issue.get('line', '')}" if issue.get('line') else ""
             print(f"- **文件**: `{issue.get('file', '')}`{line_str}")

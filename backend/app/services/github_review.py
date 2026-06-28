@@ -10,6 +10,16 @@ _CHECK_NAME = "PRism Review"
 
 logger = logging.getLogger(__name__)
 
+_SEVERITY_LABEL: dict[str, str] = {
+    "ERROR": "**[blocking]** 🔴",
+    "WARNING": "**[non-blocking]** 🟡",
+    "INFO": "**[nitpick]** ℹ️",
+}
+
+
+def _severity_label(severity: str) -> str:
+    return _SEVERITY_LABEL.get(severity.upper(), f"**[{severity}]**")
+
 
 async def create_check_run(
     owner: str,
@@ -88,7 +98,8 @@ _BASE_DELAY = 1.0
 
 def _format_inline_body(issue: ReviewIssue) -> str:
     severity = issue.severity.value if hasattr(issue.severity, "value") else issue.severity
-    lines = [f"**[{severity}] {issue.title}**", "", issue.description]
+    label = _severity_label(severity)
+    lines = [f"{label} **{issue.title}**", "", issue.description]
     if issue.impact_type:
         lines.append(f"\n影响类型: `{issue.impact_type}`")
     if issue.impact_statement:
@@ -146,7 +157,8 @@ def _build_review_body(
         ]
         for issue in fallback_issues:
             severity = issue.severity.value if hasattr(issue.severity, "value") else issue.severity
-            lines.append(f"| {severity} | `{issue.file}` | {issue.title} |")
+            label = _severity_label(severity)
+            lines.append(f"| {label} | `{issue.file}` | {issue.title} |")
         lines.append("")
 
     return "\n".join(lines)
