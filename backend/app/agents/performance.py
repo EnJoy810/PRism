@@ -42,6 +42,7 @@ Respond in English."""
 class PerformanceAgent(BaseAgent):
     category = "performance"
     system_prompt = SYSTEM_PROMPT
+    langfuse_prompt_name = "prism-performance-agent"
 
     def build_prompt(self, diff: str, context: dict | None = None) -> str:
         ctx = context or {}

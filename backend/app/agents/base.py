@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 class BaseAgent(ABC):
     category: str
     system_prompt: str
+    langfuse_prompt_name: str | None = None  # set in subclass to enable remote prompts
 
     def __init__(
         self,
@@ -23,6 +24,9 @@ class BaseAgent(ABC):
     ):
         self.client = LLMClient(api_key=api_key, model=model, base_url=base_url)
         self.thinking: str = ""
+        if self.langfuse_prompt_name:
+            from app.services.prompts import get_prompt
+            self.system_prompt = get_prompt(self.langfuse_prompt_name, self.__class__.system_prompt)
 
     @abstractmethod
     def build_prompt(self, diff: str, context: dict | None = None) -> str:

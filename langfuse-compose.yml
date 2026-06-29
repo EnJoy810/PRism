@@ -1,44 +1,17 @@
+# Langfuse standalone deployment — run alongside PRism bare process on the server.
+# Usage: docker compose -f langfuse-compose.yml up -d
+#
+# After starting, Langfuse UI is at http://<server-ip>:3002
+# Login: admin@prism.local / prism-admin-2026
+# Add to PRism .env:
+#   LANGFUSE_PUBLIC_KEY=pk-lf-077b4dbaf8b03438a0747d98d278b480
+#   LANGFUSE_SECRET_KEY=sk-lf-6f28c9d16a557ca7b798e46b8ceb7a4a
+#   LANGFUSE_HOST=http://localhost:3002
+
 services:
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-  api:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
-    env_file:
-      - ./backend/.env
-    environment:
-      - REDIS_URL=redis://redis:6379/0
-    depends_on:
-      redis:
-        condition: service_healthy
-
-  worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    command: python -m app.worker
-    env_file:
-      - ./backend/.env
-    environment:
-      - REDIS_URL=redis://redis:6379/0
-    depends_on:
-      redis:
-        condition: service_healthy
-
-  # ── Observability: Langfuse ───────────────────────────────────────────────
   langfuse-db:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: langfuse
       POSTGRES_PASSWORD: langfuse
@@ -53,6 +26,7 @@ services:
 
   langfuse:
     image: langfuse/langfuse:2
+    restart: unless-stopped
     ports:
       - "3002:3000"
     depends_on:
@@ -63,7 +37,6 @@ services:
       NEXTAUTH_URL: http://localhost:3002
       NEXTAUTH_SECRET: bbd137e91533413235bffa74408a631052ebe39712fd777eef73ab78315c437d
       SALT: 0a6271f4185fbe800bd52b8db602e163
-      # Seed initial project + API keys on first boot (idempotent)
       LANGFUSE_INIT_ORG_ID: prism-org
       LANGFUSE_INIT_ORG_NAME: PRism
       LANGFUSE_INIT_PROJECT_ID: prism-project
@@ -79,7 +52,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
-  # ─────────────────────────────────────────────────────────────────────────
 
 volumes:
   langfuse_pg_data:

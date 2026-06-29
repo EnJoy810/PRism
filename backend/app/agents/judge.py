@@ -274,6 +274,19 @@ class JudgeAgent:
             raw = content.strip()
             if raw.startswith("```"):
                 raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+            # LLM sometimes emits trailing text after the JSON array; extract
+            # the first complete [...] block to avoid "Extra data" parse errors.
+            bracket = raw.find("[")
+            if bracket != -1:
+                depth = 0
+                for end, ch in enumerate(raw[bracket:], bracket):
+                    if ch == "[":
+                        depth += 1
+                    elif ch == "]":
+                        depth -= 1
+                        if depth == 0:
+                            raw = raw[bracket : end + 1]
+                            break
             groups = json.loads(raw)
 
             keep_indices = {g["keep_index"] for g in groups if isinstance(g, dict) and "keep_index" in g}

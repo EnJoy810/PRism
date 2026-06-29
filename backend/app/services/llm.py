@@ -22,9 +22,11 @@ from app.models.review import (
 )
 
 try:
-    from langsmith.wrappers import wrap_openai
+    from langfuse.openai import AsyncOpenAI as _LangfuseAsyncOpenAI
+    _LANGFUSE_ENABLED = bool(os.environ.get("LANGFUSE_PUBLIC_KEY"))
 except ImportError:
-    wrap_openai = None
+    _LANGFUSE_ENABLED = False
+    _LangfuseAsyncOpenAI = None
 
 logger = logging.getLogger(__name__)
 
@@ -85,15 +87,16 @@ class LLMClient:
             or os.environ.get("DEEPSEEK_API_KEY")
             or "sk-placeholder"
         )
-        raw_client = AsyncOpenAI(
+        OpenAIClass = (
+            _LangfuseAsyncOpenAI
+            if (_LANGFUSE_ENABLED and _LangfuseAsyncOpenAI is not None)
+            else AsyncOpenAI
+        )
+        self.client = OpenAIClass(
             api_key=resolved_key,
             base_url=resolved_base,
             max_retries=0,
         )
-        if wrap_openai is not None:
-            self.client = wrap_openai(raw_client)
-        else:
-            self.client = raw_client
         self.model = resolved_model
         if budget is _UNSET:
             self.budget = TokenBudget(max_tokens_per_call=cfg.review.budget.max_tokens_per_call)
@@ -401,14 +404,16 @@ def _make_client(api_key: str | None = None, base_url: str | None = None) -> Asy
         or "sk-placeholder"
     )
     resolved_base = base_url or cfg.llm.base_url or BASE_URL
-    raw = AsyncOpenAI(
+    OpenAIClass = (
+        _LangfuseAsyncOpenAI
+        if (_LANGFUSE_ENABLED and _LangfuseAsyncOpenAI is not None)
+        else AsyncOpenAI
+    )
+    return OpenAIClass(
         api_key=resolved_key,
         base_url=resolved_base,
         max_retries=0,
     )
-    if wrap_openai is not None:
-        return wrap_openai(raw)
-    return raw
 
 
 def _extract_json(text: str) -> str:

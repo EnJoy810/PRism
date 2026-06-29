@@ -5,9 +5,11 @@ import os
 import re
 import sqlite3
 import time
+import uuid
 from collections.abc import Sequence
 from pathlib import Path
 
+import structlog
 from json_repair import repair_json
 
 from app.agents.judge import JudgeAgent
@@ -17,7 +19,7 @@ from app.agents.security import SecurityAgent
 from app.models.agent import AgentResult, AgentStatus, FindingSchema
 from app.services.evidence import publication_gate, severity
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 _BATCH_SIZE = 30
 _TOKEN_CHARS = 4
@@ -147,12 +149,14 @@ class ReviewGraph:
         github_token: str | None = None,
         event: str = "",
     ) -> dict:
+        review_id = uuid.uuid4().hex[:8]
+        structlog.contextvars.bind_contextvars(review_id=review_id, pr_url=pr_url)
         t0 = time.monotonic()
         if context is None:
             context = await self._fetch_pr_context(pr_url, github_token)
         if github_token:
             context["github_token"] = github_token
-        logger.info("fetch_context done: %s — %.2fs", pr_url, time.monotonic() - t0)
+        logger.info("fetch_context done", elapsed=round(time.monotonic() - t0, 2))
 
         symbol_task = asyncio.create_task(self._fetch_symbol_context(context, pr_url))
         blast_task = asyncio.create_task(self._fetch_blast_radius(context, pr_url))
