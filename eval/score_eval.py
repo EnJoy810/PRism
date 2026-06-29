@@ -28,6 +28,8 @@ def _load_result(run_dir: Path, sample_id: str) -> dict[str, Any]:
     error_path = run_dir / f"{sample_id}.error.json"
     if error_path.exists():
         return {"issues": [], "_eval_error": json.loads(error_path.read_text()).get("error", "unknown error")}
+    if not result_path.exists():
+        return {"issues": [], "_eval_error": "no result"}
     payload = json.loads(result_path.read_text())
     result = payload.get("result", {})
     if not isinstance(result, dict):
@@ -106,30 +108,44 @@ def _needs_review(issue: dict[str, Any], expected: dict[str, Any]) -> bool:
 def score_sample(sample: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
     issues = result.get("issues") or []
     expected_findings = sample.get("expected_findings") or []
-    matched_expected: set[str] = set()
-    review_expected: set[str] = set()
-    duplicate_count = 0
     noise_count = 0
 
+    # Build match matrix: issue_idx -> list of matching expected_ids
+    match_matrix: list[list[str]] = []
+    review_matrix: list[list[str]] = []
     for issue in issues:
-        expected_id = None
-        review_id = None
-        for expected in expected_findings:
-            if _matches_expected(issue, expected):
-                expected_id = str(expected["id"])
-                break
-            if review_id is None and _needs_review(issue, expected):
-                review_id = str(expected["id"])
+        matches = [str(e["id"]) for e in expected_findings if _matches_expected(issue, e)]
+        reviews = [str(e["id"]) for e in expected_findings if _needs_review(issue, e)]
+        match_matrix.append(matches)
+        review_matrix.append(reviews)
 
-        if expected_id is None:
-            if review_id is None:
-                noise_count += 1
-            else:
-                review_expected.add(review_id)
-        elif expected_id in matched_expected:
-            duplicate_count += 1
+    # Optimal bipartite matching (greedy by most-constrained first)
+    # Sort issues by number of candidates ascending so tight ones get first pick
+    order = sorted(range(len(issues)), key=lambda i: len(match_matrix[i]) if match_matrix[i] else 999)
+    matched_expected: set[str] = set()
+    unmatched_issues: list[int] = []
+    duplicate_count = 0
+
+    for i in order:
+        candidates = match_matrix[i]
+        if not candidates:
+            unmatched_issues.append(i)
+            continue
+        # Pick first unoccupied candidate
+        assigned = next((c for c in candidates if c not in matched_expected), None)
+        if assigned:
+            matched_expected.add(assigned)
         else:
-            matched_expected.add(expected_id)
+            duplicate_count += 1
+
+    # Review / noise for unmatched issues
+    review_expected: set[str] = set()
+    for i in unmatched_issues:
+        reviews = [r for r in review_matrix[i] if r not in matched_expected]
+        if reviews:
+            review_expected.add(reviews[0])
+        else:
+            noise_count += 1
 
     expected_ids = {str(expected["id"]) for expected in expected_findings}
     misses = sorted(expected_ids - matched_expected)

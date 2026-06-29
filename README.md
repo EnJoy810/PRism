@@ -57,16 +57,16 @@ PR opened / synchronized
 
 ## 评测表现
 
-在 [CodeReviewBench](https://github.com/kodustech/codereviewbench)（13 个 Python 样本，47 个精确行号标注的 bug）上的实测结果：
+在 [CodeReviewBench](https://github.com/kodustech/codereviewbench)（58 个样本，5 种语言，211 个精确行号标注的 bug）上的实测结果：
 
 | 指标 | 数值 |
 |------|------|
-| **Precision** | 45.3% |
-| **Recall** | 72.3% |
-| **F1** | 55.7% |
-| TP / FP / FN | 34 / 41 / 13 |
+| **Precision** | 82.8% |
+| **Recall** | 66.4% |
+| **F1** | 73.7% |
+| TP / FP / FN | 140 / 29 / 71 |
 
-行业对照：纯 LLM 方案精确率约 65%，PRism 召回导向设计在 evidence 验证的约束下，把漏报（FN）控制在 13 个（27.7%）。
+行业对照：纯 LLM 方案精确率约 65%，PRism 的 evidence 程序验证将 Precision 提升至 82.8%。71 个漏报中 16 个属于跨文件语义 bug（diff-only 工具天然看不到），排除后可检测范围内 Recall 达 71.8%。
 
 **实测案例**（[CollabDoc#1](https://github.com/EnJoy810/CollabDoc/pull/1)）：PR 新增了 `bulkCreateShareLinks` 和 `getDocumentStats` 两个方法，PRism 输出 6 条 finding：
 
@@ -399,7 +399,7 @@ LLM 对幻觉的 confidence 也很高。一个根本不存在的函数调用，L
 - [x] Blocking / non-blocking 分级标注
 - [x] Webhook 幂等 + 重复评论去重
 - [x] 按 installation 限流
-- [x] CodeReviewBench 评测框架（F1 55.7%）
+- [x] CodeReviewBench 评测框架（F1 73.7%，58 样本 5 语言）
 - [ ] Go / Java 跨文件分析（当前支持 Python / JS / TS）
 - [ ] Linter + LLM 混合（Bandit/Semgrep 先扫，LLM 补逻辑漏洞）
 - [ ] Map-Reduce per-caller 分析（解决多调用方 position bias）

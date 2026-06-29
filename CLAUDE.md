@@ -147,26 +147,18 @@ cd backend && python -m app.cli review https://github.com/owner/repo/pull/42
 
 **具体要做的事**：
 
-**P0：PR 上下文注入现有 Agent**
-- 把 PR title、description、commit message 作为显式输入注入所有 Agent 的 prompt
-- 让每个 Agent review 时都知道"这个 PR 的目的是什么"，避免无差别扫全量
-- 不加新的 LLM 调用，零延迟/成本增加
-- 实现：`fetch_pr_context` 已拉 PR 描述，确认注入到 agent_context 里
+**P0：PR 上下文注入现有 Agent** ✅ 已完成
+- PR title + description 已注入所有 Agent 的 prompt（security.py、quality.py 均已实现）
+- graph.py 中 agent_context 包含 `pr_title` / `pr_description` 字段
 
-**P1：优先级分层**
-- 当前所有 WARNING 地位平等，开发者看不出重点
-- 区分"必须改"（运行时错误/安全漏洞）和"建议改"（设计问题/可读性）
-- 在 PR 评论里显式标注，不是平铺列表
+**P1：优先级分层** ✅ 已完成
+- ERROR=🔴blocking，WARNING=🟡non-blocking，INFO=nitpick，已在 github_review.py 实现
 
-**P2：Quality Agent 排除 linter 能报的**
-- 真人不在 review 里说"变量名不好"，那是 linter 的事
-- Quality Agent prompt 明确排除 style/formatting/naming 类问题
-- 专注 linter 看不到的：逻辑漏洞、边界 case、接口设计问题
+**P2：Quality Agent 排除 linter 能报的** ✅ 已完成
+- quality agent system prompt 明确排除 style/formatting/naming/unused var 类问题
 
-**P3：跨文件影响作为前置上下文**
-- callgraph blast_radius 结果目前是后处理步骤
-- 如果检测到跨文件影响，提前注入 Agent context，让 Agent 重点关注受影响文件
-- 不是等 Agent 跑完再补充，而是作为输入
+**P3：跨文件影响作为前置上下文** ✅ 已完成
+- blast_radius 结果作为 caller context 前置注入 agent，不是后处理步骤
 
 ### 第三阶段：Linter + LLM 并行
 和 CodeRabbit 同一架构判断：

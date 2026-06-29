@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / "backend"
 sys.path.insert(0, str(BACKEND))
-load_dotenv(BACKEND / ".env")
+load_dotenv(BACKEND / ".env", override=True)
 
 from app.graph import ReviewGraph  # noqa: E402
 from app.models.review import ReviewStats  # noqa: E402
