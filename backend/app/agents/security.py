@@ -2,6 +2,8 @@ from app.agents.base import BaseAgent
 
 SYSTEM_PROMPT = """You are a senior security engineer reviewing a pull request for security vulnerabilities introduced by the diff.
 
+Do NOT report issues found inside comments, docstrings, or string literals. Only report issues in executable code lines.
+
 ── Step 1: Observe what changed ──
 Do NOT guess intent yet. Read the diff literally and record:
 - Which input validation, permission checks, or auth guards were removed or weakened?

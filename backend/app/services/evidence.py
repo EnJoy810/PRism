@@ -6,12 +6,26 @@ from app.services.diff import build_position_map
 SEVERITY_ORDER = {"ERROR": 0, "WARNING": 1, "INFO": 2}
 
 # ---------------------------------------------------------------------------
-# Non-executable context detection (comment / docstring / string literal)
+# Non-executable context detection (single-line comments only)
 # ---------------------------------------------------------------------------
+# Industry practice: deterministic single-line check only.
+# Multiline docstring tracking via diff reconstruction is fragile (context
+# lines may be absent from diff, breaking state machines). Instead, LLM
+# agents are instructed in their system prompts not to report issues inside
+# docstrings or comments — that handles the multiline case at the source.
 
-def _reconstruct_file_lines(diff: str, file_path: str) -> dict[int, str]:
-    """从 diff 重建指定文件的行号→内容映射（新增行 + context 行，不含删除行）。"""
-    result: dict[int, str] = {}
+def is_line_in_non_executable_context(diff: str, file_path: str, line_num: int) -> bool:
+    """Return True if the reported line is a single-line comment.
+
+    Only checks for lines starting with # (Python) or // (JS/TS) or
+    * / /* (JSDoc). Multiline docstring detection is intentionally removed:
+    it required fragile diff reconstruction that caused false drops of real
+    findings. LLM agents are prompted to skip docstring content directly.
+    """
+    if line_num is None:
+        return False
+
+    # Reconstruct just the target line from diff (+ and context lines).
     current_file: str | None = None
     in_target = False
     new_line = 0
@@ -27,73 +41,25 @@ def _reconstruct_file_lines(diff: str, file_path: str) -> dict[int, str]:
         elif in_target:
             if raw.startswith("+") and not raw.startswith("+++"):
                 new_line += 1
-                result[new_line] = raw[1:]
+                if new_line == line_num:
+                    stripped = raw[1:].strip()
+                    return (
+                        stripped.startswith("#")
+                        or stripped.startswith("//")
+                        or stripped.startswith("*")
+                        or stripped.startswith("/*")
+                    )
             elif raw.startswith(" "):
                 new_line += 1
-                result[new_line] = raw[1:]
-    return result
-
-
-def is_line_in_non_executable_context(diff: str, file_path: str, line_num: int) -> bool:
-    """检查 diff 中某行是否落在注释或多行字符串（docstring）内。
-
-    支持：
-    - Python triple-quote docstring (''' 或 \"\"\")
-    - Python 单行注释 (#)
-    - TypeScript/JavaScript 块注释 (/* ... */)
-    - TypeScript/JavaScript 单行注释 (//)
-    - TypeScript/JavaScript JSDoc (/** ... */)
-
-    实现策略：从目标行之前的所有 diff 行中维护一个简单状态机，
-    判断多行注释/docstring 是否已打开但尚未关闭。
-    """
-    if line_num is None:
-        return False
-
-    lines = _reconstruct_file_lines(diff, file_path)
-    if not lines:
-        return False
-
-    content_at_line = lines.get(line_num, "")
-    stripped = content_at_line.strip()
-
-    # 单行注释快速判断
-    if (
-        stripped.startswith("#")
-        or stripped.startswith("//")
-        or stripped.startswith("*")   # JSDoc 内容行 (* @param, * text)
-        or stripped.startswith("/*")  # 块注释开始行（/* 或 /**）
-    ):
-        return True
-
-    # 扫描目标行之前的行，维护多行上下文状态
-    in_multiline = False
-    multiline_closer: str | None = None
-
-    for ln in sorted(ln for ln in lines if ln < line_num):
-        line_content = lines[ln]
-
-        if not in_multiline:
-            # 检测 Python triple-quote 开启（按长度降序，防止 '' 干扰 '''）
-            for marker in ('"""', "'''"):
-                count = line_content.count(marker)
-                if count % 2 == 1:  # 奇数 = 本行开启但未关闭
-                    in_multiline = True
-                    multiline_closer = marker
-                    break
-            # 检测 JS/TS 块注释开启
-            if not in_multiline and "/*" in line_content:
-                after_open = line_content[line_content.index("/*") + 2:]
-                if "*/" not in after_open:
-                    in_multiline = True
-                    multiline_closer = "*/"
-        else:
-            assert multiline_closer is not None
-            if multiline_closer in line_content:
-                in_multiline = False
-                multiline_closer = None
-
-    return in_multiline
+                if new_line == line_num:
+                    stripped = raw[1:].strip()
+                    return (
+                        stripped.startswith("#")
+                        or stripped.startswith("//")
+                        or stripped.startswith("*")
+                        or stripped.startswith("/*")
+                    )
+    return False
 
 
 def added_lines_by_file(diff: str) -> dict[str, list[str]]:
