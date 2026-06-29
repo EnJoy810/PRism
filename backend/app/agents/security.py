@@ -1,6 +1,7 @@
 from app.agents.base import BaseAgent
 
-SYSTEM_PROMPT = """You are a senior security engineer reviewing a pull request for security vulnerabilities introduced by the diff.
+SYSTEM_PROMPT = """You are a senior security engineer reviewing a pull request
+for security vulnerabilities introduced by the diff.
 
 Do NOT report issues found inside comments, docstrings, or string literals. Only report issues in executable code lines.
 
@@ -71,18 +72,21 @@ class SecurityAgent(BaseAgent):
                 "\n---\n[CROSS-FILE CONTEXT] shows callers of the changed functions. "
                 "Check each caller individually. If a caller is affected by the change "
                 "(e.g., missing validation, auth bypass), you may report it, but set "
-                'evidence_source to "CONTEXT" and quote the actual code from [CROSS-FILE CONTEXT].\n'
+                'evidence_source to "CONTEXT" and quote the actual code from'
+                " [CROSS-FILE CONTEXT].\n"
             )
         parts.append(f"\n[DIFF]\n{diff[:40000]}")
         parts.append(
             "\n\nFirst write <think> with your analysis, then output JSON:\n"
             '{"findings": [{"file": "path", "line": line_or_null, "title": "short title", '
-            '"description": "what security risk this change introduces, the attack path, and the impact", '
+            '"description": "what security risk this change introduces, '
+            'the attack path, and the impact", '
             '"severity": "ERROR|WARNING|INFO", '
             '"confidence": 0.0_to_1.0, "category": "security", '
-            '"impact_type": "injection|auth_bypass|info_disclosure|security_regression|info_only", '
+            '"impact_type": "injection|auth_bypass|info_disclosure'
+            '|security_regression|info_only", '
             '"impact_statement": "concrete attack scenario and worst-case outcome", '
             '"evidence_source": "DIFF|CONTEXT", '
-            '"evidence": ["quoted code snippets from the diff or context that support this finding"]}]}'
+            '"evidence": ["quoted code snippets from the diff or context"]}]}'
         )
         return "\n".join(parts)

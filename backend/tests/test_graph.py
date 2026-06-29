@@ -1180,7 +1180,6 @@ class TestCallerParameterCheck:
     @pytest.mark.asyncio
     async def test_detects_none_argument_passed_to_function(self):
         """Should report when a caller passes None to a function that uses it as dict key."""
-        from unittest.mock import MagicMock
         from app.graph import ReviewGraph
 
         graph = ReviewGraph()
@@ -1258,7 +1257,6 @@ class TestCallerParameterCheck:
     @pytest.mark.asyncio
     async def test_no_issue_returns_empty(self):
         """LLM returning empty issues list should produce no findings."""
-        from unittest.mock import MagicMock
         from app.graph import ReviewGraph
 
         graph = ReviewGraph()

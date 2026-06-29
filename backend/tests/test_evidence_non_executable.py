@@ -11,7 +11,7 @@ from app.services.evidence import is_line_in_non_executable_context
 def _make_diff(file_path: str, content: str, start_line: int = 1) -> str:
     lines = content.splitlines()
     hunk_header = f"@@ -{start_line},{len(lines)} +{start_line},{len(lines)} @@"
-    added = "\n".join(f"+{l}" for l in lines)
+    added = "\n".join(f"+{line}" for line in lines)
     return f"+++ b/{file_path}\n{hunk_header}\n{added}\n"
 
 

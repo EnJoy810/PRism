@@ -93,7 +93,8 @@ class QualityAgent(BaseAgent):
 
         parts = [
             "Review the following PR diff for logic bugs and correctness errors.",
-            "Focus: wrong variable, inverted condition, missing await, null dereference, interface break, race condition.",
+            "Focus: wrong variable, inverted condition, missing await, "
+            "null dereference, interface break, race condition.",
         ]
         if pr_title:
             parts.append(f"PR title: {pr_title}")
@@ -119,10 +120,12 @@ class QualityAgent(BaseAgent):
             "\n\nFirst write <think> going through each bug pattern from the instructions, "
             "then output JSON:\n"
             '{"findings": [{"file": "path", "line": line_or_null, "title": "short title", '
-            '"description": "what is wrong: the exact incorrect behavior, what input triggers it, and what goes wrong", '
+            '"description": "what is wrong: the exact incorrect behavior, '
+            'what input triggers it, and what goes wrong", '
             '"severity": "ERROR|WARNING|INFO", '
             '"confidence": 0.0_to_1.0, "category": "quality", '
-            '"impact_type": "runtime_error|behavior_regression|api_breakage|async_misuse|null_deref|race_condition|style_only", '
+            '"impact_type": "runtime_error|behavior_regression|api_breakage'
+            '|async_misuse|null_deref|race_condition|style_only", '
             '"impact_statement": "concrete scenario where this causes incorrect behavior", '
             '"evidence_source": "DIFF|CONTEXT", '
             '"evidence": ["quoted code snippets that show the bug"]}]}'

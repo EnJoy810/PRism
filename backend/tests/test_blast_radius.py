@@ -4,7 +4,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.services.blast_radius import compute_blast_radius, compute_blast_radius_codegraph
+from app.services.blast_radius import (
+    compute_blast_radius,
+    compute_blast_radius_codegraph,
+    find_new_callers_in_diff,
+)
 
 
 @pytest.fixture
@@ -282,9 +286,6 @@ def test_codegraph_backend_respects_token_budget(mock_run, _mock_which, tmp_path
 # ---------------------------------------------------------------------------
 # find_new_callers_in_diff
 # ---------------------------------------------------------------------------
-
-from app.services.blast_radius import find_new_callers_in_diff
-
 
 DIFF_NEW_FN_AND_CALLER = """\
 diff --git a/app/services/rate_limit.py b/app/services/rate_limit.py

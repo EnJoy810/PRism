@@ -83,7 +83,10 @@ async def update_check_run(
                     "conclusion": conclusion,
                     "output": {
                         "title": title,
-                        "summary": f"PRism review complete. Risk level: **{risk_level}**. {issue_count} issue(s) found.",
+                        "summary": (
+                            f"PRism review complete. Risk level: **{risk_level}**."
+                            f" {issue_count} issue(s) found."
+                        ),
                     },
                 },
             )

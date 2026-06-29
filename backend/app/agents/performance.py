@@ -74,7 +74,8 @@ class PerformanceAgent(BaseAgent):
         parts.append(
             "\n\nFirst write <think> with your analysis, then output JSON:\n"
             '{"findings": [{"file": "path", "line": line_or_null, "title": "short title", '
-            '"description": "what performance regression this introduces, at what data scale it triggers, and the impact", '
+            '"description": "what performance regression this introduces, '
+            'at what data scale it triggers, and the impact", '
             '"severity": "ERROR|WARNING|INFO", '
             '"confidence": 0.0_to_1.0, "category": "performance", '
             '"impact_type": "n_plus_one|memory_leak|complexity_increase|blocking_io|resource_leak|info_only", '
