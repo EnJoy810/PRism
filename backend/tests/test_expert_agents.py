@@ -100,7 +100,7 @@ class TestQualityAgent:
 
     def test_build_prompt_targets_correctness_regressions(self):
         agent = QualityAgent(api_key="sk-test")
-        prompt = agent.build_prompt("+ const isOpen = !!openForm.in_reply_to_snippet")
+        agent.build_prompt("+ const isOpen = !!openForm.in_reply_to_snippet")
         system = agent.system_prompt
         assert "logic bugs" in system or "correctness" in system
         assert "linter" in system  # must exclude linter-catchable issues
