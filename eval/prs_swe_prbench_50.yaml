@@ -1,0 +1,2386 @@
+- id: cupy__9660
+  repo: cupy/cupy
+  url: https://github.com/cupy/cupy/pull/9660
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: cupy__9660-c1
+    file: cupy/_util.pyx
+    line_range:
+    - 230
+    - 230
+    title_keywords:
+    - Instead
+    - raising
+    - import
+    - _util
+    evidence_keywords:
+    - is_shutting_down
+    - _shutting_down
+    - cannot
+    - _util
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: Instead of raising an import error, would it be possible to just make
+      the loop a no-op? Would it be sufficient  to avoid the NumPy bug?
+  - id: cupy__9660-c2
+    file: cupy/_util.pyx
+    line_range:
+    - 230
+    - 230
+    title_keywords:
+    - error
+    - caught
+    - yeah
+    - _util
+    evidence_keywords:
+    - is_shutting_down
+    - _shutting_down
+    - cannot
+    - _util
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: Oh, the error is caught?  But yeah, maybe nicer to not raise an error
+      for control flow.
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: chia-blockchain__20282
+  repo: Chia-Network/chia-blockchain
+  url: https://github.com/Chia-Network/chia-blockchain/pull/20282
+  kind: swe-prbench-Type2_Contextual
+  expected_findings:
+  - id: chia-blockchain__20282-c1
+    file: chia/_tests/core/full_node/test_tx_processing_queue.py
+    line_range:
+    - 170
+    - 170
+    title_keywords:
+    - what
+    - type
+    - error
+    - test_tx_processing_queue
+    evidence_keywords:
+    - async
+    - test_queue_cleanup_and_fairness
+    - seeded_random
+    - test_tx_processing_queue
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: what's the type error we're ignoring here?
+  - id: chia-blockchain__20282-c2
+    file: chia/_tests/core/full_node/test_tx_processing_queue.py
+    line_range:
+    - 234
+    - 234
+    title_keywords:
+    - what
+    - type
+    - error
+    - test_tx_processing_queue
+    evidence_keywords:
+    - async
+    - test_queue_cleanup_and_fairness
+    - seeded_random
+    - test_tx_processing_queue
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: what type error is ignore here? It would probably be a good idea to add
+      a comment here, justifying the ignore-statement. Same in the other places where
+      you ignore mypy errors
+  - id: chia-blockchain__20282-c3
+    file: chia/_tests/core/full_node/test_tx_processing_queue.py
+    line_range:
+    - 170
+    - 170
+    title_keywords:
+    - chia
+    - _tests
+    - core
+    - test_tx_processing_queue
+    evidence_keywords:
+    - async
+    - test_queue_cleanup_and_fairness
+    - seeded_random
+    - test_tx_processing_queue
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: "```\r\nchia/_tests/core/full_node/test_tx_processing_queue.py:169: error:\
+      \ \"TransactionQueueEntry\" has no attribute \"peer_id\"  [attr-defined]\r\n\
+      chia/_tests/core/full_node/test_tx_processing_queue.py:169: error: \"TransactionQueueEntry\"\
+      \ has no attribute \"index\"  [attr-defined]\r\n```"
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: datasette__2539
+  repo: simonw/datasette
+  url: https://github.com/simonw/datasette/pull/2539
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: datasette__2539-c1
+    file: datasette/default_permissions.py
+    line_range:
+    - 364
+    - 364
+    title_keywords:
+    - wrong
+    - about
+    - called
+    - default_permissions
+    evidence_keywords:
+    - add_row_allow_block
+    - parent
+    - child
+    - default_permissions
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: 'I was wrong about this, it is called with 0 here: https://github.com/simonw/datasette/blob/06ba4cff150bd15868c6b40415ae24d77497c814/datasette/default_permissions.py#L328-L331'
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: pipecat__3084
+  repo: pipecat-ai/pipecat
+  url: https://github.com/pipecat-ai/pipecat/pull/3084
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: pipecat__3084-c1
+    file: src/pipecat/services/google/llm.py
+    line_range:
+    - 796
+    - 796
+    title_keywords:
+    - situation
+    - call
+    - push_error
+    - llm
+    evidence_keywords:
+    - _maybe_unset_thinking_budget
+    - self
+    - generation_params
+    - llm
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: Why in this situation do we not call push_error?
+  - id: pipecat__3084-c2
+    file: src/pipecat/services/stt_service.py
+    line_range:
+    - 332
+    - 332
+    title_keywords:
+    - looks
+    - like
+    - _report_error
+    - stt_service
+    evidence_keywords:
+    - __init__
+    - self
+    - reconnect_on_error
+    - stt_service
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: "It looks like _report_error is used for connection level errors, triggering\
+      \ the on_connection_error event and push_error_frame.\r\n\r\nMaybe this should\
+      \ be in in the base AIService class and used consistently across services?"
+  - id: pipecat__3084-c3
+    file: src/pipecat/services/ai_service.py
+    line_range:
+    - 169
+    - 169
+    title_keywords:
+    - push_error_frame
+    - here
+    - ErrorFrame
+    - ai_service
+    evidence_keywords:
+    - async
+    - process_generator
+    - self
+    - ai_service
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: Why push_error_frame here? If the ErrorFrame is already pushed on the
+      Pipeline, won't this result in other frame processors in the Pipeline pushing
+      the error again?
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: chia-blockchain__20166
+  repo: Chia-Network/chia-blockchain
+  url: https://github.com/Chia-Network/chia-blockchain/pull/20166
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: chia-blockchain__20166-c1
+    file: chia/full_node/full_node_api.py
+    line_range:
+    - 114
+    - 114
+    title_keywords:
+    - think
+    - right
+    - send
+    - full_node_api
+    evidence_keywords:
+    - async
+    - tx_request_and_timeout
+    - full_node
+    - full_node_api
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: 'I don''t think this is right. If I send you an invalid transaction, you
+      validate it and you ban me. You still want to record that you''ve seen it, so
+      you don''t validate it again.
+
+
+      i.e. there''s a difference between "seen" and "I have it". I believe "seen"
+      may also mean it''s in the queue of transactions about to be validated.'
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: pip__9058
+  repo: pypa/pip
+  url: https://github.com/pypa/pip/pull/9058
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: pip__9058-c1
+    file: src/pip/_internal/commands/cache.py
+    line_range:
+    - 206
+    - 206
+    title_keywords:
+    - file
+    - unlink
+    - missing_ok
+    - cache
+    evidence_keywords:
+    - remove_cache_items
+    - self
+    - options
+    - cache
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: "`file.unlink(missing_ok=True)` can't raise a FileNotFoundError. Is this\
+      \ a typo?\r\n\r\n```suggestion\r\n            except FileNotFoundError:\r\n\
+      \                # If the directory is already gone, that's fine.\r\n      \
+      \          pass\r\n```"
+  - id: pip__9058-c2
+    file: src/pip/_internal/commands/cache.py
+    line_range:
+    - 206
+    - 206
+    title_keywords:
+    - typo
+    - rmdir
+    - call
+    - cache
+    evidence_keywords:
+    - remove_cache_items
+    - self
+    - options
+    - cache
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: Yes, that's a typo. It's the `rmdir()` call that can raise `FileNotFoundError`.
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: kedro__5181
+  repo: kedro-org/kedro
+  url: https://github.com/kedro-org/kedro/pull/5181
+  kind: swe-prbench-Type2_Contextual
+  expected_findings:
+  - id: kedro__5181-c1
+    file: docs/integrations-and-plugins/great_expectations.md
+    line_range:
+    - 44
+    - 44
+    title_keywords:
+    - problem
+    - specifically
+    - defining
+    - great_expectations
+    evidence_keywords:
+    - validate
+    - data
+    - your
+    - great_expectations
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: "Why is that a problem? You are specifically defining the dataset as GE,\
+      \ so I don't see the issue with that. I do like the idea that the catalog entry\
+      \ provides expectations about the dataset to be used by others.\r\n\r\nAlternatively,\
+      \ in our current project we have a small data type agnostic wrapper for Pandera,\
+      \ and we use decorators on our nodes to check the input/output. This keeps the\
+      \ validation close to the processing logic.\r\n\r\n\r\n```python\r\n@check_output(\r\
+      \n    schema=DataFrameSchema(\r\n        columns={\r\n            \"id\": Column(T.StringType(),\
+      \ nullable=False),\r\n            \"is_drug\": Column(T.BooleanType(), nullable=False),\r\
+      \n            \"is_disease\": Column(T.BooleanType(), nullable=False),\r\n \
+      \       },\r\n        unique=[\"id\"],\r\n    )\r\n)\r\ndef prefilter_nodes(\r\
+      \n    nodes: ps.DataFrame,\r\n    gt: ps.DataFrame,\r\n    drug_types: list[str],\r\
+      \n    disease_types: list[str],\r\n) -> ps.DataFrame:\r\n     .... # logic here\r\
+      \n```"
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: dask__12119
+  repo: dask/dask
+  url: https://github.com/dask/dask/pull/12119
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: dask__12119-c1
+    file: dask/array/reductions.py
+    line_range:
+    - 1228
+    - 1228
+    title_keywords:
+    - found
+    - ufunc
+    - objects
+    - reductions
+    evidence_keywords:
+    - cumreduction
+    - assert
+    - isinstance
+    - reductions
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: "I found that `np.ufunc` objects only have three methods that accepts\
+      \ `dtype`. They are:\r\n- `ufunc.accumulate(array, axis=0, dtype=None, ...)`\r\
+      \n- `ufunc.reduce(array, axis=0, dtype=None, ...)`\r\n- `ufunc.reduceat(array,\
+      \ indices, axis=0, dtype=None, ...)`\r\n\r\nI wonder whether the latter two\
+      \ are expected to be used as `func`, as they are causing errors in the test."
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: dvc__10866
+  repo: treeverse/dvc
+  url: https://github.com/treeverse/dvc/pull/10866
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: dvc__10866-c1
+    file: tests/func/experiments/test_set_params.py
+    line_range:
+    - 196
+    - 196
+    title_keywords:
+    - checked
+    - twice
+    - changes
+    - test_set_params
+    evidence_keywords:
+    - test_hydra_sweep_prefix_name
+    - tmp_dir
+    - params_repo
+    - test_set_params
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: "Hi, I checked twice and changes for this function are visible, maybe\
+      \ GitHub bugged or something.\r\n\r\nI am looking at changes from all commits:\
+      \ https://github.com/iterative/dvc/pull/10866/files\r\n\r\nhere's the fragment\
+      \ from changed lines:\r\ndvc/repo/experiments/queue/base.py\r\n```python\r\n\
+      \    def _update_params(self, params: dict[str, list[str]], no_hydra: bool =\
+      \ False):  #<--- new param\r\n        \"\"\"Update param files with the provided\
+      \ `Hydra Override`_ patterns.\r\n        Args:\r\n            params: Dict mapping\
+      \ paths to `Hydra Override`_ patterns,\r\n                provided via `exp\
+      \ run --set-param`.\r\n            no_hydra: Disable Hydra from automatically\
+      \ overwriting all params.\r\n        .. _Hydra Override:\r\n            https://hydra.cc/docs/advanced/override_grammar/basic/\r\
+      \n        \"\"\"\r\n        from dvc.utils.hydra import apply_overrides, compose_and_dump\r\
+      \n        logger.debug(\"Using experiment params '%s'\", params)\r\n\r\n   \
+      \     hydra_config = self.repo.config.get(\"hydra\", {})\r\n        hydra_enabled\
+      \ = hydra_config.get(\"enabled\", False) and not no_hydra #<--- bypass conditionally\r\
+      \n            #...rest unchanged\r\n ```"
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: prowler__9928
+  repo: prowler-cloud/prowler
+  url: https://github.com/prowler-cloud/prowler/pull/9928
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: prowler__9928-c1
+    file: prowler/providers/aws/services/autoscaling/autoscaling_group_deletion_protection_enabled/autoscaling_group_deletion_protection_enabled.metadata.json
+    line_range:
+    - 17
+    - 17
+    title_keywords:
+    - RelatedUrl
+    - currently
+    - required
+    - autoscaling_group_deletion_protection_enabled.metadata
+    evidence_keywords:
+    - Provider
+    - CheckID
+    - autoscaling_group_deletion_protection_enabled
+    - autoscaling_group_deletion_protection_enabled.metadata
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: "`RelatedUrl` is currently required. Please just leave it empty:\n```suggestion\n\
+      \  \"Risk\": \"Without deletion protection, Auto Scaling groups can be accidentally\
+      \ or maliciously deleted, leading to immediate loss of capacity, service outages,\
+      \ and potential data loss. This is especially critical for production workloads\
+      \ where unplanned capacity removal can cascade into wider failures.\",\n  \"\
+      RelatedUrl\": \"\",\n  \"AdditionalURLs\": [\n```"
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: pipecat__3171
+  repo: pipecat-ai/pipecat
+  url: https://github.com/pipecat-ai/pipecat/pull/3171
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: pipecat__3171-c1
+    file: src/pipecat/services/gradium/stt.py
+    line_range:
+    - 227
+    - 227
+    title_keywords:
+    - seems
+    - like
+    - unexpected
+    - stt
+    evidence_keywords:
+    - Copyright
+    - Daily
+    - SPDX
+    - stt
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: "This seems like an unexpected thing to happen from a service. What case\
+      \ are you trying to handle?\r\n\r\nInstead, perhaps an ErrorFrame should be\
+      \ pushed. Since Pipecat supports a `ServiceSwitcher` class, it's not a good\
+      \ assumption to assume that a service stopping or failing will mean that the\
+      \ pipeline should not run. Instead, I would push an error here:\r\n\r\n```\r\
+      \nawait self.push_error(error_msg=f\"Received end of stream from Gradium server\"\
+      )\r\n```"
+  - id: pipecat__3171-c2
+    file: src/pipecat/services/gradium/stt.py
+    line_range:
+    - 227
+    - 227
+    title_keywords:
+    - think
+    - just
+    - remove
+    - stt
+    evidence_keywords:
+    - Copyright
+    - Daily
+    - SPDX
+    - stt
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: "Yes, I think we should just remove then.\r\n\r\nInstead, maybe just add\
+      \ a debug log when the event is received."
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: dagster__33235
+  repo: dagster-io/dagster
+  url: https://github.com/dagster-io/dagster/pull/33235
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: dagster__33235-c1
+    file: python_modules/dagster/dagster/_core/asset_graph_view/asset_graph_view.py
+    line_range:
+    - 656
+    - 656
+    title_keywords:
+    - asset
+    - status
+    - cache
+    - asset_graph_view
+    evidence_keywords:
+    - async
+    - compute_subset_with_freshness_state
+    - return
+    - asset_graph_view
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: hm this is sad - the asset status cache does not have this property where
+      it needs to enumerate all partition keys right? If I want to get the full breakdown
+      of partitions for a given asset check key and what their statuses are (in subset
+      form) is there a clear path to doing that, maybe using some other API?
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: spyder__25451
+  repo: spyder-ide/spyder
+  url: https://github.com/spyder-ide/spyder/pull/25451
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: spyder__25451-c1
+    file: spyder/api/config/mixins.py
+    line_range:
+    - 107
+    - 107
+    title_keywords:
+    - Just
+    - want
+    - make
+    - mixins
+    evidence_keywords:
+    - logger
+    - logging
+    - getLogger
+    - mixins
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: Just want to make sure here, but as far as I could tell from the code
+      and actually testing it in Spyder, the original docstring was flat-out wrong--it
+      was describing this function as returning all the config _values_ in a given
+      section, when in reality it returns all the config _keys_.
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: autogluon__5572
+  repo: autogluon/autogluon
+  url: https://github.com/autogluon/autogluon/pull/5572
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: autogluon__5572-c1
+    file: multimodal/tests/hf_model_list.yaml
+    line_range:
+    - 23
+    - 23
+    title_keywords:
+    - also
+    - seen
+    - failures
+    - hf_model_list
+    evidence_keywords:
+    - others
+    - huawei
+    - noah
+    - hf_model_list
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: I've also seen failures in tabular tests due to downloading Mitra (although
+      far less common than AutoMM failures). We may want to also do a separate PR
+      which pre-downloads Mitra (and maybe TabPFN/TabDPT/TabICL/etc.?)
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: server__8458
+  repo: triton-inference-server/server
+  url: https://github.com/triton-inference-server/server/pull/8458
+  kind: swe-prbench-Type3_Latent_Candidate
+  expected_findings:
+  - id: server__8458-c1
+    file: qa/L0_simple_ensemble/models/slow_consumer/1/model.py
+    line_range:
+    - 28
+    - 28
+    title_keywords:
+    - Unused
+    - import
+    - Import
+    - model
+    evidence_keywords:
+    - Copyright
+    - NVIDIA
+    - CORPORATION
+    - model
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: '## Unused import
+
+
+      Import of ''np'' is not used.
+
+
+      [Show more details](https://github.com/triton-inference-server/server/security/code-scanning/1007)'
+  - id: server__8458-c2
+    file: docs/user_guide/ensemble_models.md
+    line_range:
+    - 243
+    - 243
+    title_keywords:
+    - note
+    - here
+    - delay
+    - ensemble_models
+    evidence_keywords:
+    - ensemble_models
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: Add a note here say that this delay will not cause intermediate inflight
+      requests cancel/timeout internally, but the client should be aware of latency
+      being added, etc.
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: chia-blockchain__20019
+  repo: Chia-Network/chia-blockchain
+  url: https://github.com/Chia-Network/chia-blockchain/pull/20019
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: chia-blockchain__20019-c1
+    file: chia/cmds/configure.py
+    line_range:
+    - 77
+    - 77
+    title_keywords:
+    - does
+    - work
+    - upgrade
+    - configure
+    evidence_keywords:
+    - configure
+    - change_made
+    - 'True'
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: does this work if you upgrade from a previous installation? It seems like
+      the "solver" key may not exist in the config in that case, and this would throw
+      a key error. Or are keys created automatically?
+  - id: chia-blockchain__20019-c2
+    file: chia/server/resolve_peer_info.py
+    line_range:
+    - 27
+    - 27
+    title_keywords:
+    - think
+    - localhost
+    - sometimes
+    - resolve_peer_info
+    evidence_keywords:
+    - get_unresolved_peer_infos
+    - service_config
+    - dict
+    - resolve_peer_info
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: I think `localhost` sometimes fails. But I don't recall the details
+  - id: chia-blockchain__20019-c3
+    file: chia/util/initial-config.yaml
+    line_range:
+    - 645
+    - 645
+    title_keywords:
+    - actually
+    - supposed
+    - node
+    - initial-config
+    evidence_keywords:
+    - solver
+    - Enable
+    - disable
+    - initial-config
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: actually this is supposed to be node id, the code is correct the config
+      example is wrong
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: chia-blockchain__20458
+  repo: Chia-Network/chia-blockchain
+  url: https://github.com/Chia-Network/chia-blockchain/pull/20458
+  kind: swe-prbench-Type2_Contextual
+  expected_findings:
+  - id: chia-blockchain__20458-c1
+    file: chia/full_node/full_block_utils.py
+    line_range:
+    - 304
+    - 304
+    title_keywords:
+    - Stale
+    - comment
+    - misrepresents
+    - full_block_utils
+    evidence_keywords:
+    - header_block_from_block
+    - transactions_info_optional
+    - bytes
+    - full_block_utils
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: '### Stale comment misrepresents when transactions_info is parsed
+
+
+      **Medium Severity**
+
+
+      <!-- DESCRIPTION START -->
+
+      The comment at lines 292-293 states "if request_filter is True it will read
+      extra bytes and populate it properly", but the code now parses `transactions_info`
+      unconditionally, regardless of `request_filter`. This changes the output format
+      when `request_filter=False`: previously the header block would always indicate
+      no `transactions_info`, but now it includes the actual `transactions_info` bytes
+      when present. This behavioral change affects callers expecting the old output
+      format, and the stale comment makes the intent unclear.
+
+      <!-- DESCRIPTION END -->
+
+
+      <!-- BUGBOT_BUG_ID: ref1_8e33ae95-61d8-4196-8678-cbbcd1bd54e2 -->
+
+
+      <!-- LOCATIONS START
+
+      chia/full_node/full_block_utils.py#L291-L302
+
+      LOCATIONS END -->
+
+      <a href="https://cursor.com/open?data=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImJ1Z2JvdC12MiJ9.eyJ2ZXJzaW9uIjoxLCJ0eXBlIjoiQlVHQk9UX0ZJWF9JTl9DVVJTT1IiLCJkYXRhIjp7InJlZGlzS2V5IjoiYnVnYm90OmJhNGQ1YjNlLTUwMmUtNDVkYS1iMDNmLTRjNjM2ZmJiNDVkZCIsImVuY3J5cHRpb25LZXkiOiJURUo2b2c3UUMxSkI1ZGRpVTR0ckZrS1R5bjZ1ZjZxVDlFQ0xZR2FMMGVrIiwiYnJhbmNoIjoiZnVsbC1ibG9jay1wYXJzZXIiLCJyZXBvT3duZXIiOiJDaGlhLU5ldHdvcmsiLCJyZXBvTmFtZSI6ImNoaWEtYmxvY2tjaGFpbiJ9LCJpYXQiOjE3NzAwNTkwMzcsImV4cCI6MTc3MjY1MTAzN30.X745SuHlCbpy7WlNdKdimyAlsNsKn1uLiwE2VkN157zvxSXX4idkW3S2nIJMnjCvrww9YnLTxKI29JuAqDHRraowlSg8zxsj13viVNpbq7QogUOX51gj7qLKWPxYnblffG0EIF0QfbEM1xlvlPCWD-Aw4ZnGI4iXNjmN1z9iZyMUEcUp8pwitG1Y1gdQjSZrFsPOgBMc_kBDCJ4mtbjTta04-lUsAvnk2UeBdr4eo3zBCYRr0x69IcFZ70Lf--vygogYbqnJRW89vVwi2GKgNrZy9FfolptK5b7OiofJQgor0crYVg9_W-5Z-dovafdxWbbF6PVFelQO5BixpuZJQw"
+      target="_blank" rel="noopener noreferrer"><picture><source media="(prefers-color-scheme:
+      dark)" srcset="https://cursor.com/assets/images/fix-in-cursor-dark.png"><source
+      media="(prefers-color-scheme: light)" srcset="https://cursor.com/assets/images/fix-in-cursor-light.png"><img
+      alt="Fix in Cursor" width="115" height="28" src="https://cursor.com/assets/images/fix-in-cursor-dark.png"></picture></a>&nbsp;<a
+      href="https://cursor.com/agents?data=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImJ1Z2JvdC12MiJ9.eyJ2ZXJzaW9uIjoxLCJ0eXBlIjoiQlVHQk9UX0ZJWF9JTl9XRUIiLCJkYXRhIjp7InJlZGlzS2V5IjoiYnVnYm90OmJhNGQ1YjNlLTUwMmUtNDVkYS1iMDNmLTRjNjM2ZmJiNDVkZCIsImVuY3J5cHRpb25LZXkiOiJURUo2b2c3UUMxSkI1ZGRpVTR0ckZrS1R5bjZ1ZjZxVDlFQ0xZR2FMMGVrIiwiYnJhbmNoIjoiZnVsbC1ibG9jay1wYXJzZXIiLCJyZXBvT3duZXIiOiJDaGlhLU5ldHdvcmsiLCJyZXBvTmFtZSI6ImNoaWEtYmxvY2tjaGFpbiIsInByTnVtYmVyIjoyMDQ1OCwiY29tbWl0U2hhIjoiNTA5OGRlZjAxMWI2ZDczMDE1ZGJlNTI3NTZlMWQ2YTgzZjUzOTU2YSIsInByb3ZpZGVyIjoiZ2l0aHViIn0sImlhdCI6MTc3MDA1OTAzNywiZXhwIjoxNzcyNjUxMDM3fQ.eOAiPt8KnJbEtEySkkKKS9fhCq0Yl0gPi7I3sKNjv3nXtM4h5Ccbm9Mp0h-7Ofvn0seJmfLzd3lkcul9ENILplUg5EWYhU0wrIM4TysuzB5KalsIsYQrypMgku5bmmZfAHUlppyfwvO__k2t8YrMMw-giGv6mxZKLQT2FMAi0LBACCoQMhztpJGsFu0g-YjayEdOvjIvfMo6pzmFB5mQWc5FVKrzlOUOIvi5EzZudpSzWHNjY8w6gil74bLaP7E2bctgG33PD3H3j6Q2QKumQfWiyBrq6Gs7bKEfowmSxUg4XSetsXmkT2e-NxrvzBLYWifLgJJ9Rllz7elrkQMkMQ"
+      target="_blank" rel="noopener noreferrer"><picture><source media="(prefers-color-scheme:
+      dark)" srcset="https://cursor.com/assets/images/fix-in-web-dark.png"><source
+      media="(prefers-color-scheme: light)" srcset="https://cursor.com/assets/images/fix-in-web-light.png"><img
+      alt="Fix in Web" width="99" height="28" src="https://cursor.com/assets/images/fix-in-web-dark.png"></picture></a>'
+  - id: chia-blockchain__20458-c2
+    file: chia/full_node/full_block_utils.py
+    line_range:
+    - 300
+    - 300
+    title_keywords:
+    - reason
+    - made
+    - change
+    - full_block_utils
+    evidence_keywords:
+    - header_block_from_block
+    - buf2
+    - skip_optional
+    - full_block_utils
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: 'the reason I made this change was to match the behavior of `get_block_header()`.
+
+      This function (`header_block_from_block()`) is meant to be a faster version
+      of `get_block_header()` if you have the bytes of a serialized `FullBlock`. The
+      test is ensuring we get the same result for (essentially) every combination
+      of full block, including ones that are invalid (e.g. where we have `transactions_info`
+      but it''s not a transaction block).
+
+
+      Rather than making exceptions in the test that some discrepancy is OK, I made
+      the `header_block_from_block()` behave more like `get_block_header()`.'
+  - id: chia-blockchain__20458-c3
+    file: chia/_tests/cmds/test_show.py
+    line_range:
+    - 46
+    - 46
+    title_keywords:
+    - Test
+    - creates
+    - inconsistent
+    - test_show
+    evidence_keywords:
+    - async
+    - get_block
+    - self
+    - test_show
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: '### Test creates inconsistent block with wrong foliage shard
+
+
+      **Medium Severity**
+
+
+      <!-- DESCRIPTION START -->
+
+      Using `get_foliage(0)` returns a foliage with `foliage_transaction_block_hash=None`,
+      but the test creates a transaction block with non-None `foliage_transaction_block`
+      and `transactions_info`. This creates an inconsistent block. The original `get_foliage()`
+      yielded foliage with `foliage_transaction_block_hash` set first. To preserve
+      the original behavior for a transaction block test, the shard should be 1 or
+      3 (which have `foliage_transaction_block_hash` set).
+
+      <!-- DESCRIPTION END -->
+
+
+      <!-- BUGBOT_BUG_ID: f39a0fa6-95e7-46e8-8987-3411be703ef4 -->
+
+
+      <!-- LOCATIONS START
+
+      chia/_tests/cmds/test_show.py#L45-L46
+
+      LOCATIONS END -->
+
+      <a href="https://cursor.com/open?data=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImJ1Z2JvdC12MiJ9.eyJ2ZXJzaW9uIjoxLCJ0eXBlIjoiQlVHQk9UX0ZJWF9JTl9DVVJTT1IiLCJkYXRhIjp7InJlZGlzS2V5IjoiYnVnYm90OjgwMzcyZGJmLTAwYWItNDcwMi1hYjA0LTNlNTA4ZDUxM2U5MCIsImVuY3J5cHRpb25LZXkiOiI2NWRxbzV0YlhVdGtOUVd1aEVzNlIwQzJ4ZG5WUk9hdTZsT0JFdmJyWDUwIiwiYnJhbmNoIjoiZnVsbC1ibG9jay1wYXJzZXIiLCJyZXBvT3duZXIiOiJDaGlhLU5ldHdvcmsiLCJyZXBvTmFtZSI6ImNoaWEtYmxvY2tjaGFpbiJ9LCJpYXQiOjE3NzAyMDA2NzEsImV4cCI6MTc3Mjc5MjY3MX0.ebVNEERAD_6t5824QYoviyWtxvKB1c5ryLw27EhMy0_m5iQmMFNzt1Z8kNPlLM7ylSFYzL5qoRLgndE6f26DpihASzl47xDq_LKtDfxpovoSRkivCj1NSA7tuN_ntsJHhYrcYCJeQBxoLGtbJoT7x5i9X17No2Zs8kTmXsbimO_ev2q5CCI4hmMVLvnQVDa3gieGYDH2DazgdX7V7EtNPLpVm0n8YDa77BaZ6tQ1ZINOLQMohbBlkZr7VC7Z_UQ799Uy_rknUcOqhJHUYuvw1A-HEyOHvF24zYhkpAvlWZVq6uxFDH_58rW03cB10Wf8VuN2rDbFlJRJu6WJ4JU7LQ"
+      target="_blank" rel="noopener noreferrer"><picture><source media="(prefers-color-scheme:
+      dark)" srcset="https://cursor.com/assets/images/fix-in-cursor-dark.png"><source
+      media="(prefers-color-scheme: light)" srcset="https://cursor.com/assets/images/fix-in-cursor-light.png"><img
+      alt="Fix in Cursor" width="115" height="28" src="https://cursor.com/assets/images/fix-in-cursor-dark.png"></picture></a>&nbsp;<a
+      href="https://cursor.com/agents?data=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImJ1Z2JvdC12MiJ9.eyJ2ZXJzaW9uIjoxLCJ0eXBlIjoiQlVHQk9UX0ZJWF9JTl9XRUIiLCJkYXRhIjp7InJlZGlzS2V5IjoiYnVnYm90OjgwMzcyZGJmLTAwYWItNDcwMi1hYjA0LTNlNTA4ZDUxM2U5MCIsImVuY3J5cHRpb25LZXkiOiI2NWRxbzV0YlhVdGtOUVd1aEVzNlIwQzJ4ZG5WUk9hdTZsT0JFdmJyWDUwIiwiYnJhbmNoIjoiZnVsbC1ibG9jay1wYXJzZXIiLCJyZXBvT3duZXIiOiJDaGlhLU5ldHdvcmsiLCJyZXBvTmFtZSI6ImNoaWEtYmxvY2tjaGFpbiIsInByTnVtYmVyIjoyMDQ1OCwiY29tbWl0U2hhIjoiZTU0ODBiOTI1YzZhNzk4Yjg3YzRlYWFlODk1ZjIzYzI4ZGVmMDg3MSIsInByb3ZpZGVyIjoiZ2l0aHViIn0sImlhdCI6MTc3MDIwMDY3MSwiZXhwIjoxNzcyNzkyNjcxfQ.whVmle-mZfm4Td3DwxrTH78Y5a732Zmgq2ZdcWe03f_1s4K7F0ASvC6X-ocbuCYuL6YuQCKiCWe3I5WMo4BaAN16AFRi8X6_DUzzcIUx6I3oQI_hvSNWTve1w15X_TIk_ZvKwetAbjZiuVRrZ7I4O_uvgMNpHIM-hAWkNI0IvqFVBR3RzQjgFpSsnVQSEcDszklvugCV0APaRCvpd_MSBMReqfebmSyczD0iodTnQU5TlYt2j9Fkv7g1xzgUugTPpn8OSbB8KPfZZG8OCGpsqE_aXfRdjaQ8xaFS3tjMQO-ADJH28L8JgTtlXLfiMe_lC5-vNRcyVVarwCyU5wAbGg"
+      target="_blank" rel="noopener noreferrer"><picture><source media="(prefers-color-scheme:
+      dark)" srcset="https://cursor.com/assets/images/fix-in-web-dark.png"><source
+      media="(prefers-color-scheme: light)" srcset="https://cursor.com/assets/images/fix-in-web-light.png"><img
+      alt="Fix in Web" width="99" height="28" src="https://cursor.com/assets/images/fix-in-web-dark.png"></picture></a>'
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: dagster__33231
+  repo: dagster-io/dagster
+  url: https://github.com/dagster-io/dagster/pull/33231
+  kind: swe-prbench-Type3_Latent_Candidate
+  expected_findings:
+  - id: dagster__33231-c1
+    file: python_modules/dagster/dagster/_core/instance/runs/run_domain.py
+    line_range:
+    - 866
+    - 866
+    title_keywords:
+    - think
+    - neccesarily
+    - deal
+    - run_domain
+    evidence_keywords:
+    - _log_asset_planned_events
+    - target_asset_key
+    - asset_check_key
+    - run_domain
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: 'i do not think this is neccesarily a deal breaker, but just flagging
+      that it is still an additional data fetch on all run launches that was not there
+      before (loading the check node to check if there are partitions). That data
+      is also cached so I''m not overly concerned. However there is a test called
+
+
+      ```
+
+      test_launch_asset_materialization_run_asset_data_in_cache
+
+      ```
+
+
+      in internal and I would recommend augmenting that to ensure that it includes
+      at least one targeted asset check as well to make sure that we are not regressing
+      anything there and our cache keys and cache warming code is working as expected
+      (what we want to avoid is having to load the full asset graph during a run launch
+      when everything is sitting in cache already)'
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: redis-py__3939
+  repo: redis/redis-py
+  url: https://github.com/redis/redis-py/pull/3939
+  kind: swe-prbench-Type2_Contextual
+  expected_findings:
+  - id: redis-py__3939-c1
+    file: tests/test_search.py
+    line_range:
+    - 4290
+    - 4290
+    title_keywords:
+    - test
+    - validates
+    - output
+    - test_search
+    evidence_keywords:
+    - test_hybrid_search_query_with_scorer
+    - self
+    - client
+    - test_search
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: I have a test that validates the output - with this one, I just want to
+      see that the scorer value is accepted by the server. In case it isn't and error
+      response is returned.
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: chia-blockchain__20351
+  repo: Chia-Network/chia-blockchain
+  url: https://github.com/Chia-Network/chia-blockchain/pull/20351
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: chia-blockchain__20351-c1
+    file: chia/full_node/tx_processing_queue.py
+    line_range:
+    - 144
+    - 144
+    title_keywords:
+    - there
+    - cleanup
+    - earlier
+    - tx_processing_queue
+    evidence_keywords:
+    - self
+    - TransactionQueueEntry
+    - peer_id
+    - tx_processing_queue
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: was there no cleanup earlier? Was this a memory leak?
+  - id: chia-blockchain__20351-c2
+    file: chia/full_node/tx_processing_queue.py
+    line_range:
+    - 144
+    - 144
+    title_keywords:
+    - There
+    - deferred
+    - cleanup
+    - tx_processing_queue
+    evidence_keywords:
+    - self
+    - TransactionQueueEntry
+    - peer_id
+    - tx_processing_queue
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: There was deferred cleanup when we reach the end of the list, so there
+      was no memory leak.
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: dask__12002
+  repo: dask/dask
+  url: https://github.com/dask/dask/pull/12002
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: dask__12002-c1
+    file: pyproject.toml
+    line_range:
+    - 107
+    - 107
+    title_keywords:
+    - 'true'
+    - ruff
+    - documentation
+    - pyproject
+    evidence_keywords:
+    - find
+    - namespaces
+    - 'false'
+    - pyproject
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: "It's true that the ruff documentation itself states under [Rule selection](https://docs.astral.sh/ruff/linter/#rule-selection):\r\
+      \n> If you're wondering how to configure Ruff, here are some **recommended guidelines**:\r\
+      \n> * Prefer [`lint.select`](https://docs.astral.sh/ruff/settings/#lint_select)\
+      \ over [`lint.extend-select`](https://docs.astral.sh/ruff/settings/#lint_extend-select)\
+      \ to make your rule set explicit.\r\n\r\nOn the other hand, the default rules\
+      \ are carefully selected so that they do not interfere with the formatter, see\
+      \ [Rules](https://docs.astral.sh/ruff/rules/#rules):\r\n> By default, Ruff enables\
+      \ Flake8's `F` rules, along with a subset of the `E` rules, omitting any stylistic\
+      \ rules that overlap with the use of a formatter, like `ruff format` or [Black](https://github.com/psf/black).\r\
+      \n>\r\n> If you're just getting started with Ruff, **the default rule set is\
+      \ a great place to start**: it catches a wide variety of common errors (like\
+      \ unused imports) with zero configuration."
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: boto3__4629
+  repo: boto/boto3
+  url: https://github.com/boto/boto3/pull/4629
+  kind: swe-prbench-Type2_Contextual
+  expected_findings:
+  - id: boto3__4629-c1
+    file: boto3/s3/transfer.py
+    line_range:
+    - 210
+    - 210
+    title_keywords:
+    - Sorry
+    - just
+    - getting
+    - transfer
+    evidence_keywords:
+    - create_transfer_manager
+    - client
+    - config
+    - transfer
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: "Sorry I'm just getting back to this work. It's the same behavior as using\
+      \ the `auto` value on an optimized instance:\r\n- `Filename`, `Bucket`, `Key`,\
+      \ `ExtraArgs`, and `Callback` work as expected (same as core/native transfer\
+      \ manager).\r\n- Values in `Config` (ie `boto3.s3.transfer.TransferConfig`)\
+      \ are ignored.\r\n\r\nIdeally this would be rolled out with support for transfer\
+      \ manager config parameters. But this at least gets us \"feature parity\" in\
+      \ environments that aren't optimized instances. ie It's additive without being\
+      \ a regression (in itself).\r\n\r\nI think whether this could expose us to potential\
+      \ future regressions depends on what we envision transfer manager config parameter\
+      \ support looks like:\r\n1. Same interface/usage as the native transfer manager.\
+      \ It uses the values in the `boto3.s3.transfer.TransferConfig` object passed\
+      \ to the `Config` arg.\r\n2. Some other interface, eg a new field in `boto3.s3.transfer.TransferConfig`.\
+      \ Something like `crt_config`. It doesn't really matter exactly what it would\
+      \ look like, just that it would be a different interface.\r\n\r\nThe way I'm\
+      \ thinking about this is that we wouldn't want to pursue to 1st option because\
+      \ that could break users:\r\n- I'm on an optimized instance with the `auto`\
+      \ preferred client configured\r\n- I pass a transfer config that's currently\
+      \ doing nothing\r\n- I upgrade and all of a sudden my transfer config starts\
+      \ doing something\r\n\r\nSo while not exposing configs along with this update\
+      \ isn't ideal, it at least gives users an option to use CRT transfer manager\
+      \ with CRT-determined default values. I'm also open to rolling out the 2 together\
+      \ instead of in separate releases. I just figured it would be faster to let\
+      \ users enable CRT everywhere if we roll out incrementally."
+  - id: boto3__4629-c2
+    file: boto3/s3/transfer.py
+    line_range:
+    - 333
+    - 333
+    title_keywords:
+    - feel
+    - like
+    - document
+    - transfer
+    evidence_keywords:
+    - __init__
+    - made
+    - with
+    - transfer
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: I feel like we should document which config options are allowed when setting
+      `preferred_transfer_client` to `crt`. In the current state of this PR, if users
+      try to set an unsupported value, they will receive an exception that tells them
+      which config options they set are invalid, but there is no documentation about
+      which options are allowed.
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: kedro__5142
+  repo: kedro-org/kedro
+  url: https://github.com/kedro-org/kedro/pull/5142
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: kedro__5142-c1
+    file: docs/integrations-and-plugins/pandera.md
+    line_range:
+    - 141
+    - 141
+    title_keywords:
+    - Feels
+    - very
+    - weird
+    - pandera
+    evidence_keywords:
+    - Pandera
+    - data
+    - validation
+    - pandera
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: Feels very weird that you're defining your schemas in the hook; seems
+      like it breaks the software engineering principles that Kedro advocates for.
+      I know you mention somewhere below that you could store schemas in YAML, but
+      maybe even for this example it makes sense to put a pointer to the schema in
+      YAML or some other config?
+  - id: kedro__5142-c2
+    file: docs/integrations-and-plugins/pandera.md
+    line_range:
+    - 141
+    - 141
+    title_keywords:
+    - agree
+    - struggled
+    - quite
+    - pandera
+    evidence_keywords:
+    - Pandera
+    - data
+    - validation
+    - pandera
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: "I agree, we've struggled quite a bit with the validation logic. Either\
+      \ keep the validation logic close to the dataset, or keep it close to the node\
+      \ logic I'd say.\n\nAs part of our project, we went for the latter:\n\n1. A\
+      \ small wrapper on top of Pandera to work both with Pandas and Spark\n2. Decorators\
+      \ to validate input/output of functions\n\nSome code:\n\nWrapper:\n\n```python\n\
+      \"\"\"\nTemp. wrapper module to enable data quality checks defined independently\
+      \ of the underlying\nlibrary used to represent the data. Currently supports\
+      \ Spark and Pandas dataframes.\n\nNOTE: Should be removed as soon as Pandera\
+      \ supports this.\n\"\"\"\n\nimport inspect\nimport typing\nfrom dataclasses\
+      \ import dataclass\nfrom functools import wraps\nfrom typing import Dict, List,\
+      \ Optional\n\nimport pandas as pd\nimport pandera.pandas as pa\nimport pandera.pyspark\
+      \ as pas\nimport pyspark.sql as ps\nfrom pandera.decorators import _handle_schema_error\n\
+      \n\n@dataclass\nclass Column:\n    \"\"\"Data class to represent a class agnostic\
+      \ Pandera Column.\"\"\"\n\n    type_: type\n    checks: Optional[List] = None\n\
+      \    nullable: bool = True\n\n\n@dataclass\nclass DataFrameSchema:\n    \"\"\
+      \"Data class to represent a class agnostic Pandera DataFrameSchema.\"\"\"\n\n\
+      \    columns: Dict[str, Column]\n    unique: Optional[List] = None\n    strict:\
+      \ bool = False\n\n    def build_for_type(self, type_) -> typing.Union[pas.DataFrameSchema,\
+      \ pa.DataFrameSchema]:\n        # Build pandas version\n        if type_ is\
+      \ pd.DataFrame:\n            return pa.DataFrameSchema(\n                columns={\n\
+      \                    name: pa.Column(col.type_, checks=col.checks, nullable=col.nullable)\n\
+      \                    for name, col in self.columns.items()\n               \
+      \ },\n                unique=self.unique,\n                strict=self.strict,\n\
+      \            )\n\n        # Build pyspark version\n        if type_ is ps.DataFrame:\n\
+      \            return pas.DataFrameSchema(\n                columns={\n      \
+      \              name: pas.Column(col.type_, checks=col.checks, nullable=col.nullable)\n\
+      \                    for name, col in self.columns.items()\n               \
+      \ },\n                unique=self.unique,\n                strict=self.strict,\n\
+      \            )\n\n        raise TypeError()\n\n\ndef check_input(schema: DataFrameSchema,\
+      \ df_name: str):\n    \"\"\"Decorator to validate output schema of decorated\
+      \ function.\n\n    Args:\n        schema: Schema to validate\n        df_name\
+      \ (optional): name of output arg to validate\n    \"\"\"\n\n    def decorator(func):\n\
+      \        @wraps(func)\n        def wrapper(*args, **kwargs):\n            #\
+      \ Get type hints for the function\n            type_hints = typing.get_type_hints(func)\n\
+      \n            # Bind args and kwargs to parameter names\n            sig = inspect.signature(func)\n\
+      \            bound = sig.bind(*args, **kwargs)\n            bound.apply_defaults()\n\
+      \n            value = bound.arguments.get(df_name)\n            arg_type = type_hints.get(df_name)\n\
+      \n            df_schema = schema.build_for_type(arg_type)\n\n            if\
+      \ value is not None:\n                try:\n                    # breakpoint()\n\
+      \                    df_schema.validate(value, lazy=False)\n               \
+      \ except pa.errors.SchemaError as e:\n                    _handle_schema_error(\"\
+      check_input\", func, df_schema, value, e)\n\n            output = func(*args,\
+      \ **kwargs)\n\n            return output\n\n        return wrapper\n\n    return\
+      \ decorator\n\n\ndef check_output(\n    schema: DataFrameSchema, df_name: Optional[str]\
+      \ = None, raise_df_undefined: bool = True, pass_columns: bool = False\n):\n\
+      \    \"\"\"Decorator to validate output schema of decorated function.\n\n  \
+      \  Args:\n        schema: Schema to validate\n        df_name (optional): name\
+      \ of output arg to validate\n        raise_df_undefined: if set, ensures error\
+      \ is thrown if `df_name` is not defined\n        pass_cols (optional): boolean\
+      \ indicating whether cols should be passed into callable\n    \"\"\"\n\n   \
+      \ def decorator(func):\n        @wraps(func)\n        def wrapper(*args, **kwargs):\n\
+      \            if not (type_ := typing.get_type_hints(func).get(\"return\")):\n\
+      \                raise TypeError(\"No output typehint specified!\")\n\n    \
+      \        if df_name:\n                if not typing.get_origin(typing.Dict)\
+      \ == dict:\n                    raise TypeError(\"Specified df_name arg, but\
+      \ function output typehint is not dict.\")\n\n                type_ = typing.get_args(type_)[1]\n\
+      \n            df_schema = schema.build_for_type(type_)\n\n            if pass_columns:\n\
+      \                output = func(*args, **kwargs, cols=list(schema.columns.keys()))\n\
+      \            else:\n                output = func(*args, **kwargs)\n\n     \
+      \       if df_name is not None:\n                df = output.get(df_name)\n\n\
+      \                if df is None and raise_df_undefined:\n                   \
+      \ raise RuntimeError(f\"df {df_name} not found!\")\n            else:\n    \
+      \            df = output\n\n            if df is not None:\n               \
+      \ try:\n                    df_schema.validate(df, lazy=False)\n           \
+      \     except pa.errors.SchemaError as e:\n                    _handle_schema_error(\"\
+      check_output\", func, df_schema, df, e)\n\n            return output\n\n   \
+      \     return wrapper\n\n    return decorator\n\n```\n\nA node file\n\n```python\n\
+      @check_output(\n    schema=DataFrameSchema(\n        columns={\n           \
+      \ \"source\": Column(T.StringType(), nullable=False),\n            \"target\"\
+      : Column(T.StringType(), nullable=False),\n            \"source_embedding\"\
+      : Column(T.ArrayType(T.FloatType()), nullable=False),\n            \"target_embedding\"\
+      : Column(T.ArrayType(T.FloatType()), nullable=False),\n        },\n        unique=[\"\
+      source\", \"target\"],\n    )\n)\ndef attach_embeddings(\n    pairs_df: ps.DataFrame,\n\
+      \    nodes: ps.DataFrame,\n) -> ps.DataFrame:\n\n    # logic here ...\n```"
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: kedro__5273
+  repo: kedro-org/kedro
+  url: https://github.com/kedro-org/kedro/pull/5273
+  kind: swe-prbench-Type2_Contextual
+  expected_findings:
+  - id: kedro__5273-c1
+    file: kedro/pipeline/llm_context.py
+    line_range:
+    - 245
+    - 245
+    title_keywords:
+    - Tools
+    - instantiated
+    - inside
+    - llm_context
+    evidence_keywords:
+    - Experimental
+    - utilities
+    - constructing
+    - llm_context
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: "Tools should be instantiated inside each `llm_context_node` execution.\
+      \ Even if a tool has no varying inputs, caching tool instances across nodes\
+      \ or across a pipeline run should not be done at this level. Doing so would\
+      \ introduce hidden shared state and break Kedro’s guarantees around node purity,\
+      \ reproducibility, and safe parallel execution.\r\n\r\nReuse in Kedro is achieved\
+      \ by reusing datasets and parameters, not runtime objects. In this design, the\
+      \ expensive or shared parts (e.g. data, configs, credentials) are already loaded\
+      \ and managed by Kedro, while tool instantiation itself is intentionally lightweight\
+      \ and deterministic. Tool instantiation itself is intentionally lightweight.\
+      \ It is just the construction of a callable or wrapper and is not a computationally\
+      \ heavy operation.\r\n\r\nIf a tool truly requires caching or shared state,\
+      \ that logic should live:\r\n\r\n- inside the tool implementation itself (explicit\
+      \ and opt-in), or\r\n- be modeled as a Kedro dataset and passed into the node\
+      \ explicitly."
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: kedro__5269
+  repo: kedro-org/kedro
+  url: https://github.com/kedro-org/kedro/pull/5269
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: kedro__5269-c1
+    file: docs/tutorials/add_another_pipeline.md
+    line_range:
+    - 248
+    - 248
+    title_keywords:
+    - complains
+    - about
+    - code
+    - add_another_pipeline
+    evidence_keywords:
+    - There
+    - range
+    - options
+    - add_another_pipeline
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: Yes. It complains about the code sections and it's not possible to solve
+      those errors. For example it doesn't like the syntax from imports `from .nodes
+      import evaluate_model, split_data, train_model`
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: cupy__9561
+  repo: cupy/cupy
+  url: https://github.com/cupy/cupy/pull/9561
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: cupy__9561-c1
+    file: cupyx/profiler/_timeit_magic.py
+    line_range:
+    - 87
+    - 87
+    title_keywords:
+    - seems
+    - args
+    - code
+    - _timeit_magic
+    evidence_keywords:
+    - from
+    - __future__
+    - import
+    - _timeit_magic
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: "It seems that `args.code` is still active but ignored. Maybe add an error\
+      \ for that?\r\n(Mainly, because `%timeit` supports that as setup code I think).\r\
+      \n\r\nEDIT: For clarity, I mean:\r\n```\r\n%%gpu_timeit -n100 a = cp.ones(100)\r\
+      \na.sum()\r\n```\r\nthe `a = cp.ones(100)` is just ignored, but if it was used\
+      \ would be an error (and if it was called, should be setup code).\r\n\r\nIf\
+      \ it is trivial to do as setup code, that would be even cooler of course."
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: dagster__33243
+  repo: dagster-io/dagster
+  url: https://github.com/dagster-io/dagster/pull/33243
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: dagster__33243-c1
+    file: python_modules/dagster/dagster/_core/asset_graph_view/asset_graph_view.py
+    line_range:
+    - 665
+    - 665
+    title_keywords:
+    - else
+    - branch
+    - returns
+    - asset_graph_view
+    evidence_keywords:
+    - async
+    - _compute_missing_check_subset
+    - EntitySubset
+    - asset_graph_view
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: "The else branch returns all partitions with the specified status without\
+      \ intersecting with `from_subset`. This breaks the contract of the method since\
+      \ `from_subset` parameter is meant to restrict which partitions to consider.\n\
+      \nThe old implementation correctly did:\n```python\nreturn from_subset.compute_intersection_with_partition_keys(matching_partitions)\n\
+      ```\n\nThe fix should intersect the result with `from_subset`:\n```python\n\
+      else:\n    serializable_subset = cache_value.subsets.get(status)\n    if serializable_subset\
+      \ is None:\n        return self.get_empty_subset(key=key)\n    subset = self.get_subset_from_serializable_subset(\n\
+      \        serializable_subset\n    ) or self.get_empty_subset(key=key)\n    return\
+      \ from_subset.compute_intersection(subset)\n```\n```suggestion\n        else:\n\
+      \            serializable_subset = cache_value.subsets.get(status)\n       \
+      \     if serializable_subset is None:\n                return self.get_empty_subset(key=key)\n\
+      \            subset = self.get_subset_from_serializable_subset(\n          \
+      \      serializable_subset\n            ) or self.get_empty_subset(key=key)\n\
+      \            return from_subset.compute_intersection(subset)\n```\n  \n\n*Spotted\
+      \ by [Graphite Agent](https://app.graphite.com/diamond/?org=dagster-io&ref=ai-review-comment)*<i\
+      \ class='graphite__hidden'><br /><br /><a href=\"https://app.graphite.com/github/pr/dagster-io/dagster/33243?chatWithGeneratedComment=12009cf4-b1eb-4f24-9326-312570d40e38\"\
+      ><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.graphite.dev/github-diamond-fix-in-graphite-dark.svg\"\
+      ><source media=\"(prefers-color-scheme: light)\" srcset=\"https://static.graphite.dev/github-diamond-fix-in-graphite-light.svg\"\
+      ><img alt=\"Fix in Graphite\" src=\"https://static.graphite.dev/github-diamond-fix-in-graphite-dark.svg\"\
+      ></picture></a></i><i class='graphite__hidden'><br /><br />Is this helpful?\
+      \ React \U0001F44D or \U0001F44E to let us know.</i>"
+  - id: dagster__33243-c2
+    file: python_modules/dagster/dagster/_core/storage/asset_check_state.py
+    line_range:
+    - 261
+    - 261
+    title_keywords:
+    - KeyError
+    - resolving
+    - progress
+    - asset_check_state
+    evidence_keywords:
+    - from
+    - collections
+    - import
+    - asset_check_state
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: "**KeyError when resolving in-progress runs across multiple checks**\n\
+      \nThe function receives `run_statuses` containing runs from ALL checks (line\
+      \ 119-126 in `bulk_update_asset_check_state`), but only checks if the run_id\
+      \ exists in the current check's `in_progress_runs`. This causes a KeyError when\
+      \ a run belongs to a different check.\n\n```python\n# Fix: Check if run_id exists\
+      \ before accessing\nfor run_id, run_status in run_statuses.items():\n    if\
+      \ run_status in FINISHED_STATUSES and run_id in in_progress_runs:\n        resolved_run_ids.add(run_id)\n\
+      \        run_subset = in_progress_runs[run_id]\n        if run_status == DagsterRunStatus.FAILURE:\n\
+      \            delta_execution_failed = delta_execution_failed.compute_union(run_subset)\n\
+      \        else:\n            delta_skipped = delta_skipped.compute_union(run_subset)\n\
+      ```\n```suggestion\n    for run_id, run_status in run_statuses.items():\n  \
+      \      if run_status in FINISHED_STATUSES and run_id in in_progress_runs:\n\
+      \            resolved_run_ids.add(run_id)\n            run_subset = in_progress_runs[run_id]\n\
+      \            if run_status == DagsterRunStatus.FAILURE:\n                delta_execution_failed\
+      \ = delta_execution_failed.compute_union(run_subset)\n            else:\n  \
+      \              delta_skipped = delta_skipped.compute_union(run_subset)\n```\n\
+      \  \n\n*Spotted by [Graphite Agent](https://app.graphite.com/diamond/?org=dagster-io&ref=ai-review-comment)*<i\
+      \ class='graphite__hidden'><br /><br /><a href=\"https://app.graphite.com/github/pr/dagster-io/dagster/33243?chatWithGeneratedComment=945b1afc-d222-4a02-aa2f-f48aa43055fb\"\
+      ><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.graphite.dev/github-diamond-fix-in-graphite-dark.svg\"\
+      ><source media=\"(prefers-color-scheme: light)\" srcset=\"https://static.graphite.dev/github-diamond-fix-in-graphite-light.svg\"\
+      ><img alt=\"Fix in Graphite\" src=\"https://static.graphite.dev/github-diamond-fix-in-graphite-dark.svg\"\
+      ></picture></a></i><i class='graphite__hidden'><br /><br />Is this helpful?\
+      \ React \U0001F44D or \U0001F44E to let us know.</i>"
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: inference__4393
+  repo: xorbitsai/inference
+  url: https://github.com/xorbitsai/inference/pull/4393
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: inference__4393-c1
+    file: xinference/deploy/docker/requirements_12.9/requirements-cu129-ml.txt
+    line_range:
+    - 54
+    - 54
+    title_keywords:
+    - Version
+    - cannot
+    - exceed
+    - requirements-cu129-ml
+    evidence_keywords:
+    - xgrammar
+    - cuda
+    - python
+    - requirements-cu129-ml
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: Version cannot exceed 2, this version is compatible, otherwise an error
+      message will be generated stating that the version is too high
+  - id: inference__4393-c2
+    file: xinference/deploy/docker/requirements_12.9/requirements-cu129-ml.txt
+    line_range:
+    - 54
+    - 54
+    title_keywords:
+    - paste
+    - error
+    - stack
+    - requirements-cu129-ml
+    evidence_keywords:
+    - xgrammar
+    - cuda
+    - python
+    - requirements-cu129-ml
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: Can you paste the error stack?
+  - id: inference__4393-c3
+    file: xinference/deploy/docker/Dockerfile.cu129
+    line_range:
+    - 81
+    - 81
+    title_keywords:
+    - Triton
+    - triggered
+    - during
+    - Dockerfile
+    evidence_keywords:
+    - conda
+    - create
+    - ffmpeg
+    - Dockerfile
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: Triton was triggered during the installation of torch, but it triggered
+      the installation of 3.5.0. However, the error rate was too high because other
+      dependencies that require Triton require version 3.4.0. Therefore, it is listed
+      separately to reduce this issue
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: dask__12103
+  repo: dask/dask
+  url: https://github.com/dask/dask/pull/12103
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: dask__12103-c1
+    file: dask/utils.py
+    line_range:
+    - 2359
+    - 2359
+    title_keywords:
+    - dislike
+    - these
+    - fail
+    - utils
+    evidence_keywords:
+    - __exit__
+    - self
+    - exc_type
+    - utils
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: I dislike that these can fail with an exception. We don't know that just
+      because an object has `.nnz` that it's comparable to an int, and we don't know
+      that `obj.shape` is a sequence. I'd feel better if these also catch exceptions
+      (probably broad ones) so that we get through to the fallback.
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: agents__4126
+  repo: livekit/agents
+  url: https://github.com/livekit/agents/pull/4126
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: agents__4126-c1
+    file: livekit-agents/livekit/agents/beta/workflows/warm_transfer.py
+    line_range:
+    - 96
+    - 96
+    title_keywords:
+    - something
+    - constructor
+    - checking
+    - warm_transfer
+    evidence_keywords:
+    - from
+    - __future__
+    - import
+    - warm_transfer
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: Can we add something in the constructor checking for the JobContext and
+      raising an error if this isn't using Cloud (MoveParticipant is only supported
+      on Cloud)
+  - id: agents__4126-c2
+    file: examples/warm-transfer/warm_transfer.py
+    line_range:
+    - 96
+    - 96
+    title_keywords:
+    - raise
+    - ToolError
+    - instead
+    - warm_transfer
+    evidence_keywords:
+    - async
+    - transfer_to_human
+    - self
+    - warm_transfer
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: Let's raise a ToolError instead
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: pip__13732
+  repo: pypa/pip
+  url: https://github.com/pypa/pip/pull/13732
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: pip__13732-c1
+    file: src/pip/_internal/req/constructors.py
+    line_range:
+    - 262
+    - 262
+    title_keywords:
+    - Normally
+    - editable
+    - requirements
+    - constructors
+    evidence_keywords:
+    - install_req_from_editable
+    - permit_editable_wheels
+    - bool
+    - constructors
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: Normally, editable requirements are rejected during the resolution step.
+      This error check is too late for editable URL constraints that also happen to
+      have a non-bare egg fragment, since the fragment check is performed during command
+      startup. As the main issue is that you can't even have an editable constraint,
+      we now check and raise early in requirement construction.
+  - id: pip__13732-c2
+    file: src/pip/_internal/req/constructors.py
+    line_range:
+    - 262
+    - 262
+    title_keywords:
+    - console
+    - constraints
+    - file
+    - constructors
+    evidence_keywords:
+    - install_req_from_editable
+    - permit_editable_wheels
+    - bool
+    - constructors
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: "```console\r\n$ cat constraints.txt\r\n-e pip @ file:///home/ichard26/dev/oss/pip\r\
+      \n$ pip install -c constraints.txt pip\r\nERROR: pip is not a valid editable\
+      \ requirement. It should either be a path to a local project or a VCS URL (beginning\
+      \ with bzr+http, bzr+https, bzr+ssh, bzr+sftp, bzr+ftp, bzr+lp, bzr+file, git+http,\
+      \ git+https, git+ssh, git+git, git+file, hg+file, hg+http, hg+https, hg+ssh,\
+      \ hg+static-http, svn+ssh, svn+http, svn+https, svn+svn, svn+file).\r\n```\r\
+      \n\r\nThis is causing `test_install_with_extras_editable_joined` to fail otherwise.\
+      \ Although TBH, I don't actually understand why this PR is causing it to fail\
+      \ :/\r\n\r\n```\r\nscript = <tests.lib.PipTestEnvironment object at 0x7a5f7716f890>,\
+      \ data = <tests.lib.TestData object at 0x7a5f7716f9d0>, resolver_variant = 'resolvelib'\r\
+      \n\r\n    def test_install_with_extras_editable_joined(\r\n        script: PipTestEnvironment,\
+      \ data: TestData, resolver_variant: ResolverVariant\r\n    ) -> None:\r\n  \
+      \      to_install = data.packages.joinpath(\"LocalExtras\")\r\n        file\
+      \ = script.temporary_file(\r\n            \"constraints.txt\", f\"-e LocalExtras[bar]\
+      \ @ {to_install.as_uri()}\"\r\n        )\r\n        result = script.pip_install_local(\r\
+      \n            \"-c\",\r\n            file,\r\n            \"LocalExtras[baz]\"\
+      ,\r\n            allow_stderr_warning=True,\r\n            expect_error=(resolver_variant\
+      \ == \"resolvelib\"),\r\n        )\r\n        if resolver_variant == \"resolvelib\"\
+      :\r\n>           assert \"Editable requirements are not allowed as constraints\"\
+      \ in result.stderr\r\nE           AssertionError: assert 'Editable requirements\
+      \ are not allowed as constraints' in 'ERROR: LocalExtras[bar] is not a valid\
+      \ editable requirement. It should either be a path to a local project or a VCS\
+      \ URL (beginning with bzr+http, bzr+https, bzr+ssh, bzr+sftp, bzr+ftp, bzr+lp,\
+      \ bzr+file, git+http, git+https, git+ssh, git+git, git+file, hg+file, hg+http,\
+      \ hg+https, hg+ssh, hg+static-http, svn+ssh, svn+http, svn+https, svn+svn, svn+file).\\\
+      n'\r\nE            +  where 'ERROR: LocalExtras[bar] is not a valid editable\
+      \ requirement. It should either be a path to a local project or a VCS URL (beginning\
+      \ with bzr+http, bzr+https, bzr+ssh, bzr+sftp, bzr+ftp, bzr+lp, bzr+file, git+http,\
+      \ git+https, git+ssh, git+git, git+file, hg+file, hg+http, hg+https, hg+ssh,\
+      \ hg+static-http, svn+ssh, svn+http, svn+https, svn+svn, svn+file).\\n' = <tests.lib.TestPipResult\
+      \ object at 0x7a5f77426780>.stderr\r\n\r\ntests/functional/test_install_reqs.py:742:\
+      \ AssertionError\r\n```"
+  - id: pip__13732-c3
+    file: src/pip/_internal/req/constructors.py
+    line_range:
+    - 262
+    - 262
+    title_keywords:
+    - Strange
+    - holiday
+    - then
+    - constructors
+    evidence_keywords:
+    - install_req_from_editable
+    - permit_editable_wheels
+    - bool
+    - constructors
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: Strange. On holiday then FOSDEM so no time to dig now. Raising that kind
+      of error at that place raises a little alarm in my head. I might be wrong, so
+      don't block the PR for this.
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: pipecat__3495
+  repo: pipecat-ai/pipecat
+  url: https://github.com/pipecat-ai/pipecat/pull/3495
+  kind: swe-prbench-Type2_Contextual
+  expected_findings:
+  - id: pipecat__3495-c1
+    file: src/pipecat/services/stt_service.py
+    line_range:
+    - 210
+    - 210
+    title_keywords:
+    - there
+    - through
+    - inheritance
+    - stt_service
+    evidence_keywords:
+    - async
+    - start
+    - self
+    - stt_service
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: "It was, but it's there through inheritance:\r\n\r\nSTTService -> AIService\
+      \ -> FrameProcessor\r\n\r\nThe `cleanup()` method is in the FrameProcessor class.\
+      \ We had no reason to override it before. With the timeout requiring a task,\
+      \ now we do."
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: numba__10223
+  repo: numba/numba
+  url: https://github.com/numba/numba/pull/10223
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: numba__10223-c1
+    file: numba/tests/test_array_reductions.py
+    line_range:
+    - 259
+    - 259
+    title_keywords:
+    - revise
+    - remove
+    - tests
+    - test_array_reductions
+    evidence_keywords:
+    - check
+    - test_np_all
+    - self
+    - test_array_reductions
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: "had to revise and remove tests on `array_all` with scalar inputs since\
+      \ numpy and python scalar types are typed same on numba, and thus, we cannot\
+      \ support `a.any()` or `a.all()` for scalar values. \nCalling `all()` on scalar\
+      \ values would result in -\n```\nnumba.core.errors.TypingError: Failed in nopython\
+      \ mode pipeline (step: nopython frontend)\nUnknown attribute 'all' of type float64\n\
+      ```\n`np.all(a)` would be supported for scalar values."
+  - id: numba__10223-c2
+    file: numba/np/arraymath.py
+    line_range:
+    - 811
+    - 811
+    title_keywords:
+    - types
+    - Number
+    - Boolean
+    - arraymath
+    evidence_keywords:
+    - array_argmax_impl
+    - axis
+    - None
+    - arraymath
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: "If it's not `types.Number`, `types.Boolean` or `types.Array`, it would\
+      \ rightfully throw `TypingError`. \r\nfor instance,\r\nfor `np.all({1,2})`,\
+      \ it would error with -\r\n```\r\nnumba.core.errors.TypingError: Failed in nopython\
+      \ mode pipeline (step: nopython frontend)\r\nNo implementation of function Function(<function\
+      \ all at 0x104d39da0>) found for signature:\r\n \r\n >>> all(reflected set(int64))\r\
+      \n```"
+  - id: numba__10223-c3
+    file: numba/np/arraymath.py
+    line_range:
+    - 811
+    - 811
+    title_keywords:
+    - What
+    - iterable
+    - Like
+    - arraymath
+    evidence_keywords:
+    - array_argmax_impl
+    - axis
+    - None
+    - arraymath
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: "What if it is an iterable? Like, some kind of list:\n\n\n```\nIn [1]:\
+      \ import numpy as np\n\nIn [2]: from numba import njit\n\nIn [3]: @njit\n  \
+      \ ...: def al(a):\n   ...:     return np.all(a)\n   ...:\n\nIn [4]: np.all(0)\n\
+      Out[4]: np.False_\n\nIn [5]: np.all(1)\nOut[5]: np.True_\n\nIn [6]: np.all(False)\n\
+      Out[6]: np.False_\n\nIn [7]: np.all(True)\nOut[7]: np.True_\n\nIn [8]: np.all(np.ones(23))\n\
+      Out[8]: np.True_\n\nIn [9]: np.all(np.zeros(23))\nOut[9]: np.False_\n\nIn [10]:\
+      \ np.all([1,2,3])\nOut[10]: np.True_\n\nIn [11]: al(0)\nOut[11]: False\n\nIn\
+      \ [12]: al(1)\nOut[12]: True\n\nIn [13]: al(False)\nOut[13]: False\n\nIn [14]:\
+      \ al(True)\nOut[14]: True\n\nIn [15]: al(np.ones(23))\nOut[15]: True\n\nIn [16]:\
+      \ al(np.zeros(23))\nOut[16]: False\n\nIn [17]: al([1,2,3])\n---------------------------------------------------------------------------\n\
+      TypingError                               Traceback (most recent call last)\n\
+      Cell In[17], line 1\n----> 1 al([1,2,3])\n\nFile ~/git/numba/numba/core/dispatcher.py:424,\
+      \ in _DispatcherBase._compile_for_args(self, *args, **kws)\n    420        \
+      \ msg = (f\"{str(e).rstrip()} \\n\\nThis error may have been caused \"\n   \
+      \ 421                f\"by the following argument(s):\\n{args_str}\\n\")\n \
+      \   422         e.patch_message(msg)\n--> 424     error_rewrite(e, 'typing')\n\
+      \    425 except errors.UnsupportedError as e:\n    426     # Something unsupported\
+      \ is present in the user code, add help info\n    427     error_rewrite(e, 'unsupported_error')\n\
+      \nFile ~/git/numba/numba/core/dispatcher.py:365, in _DispatcherBase._compile_for_args.<locals>.error_rewrite(e,\
+      \ issue_type)\n    363     raise e\n    364 else:\n--> 365     raise e.with_traceback(None)\n\
+      \nTypingError: Failed in nopython mode pipeline (step: nopython frontend)\n\
+      No implementation of function Function(<function all at 0x10594a560>) found\
+      \ for signature:\n\n >>> all(reflected list(int64)<iv=None>)\n\nThere are 2\
+      \ candidate implementations:\n - Of which 2 did not match due to:\n Overload\
+      \ of function 'all': File: numba/np/arraymath.py: Line 801.\n   With argument(s):\
+      \ '(reflected list(int64)<iv=None>)':\n  No match.\n\nDuring: resolving callee\
+      \ type: Function(<function all at 0x10594a560>)\nDuring: typing of call at <ipython-input-3-eb6fe1ceef9e>\
+      \ (3)\n\nFile \"<ipython-input-3-eb6fe1ceef9e>\", line 3:\ndef al(a):\n    return\
+      \ np.all(a)\n    ^\n\nDuring: Pass nopython_type_inference\n```"
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: sqlfluff__7471
+  repo: sqlfluff/sqlfluff
+  url: https://github.com/sqlfluff/sqlfluff/pull/7471
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: sqlfluff__7471-c1
+    file: src/sqlfluff/dialects/dialect_tsql.py
+    line_range:
+    - 265
+    - 265
+    title_keywords:
+    - character
+    - being
+    - added
+    - dialect_tsql
+    evidence_keywords:
+    - hexadecimal
+    - literal
+    - lexer
+    - dialect_tsql
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: The character set being added is a list of MS SQL Server supported currency
+      symbols.   So if anything other than a currency symbol were added that would
+      be a bug and cause serious logic issues regardless of the lexer handling it.  This
+      type of issue would never make it past the test cases.
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: pipecat__2932
+  repo: pipecat-ai/pipecat
+  url: https://github.com/pipecat-ai/pipecat/pull/2932
+  kind: swe-prbench-Type2_Contextual
+  expected_findings:
+  - id: pipecat__2932-c1
+    file: examples/foundational/26a-gemini-live-transcription.py
+    line_range:
+    - 97
+    - 97
+    title_keywords:
+    - pattern
+    - ugly
+    - Prior
+    - 26a-gemini-live-transcription
+    evidence_keywords:
+    - async
+    - run_bot
+    - transport
+    - 26a-gemini-live-transcription
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: 'This pattern is a bit ugly.
+
+
+      Prior to this change, though, we actually had a bug—`create_context_aggregator()`
+      would *always* return an assistant context aggregator configured with `expect_stripped_words=False`,
+      even when it ought not to have been (i.e. when the LLM was configured to output
+      text).'
+  - id: pipecat__2932-c2
+    file: examples/foundational/26a-gemini-live-transcription.py
+    line_range:
+    - 97
+    - 97
+    title_keywords:
+    - Actually
+    - needing
+    - configure
+    - 26a-gemini-live-transcription
+    evidence_keywords:
+    - async
+    - run_bot
+    - transport
+    - 26a-gemini-live-transcription
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: "Actually...needing to configure the assistant aggregator differently\
+      \ depending on which LLM service is upstream of it is kind of a fundamental\
+      \ problem—we can't have that be the case if we want to be able to dynamically\
+      \ switch LLMs at runtime...\r\n\r\nHaving the LLM \"communicate\" downstream\
+      \ at setup time sounds too complicated for the LLM-swapping scenario. I think\
+      \ what @filipi87 is suggesting—of making the aggregator smart enough to not\
+      \ have to be told what to expect—is the preferred solution."
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: chia-blockchain__20235
+  repo: Chia-Network/chia-blockchain
+  url: https://github.com/Chia-Network/chia-blockchain/pull/20235
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: chia-blockchain__20235-c1
+    file: chia/consensus/blockchain.py
+    line_range:
+    - 703
+    - 703
+    title_keywords:
+    - case
+    - where
+    - prev_b
+    - blockchain
+    evidence_keywords:
+    - async
+    - validate_unfinished_block_header
+    - block
+    - blockchain
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: the case where `prev_b` is `None` isn't handled in the new version of
+      this. Here it returns `Err.INVALID_PREV_BLOCK_HASH`, in your new version it
+      throws (I think)
+  - id: chia-blockchain__20235-c2
+    file: chia/_tests/blockchain/test_blockchain.py
+    line_range:
+    - 158
+    - 158
+    title_keywords:
+    - condition
+    - backtracking
+    - find
+    - test_blockchain
+    evidence_keywords:
+    - async
+    - test_overflow_genesis_empty_slots
+    - self
+    - test_blockchain
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: we have a condition backtracking to find the previous transaction block
+      that fails because we manipulate the genesis hash, so we get key error (instead
+      of stoping when hitting genesis)
+  - id: chia-blockchain__20235-c3
+    file: chia/_tests/blockchain/test_blockchain.py
+    line_range:
+    - 158
+    - 158
+    title_keywords:
+    - because
+    - need
+    - mismatch
+    - test_blockchain
+    evidence_keywords:
+    - async
+    - test_overflow_genesis_empty_slots
+    - self
+    - test_blockchain
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: no because you need the mismatch with constants to trigger the error inside
+      the validation code, what we are checking in this test is that we are catching
+      the bag genesis hash correctly
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: prowler__9876
+  repo: prowler-cloud/prowler
+  url: https://github.com/prowler-cloud/prowler/pull/9876
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: prowler__9876-c1
+    file: prowler/providers/azure/lib/service/service.py
+    line_range:
+    - 41
+    - 41
+    title_keywords:
+    - Empty
+    - except
+    - clause
+    - service
+    evidence_keywords:
+    - self
+    - audit_config
+    - provider
+    - service
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: '## Empty except
+
+
+      ''except'' clause does nothing but pass and there is no explanatory comment.
+
+
+      [Show more details](https://github.com/prowler-cloud/prowler/security/code-scanning/3945)'
+  - id: prowler__9876-c2
+    file: prowler/providers/azure/lib/service/service.py
+    line_range:
+    - 41
+    - 41
+    title_keywords:
+    - Empty
+    - except
+    - clause
+    - service
+    evidence_keywords:
+    - self
+    - audit_config
+    - provider
+    - service
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: '## Empty except
+
+
+      ''except'' clause does nothing but pass and there is no explanatory comment.
+
+
+      [Show more details](https://github.com/prowler-cloud/prowler/security/code-scanning/3946)'
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: darts__3000
+  repo: unit8co/darts
+  url: https://github.com/unit8co/darts/pull/3000
+  kind: swe-prbench-Type2_Contextual
+  expected_findings:
+  - id: darts__3000-c1
+    file: darts/timeseries.py
+    line_range:
+    - 1897
+    - 1897
+    title_keywords:
+    - nice
+    - also
+    - some
+    - timeseries
+    evidence_keywords:
+    - to_dataframe
+    - else
+    - columns
+    - timeseries
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: would be nice to also add some validation whether the static covariate
+      names provided by user as a list exist in the timeseries and provide an explanation
+      error message
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: prowler__9829
+  repo: prowler-cloud/prowler
+  url: https://github.com/prowler-cloud/prowler/pull/9829
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: prowler__9829-c1
+    file: api/src/backend/tasks/tasks.py
+    line_range:
+    - 304
+    - 304
+    title_keywords:
+    - Since
+    - acks_late
+    - 'False'
+    - tasks
+    evidence_keywords:
+    - perform_scheduled_scan_task
+    - self
+    - tenant_id
+    - tasks
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: "1. No. Since `acks_late=False`, the message is acked instantly upon receipt.\
+      \ The visibility timeout is effectively irrelevant for re-queuing because the\
+      \ message is already acked before the scan runs. Increasing it wouldn't change\
+      \ behavior. I would even say that we could reduce it.\r\n2. Under normal operation,\
+      \ no. The immediate ack removes the message from the unacked queue right away.\
+      \ The only scenario where re-queuing could happen is if the worker crashes or\
+      \ dies between receiving the message and sending the ack). The duplicate detection\
+      \ code is a defensive safety net, not a routine path."
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: agents__4237
+  repo: livekit/agents
+  url: https://github.com/livekit/agents/pull/4237
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: agents__4237-c1
+    file: livekit-plugins/livekit-plugins-google/livekit/plugins/google/realtime/realtime_api.py
+    line_range:
+    - 425
+    - 425
+    title_keywords:
+    - everything
+    - chat
+    - context
+    - realtime_api
+    evidence_keywords:
+    - async
+    - _close_active_session
+    - self
+    - realtime_api
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: "> everything in chat context should be added again\r\n\r\nthe chat context\
+      \ will be synced when creating the connection. \r\n\r\n> maybe we should carry\
+      \ over user responses that have not yet been sent? \r\n\r\nthe restart may be\
+      \ caused by `update_options, `update_tools` or `update_instructions`, ideally\
+      \ we shouldn't call these methods when a `generate_reply` is not done. I think\
+      \ it's fine to just add a warning in case they break the `generate_reply`, so\
+      \ that we know the reason when this happened."
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: metaflow__2616
+  repo: Netflix/metaflow
+  url: https://github.com/Netflix/metaflow/pull/2616
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: metaflow__2616-c1
+    file: metaflow/plugins/datatools/s3/s3.py
+    line_range:
+    - 1783
+    - 1783
+    title_keywords:
+    - error_info
+    - variable
+    - already
+    - s3
+    evidence_keywords:
+    - try_s3_op
+    - last_ok_count
+    - pending_retries
+    - s3
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: "The error_info variable already includes a leading space when it's not\
+      \ empty:\r\n\r\n`  error_info = \" (%s)\" % first_retry[\"transient_error_type\"\
+      ]`"
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: spyder__25544
+  repo: spyder-ide/spyder
+  url: https://github.com/spyder-ide/spyder/pull/25544
+  kind: swe-prbench-Type3_Latent_Candidate
+  expected_findings:
+  - id: spyder__25544-c1
+    file: spyder/plugins/remoteclient/api/manager/jupyterhub.py
+    line_range:
+    - 234
+    - 234
+    title_keywords:
+    - redundant
+    - _create_new_connection
+    - errors
+    - jupyterhub
+    evidence_keywords:
+    - async
+    - _create_new_connection
+    - self
+    - jupyterhub
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: This should be redundant as the `_create_new_connection` errors are always
+      handled by the manager. IMO errors logged here should be specific to the jupyterhub
+      connections.
+  - id: spyder__25544-c2
+    file: spyder/plugins/remoteclient/api/manager/jupyterhub.py
+    line_range:
+    - 234
+    - 234
+    title_keywords:
+    - need
+    - catch
+    - kind
+    - jupyterhub
+    evidence_keywords:
+    - async
+    - _create_new_connection
+    - self
+    - jupyterhub
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: "We need to catch this kind of errors here to reset the `aiohttp` session\
+      \ below and allow users to fix the connection info and try again.\r\n\r\nOtherwise,\
+      \ after a retry our error report dialog is shown with the following message:\r\
+      \n\r\n```\r\nUnclosed client session\r\nclient_session: <aiohttp.client.ClientSession\
+      \ object at 0x71ca4c144560>\r\n```\r\n\r\nI'll add a clarifying message about\
+      \ that before the try/except."
+  - id: spyder__25544-c3
+    file: spyder/plugins/remoteclient/api/manager/jupyterhub.py
+    line_range:
+    - 234
+    - 234
+    title_keywords:
+    - problem
+    - there
+    - error
+    - jupyterhub
+    evidence_keywords:
+    - async
+    - _create_new_connection
+    - self
+    - jupyterhub
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: I see, so the problem is that when there is any error the session it just
+      discarded. No need for the message. I just didn't understand what was the problem.
+      Maybe just add before the `await self._session.close()` something like `# close
+      discarded connections`
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: cupy__9488
+  repo: cupy/cupy
+  url: https://github.com/cupy/cupy/pull/9488
+  kind: swe-prbench-Type3_Latent_Candidate
+  expected_findings:
+  - id: cupy__9488-c1
+    file: tests/cupy_tests/core_tests/test_raw.py
+    line_range:
+    - 1321
+    - 1321
+    title_keywords:
+    - reason
+    - splitting
+    - only
+    - test_raw
+    evidence_keywords:
+    - test_raw_picklable
+    - self
+    - Recent
+    - test_raw
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: The reason for splitting this is that only one of them needs skipping
+      (the jitify branch fails with multiple threads)
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: kornia__3330
+  repo: kornia/kornia
+  url: https://github.com/kornia/kornia/pull/3330
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: kornia__3330-c1
+    file: kornia/augmentation/container/video.py
+    line_range:
+    - 206
+    - 206
+    title_keywords:
+    - Before
+    - each
+    - frame
+    - video
+    evidence_keywords:
+    - forward_parameters
+    - self
+    - batch_shape
+    - video
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: Before each frame or video led to the generation of random parameters
+      (since the shape included B), causing the data to differ and fail on a few combinations.
+      This new shape reuses the same parameters across all frames and batches, giving
+      the expected output later.
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: kedro__5296
+  repo: kedro-org/kedro
+  url: https://github.com/kedro-org/kedro/pull/5296
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: kedro__5296-c1
+    file: kedro/framework/cli/project.py
+    line_range:
+    - 287
+    - 287
+    title_keywords:
+    - Unfortunately
+    - changing
+    - name
+    - project
+    evidence_keywords:
+    - noqa
+    - PLR0913
+    - from_inputs
+    - project
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: Unfortunately, changing a name of an argument in public API is considered
+      a breaking change. It would mean that users that use Kedro as a library have
+      to update their code when this is released. @DimedS or @ankatiyar can you help
+      come up with a solution for this that is not breaking?
+  - id: kedro__5296-c2
+    file: kedro/framework/cli/project.py
+    line_range:
+    - 287
+    - 287
+    title_keywords:
+    - possible
+    - keep
+    - both
+    - project
+    evidence_keywords:
+    - noqa
+    - PLR0913
+    - from_inputs
+    - project
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: "Could we possible keep both `pipeline_name` and add a `pipeline_names`\
+      \ argument for now and remove the `pipeline_name` argument in a subsequent breaking\
+      \ release? \r\nWe add a condition/error message inside `session.run()`"
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: cupy__9554
+  repo: cupy/cupy
+  url: https://github.com/cupy/cupy/pull/9554
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: cupy__9554-c1
+    file: cupy/_environment.py
+    line_range:
+    - 164
+    - 164
+    title_keywords:
+    - TODO
+    - incorrect
+    - CUDA
+    - _environment
+    evidence_keywords:
+    - get_cub_path
+    - return
+    - _cub_path
+    - _environment
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: 'TODO: This is incorrect for CUDA 13 + Windows + wheels.'
+  - id: cupy__9554-c2
+    file: cupy/cuda/cufft.pyx
+    line_range:
+    - 65
+    - 65
+    title_keywords:
+    - think
+    - need
+    - guard
+    - cufft
+    evidence_keywords:
+    - cdef
+    - SoftLink
+    - _get_softlink
+    - cufft
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: "I think we need a guard here because `raise NotImplementedError` is deleted.\
+      \ I will do this in a separate PR.\n\n```suggestion\n            prefix = 'cufft'\n\
+      \        else:\n            raise RuntimeError(\"This feature requires CUDA\
+      \ 12.8+\")\n```"
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: chia-blockchain__20326
+  repo: Chia-Network/chia-blockchain
+  url: https://github.com/Chia-Network/chia-blockchain/pull/20326
+  kind: swe-prbench-Type2_Contextual
+  expected_findings:
+  - id: chia-blockchain__20326-c1
+    file: chia/_tests/util/setup_nodes.py
+    line_range:
+    - 399
+    - 399
+    title_keywords:
+    - bugbot
+    - found
+    - these
+    - setup_nodes
+    evidence_keywords:
+    - async
+    - setup_full_system_inner
+    - shared_b_tools
+    - setup_nodes
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: Hey, bugbot found these issues as well
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: pipecat__3038
+  repo: pipecat-ai/pipecat
+  url: https://github.com/pipecat-ai/pipecat/pull/3038
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: pipecat__3038-c1
+    file: src/pipecat/services/deepgram/flux/stt.py
+    line_range:
+    - 390
+    - 390
+    title_keywords:
+    - first
+    - attempt
+    - happens
+    - stt
+    evidence_keywords:
+    - async
+    - run_stt
+    - self
+    - stt
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: "The first attempt happens right away, and after that we start applying\
+      \ exponential backoff. \r\n\r\nBut I thought it would make sense to follow the\
+      \ same logic we use for reconnecting when it fails to receive something. That\
+      \ is why I am using it."
+  - id: pipecat__3038-c2
+    file: examples/foundational/07c-interruptible-deepgram-flux.py
+    line_range:
+    - 57
+    - 57
+    title_keywords:
+    - Sometimes
+    - soon
+    - join
+    - 07c-interruptible-deepgram-flux
+    evidence_keywords:
+    - async
+    - run_bot
+    - transport
+    - 07c-interruptible-deepgram-flux
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: "Sometimes, as soon as we join the meeting, maybe due to background noise,\
+      \ we start receiving some hallucinated transcripts with very low confidence.\
+      \ Like this:\r\n\r\n```\r\n2025-11-17 09:46:48.296 | DEBUG    | pipecat.services.deepgram.flux.stt:_handle_start_of_turn:581\
+      \ - User started speaking\r\n2025-11-17 09:46:48.297 | DEBUG    | pipecat.pipeline.task:_source_push_frame:747\
+      \ - PipelineTask#0: received interruption task frame InterruptionTaskFrame#0\r\
+      \n2025-11-17 09:46:48.304 | DEBUG    | pipecat.processors.metrics.frame_processor_metrics:stop_processing_metrics:152\
+      \ - OpenAILLMService#0 processing time: 0.724362850189209\r\n2025-11-17 09:46:48.305\
+      \ | DEBUG    | pipecat.processors.metrics.frame_processor_metrics:stop_ttfb_metrics:131\
+      \ - OpenAILLMService#0 TTFB: 0.7255258560180664\r\n2025-11-17 09:46:48.510 |\
+      \ DEBUG    | __main__:on_deepgram_flux_update:109 - On deeggram flux update:\
+      \ thirty years old.\r\n2025-11-17 09:46:48.681 | DEBUG    | __main__:on_deepgram_flux_update:109\
+      \ - On deeggram flux update: twelve years.\r\n2025-11-17 09:46:48.914 | DEBUG\
+      \    | __main__:on_deepgram_flux_update:109 - On deeggram flux update: twelve\
+      \ years.\r\n2025-11-17 09:46:49.084 | DEBUG    | __main__:on_deepgram_flux_update:109\
+      \ - On deeggram flux update: yes\r\n2025-11-17 09:46:49.161 | DEBUG    | pipecat.services.deepgram.flux.stt:_handle_end_of_turn:637\
+      \ - User stopped speaking\r\n2025-11-17 09:46:49.162 | WARNING  | pipecat.services.deepgram.flux.stt:_handle_end_of_turn:654\
+      \ - Transcription confidence below min_confidence threshold: 0.1892\r\n```"
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: pipecat__3431
+  repo: pipecat-ai/pipecat
+  url: https://github.com/pipecat-ai/pipecat/pull/3431
+  kind: swe-prbench-Type1_Direct
+  expected_findings:
+  - id: pipecat__3431-c1
+    file: src/pipecat/services/google/gemini_live/llm.py
+    line_range:
+    - 1461
+    - 1461
+    title_keywords:
+    - Gemini
+    - Live
+    - audio
+    - llm
+    evidence_keywords:
+    - async
+    - _handle_msg_model_turn
+    - self
+    - llm
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: "This is Gemini Live, so audio is produced by the model itself. The issue\
+      \ is that the thinking text was being added to the LLMTextFrame. This was revealed\
+      \ by the new transcription events which use the context to create the assistant\
+      \ transcription. The transcript included thoughts and the spoken text.\r\n\r\
+      \nThis change breaks them into two distinct groups:\r\n- LLMThoughtTextFrame\
+      \ for thoughts\r\n- TTSTextFrame for spoken text\r\n\r\n(Once Google adds text\
+      \ output mode back, then LLMText will be for non-thinking output, but that's\
+      \ currently None and not pushed.)"
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.
+- id: ragas__2331
+  repo: vibrantlabsai/ragas
+  url: https://github.com/vibrantlabsai/ragas/pull/2331
+  kind: swe-prbench-Type3_Latent_Candidate
+  expected_findings:
+  - id: ragas__2331-c1
+    file: src/ragas/integrations/llama_index.py
+    line_range:
+    - 82
+    - 82
+    title_keywords:
+    - will
+    - keep
+    - optional
+    - llama_index
+    evidence_keywords:
+    - evaluate
+    - exec
+    - submit
+    - llama_index
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: oh yah i will keep optional and append none, for failed queries
+  - id: ragas__2331-c2
+    file: examples/ragas_examples/benchmark_llm/evals.py
+    line_range:
+    - 18
+    - 18
+    title_keywords:
+    - there
+    - some
+    - issue
+    - evals
+    evidence_keywords:
+    - import
+    - from
+    - typing
+    - evals
+    severity: WARNING
+    source: swe-prbench-human-review
+    reason: there was some issue with imports between eval.py and prompt.py, some
+      redundancy issue as per vscode so i think mistakenly I removed the wrong import.
+  notes: Imported from SWE-PRBench human review comments; use as external eval signal,
+    not absolute bug truth.

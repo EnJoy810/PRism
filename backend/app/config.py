@@ -19,7 +19,7 @@ class LLMConfig(BaseModel):
 
 class AgentConfig(BaseModel):
     expert_model: str = "deepseek-v4-flash"
-    judge_model: str = "deepseek-v4-pro"
+    judge_model: str = "deepseek-v4-flash"
 
 
 class FilterConfig(BaseModel):

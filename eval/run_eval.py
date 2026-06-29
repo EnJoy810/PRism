@@ -23,6 +23,7 @@ sys.path.insert(0, str(BACKEND))
 load_dotenv(BACKEND / ".env")
 
 from app.graph import ReviewGraph  # noqa: E402
+from app.models.review import ReviewStats  # noqa: E402
 from app.services.github import fetch_pr_context, parse_pr_url  # noqa: E402
 
 
@@ -66,16 +67,52 @@ def _render_markdown(sample: dict[str, Any], result: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def _build_synthetic_context(sample: dict[str, Any]) -> dict[str, Any]:
+    """Build a ReviewGraph context dict from a synthetic CodeReviewBench sample."""
+    diff = sample["synthetic_diff"]
+    files = sample.get("synthetic_files") or []
+    return {
+        "title": sample.get("synthetic_pr_title", sample["id"]),
+        "description": sample.get("synthetic_pr_description", ""),
+        "diff": diff,
+        "diff_truncated": False,
+        "files": files,
+        "stats": ReviewStats(
+            files_changed=len(files),
+            additions=diff.count("\n+"),
+            deletions=diff.count("\n-"),
+            issues_by_severity={"ERROR": 0, "WARNING": 0, "INFO": 0},
+        ),
+        "head_sha": "",
+        "base_branch": "main",
+        "head_branch": "feature",
+        "author_name": "synthetic",
+        "author_avatar": "",
+        "updated_at": "",
+        "created_at": "",
+        "pr_url": sample["url"],
+        "pr_title": sample.get("synthetic_pr_title", sample["id"]),
+        "pr_description": sample.get("synthetic_pr_description", ""),
+    }
+
+
 async def _run_sample(
     graph: ReviewGraph,
     sample: dict[str, Any],
     out_dir: Path,
     timeout_seconds: int,
 ) -> None:
-    result = await asyncio.wait_for(
-        graph.run(pr_url=sample["url"]),
-        timeout=timeout_seconds,
-    )
+    if "synthetic_diff" in sample:
+        context = _build_synthetic_context(sample)
+        result = await asyncio.wait_for(
+            graph.run(pr_url=sample["url"], context=context),
+            timeout=timeout_seconds,
+        )
+    else:
+        result = await asyncio.wait_for(
+            graph.run(pr_url=sample["url"]),
+            timeout=timeout_seconds,
+        )
     payload = {
         "sample": sample,
         "ran_at": datetime.now(UTC).isoformat(),

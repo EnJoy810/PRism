@@ -112,7 +112,9 @@ class ReviewGraph:
     @property
     def judge(self) -> JudgeAgent:
         if self._judge is None:
-            self._judge = JudgeAgent()
+            from app.config import load_config
+            cfg = load_config()
+            self._judge = JudgeAgent(model=cfg.review.agents.judge_model)
         return self._judge
 
     async def fetch_pr_context(self, pr_url: str) -> dict:
@@ -212,7 +214,8 @@ class ReviewGraph:
                 token=context.get("github_token"),
             )
         except Exception as e:
-            logger.warning("Symbol context fetch failed: %s", e)
+            level = logging.DEBUG if pr_url.startswith("synthetic://") else logging.WARNING
+            logger.log(level, "Symbol context fetch failed: %s", e)
             return {}
 
     async def _fetch_blast_radius(self, context: dict, pr_url: str) -> list:
@@ -311,10 +314,8 @@ class ReviewGraph:
             return result
 
         except Exception as e:
-            logger.warning(
-                "blast_radius[error]: %s: %s — %s",
-                type(e).__name__, e, pr_url,
-            )
+            level = logging.DEBUG if pr_url.startswith("synthetic://") else logging.WARNING
+            logger.log(level, "blast_radius[error]: %s: %s — %s", type(e).__name__, e, pr_url)
             return []
 
     async def _run_caller_parameter_check(
@@ -389,10 +390,12 @@ class ReviewGraph:
                     messages=[
                         {"role": "system", "content": (
                             "You are a strict code analyst. "
-                            "Report ONLY issues where a caller passes an argument value "
-                            "that the changed function clearly mishandles. "
-                            "Do not speculate. Only report if the function code shows "
-                            "the value would cause an error or wrong behavior. "
+                            "Report issues where a caller will break due to the function change. "
+                            "Two clear cases to report:\n"
+                            "1. Caller passes a value the function mishandles (None where non-null required, wrong type, etc.).\n"
+                            "2. Caller is missing a required argument that the function now requires — "
+                            "this causes a Python TypeError at the call site regardless of function body.\n"
+                            "Do not speculate beyond these two cases. "
                             "Output valid JSON only."
                         )},
                         {"role": "user", "content": prompt},
