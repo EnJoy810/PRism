@@ -21,6 +21,7 @@ dependencies = [
     "tree-sitter-javascript>=0.23.0",
     "tree-sitter-typescript>=0.23.0",
     "semgrep>=1.90.0",
+    "stamina>=24.2.0",
 ]
 
 [project.optional-dependencies]
