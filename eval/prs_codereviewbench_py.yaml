@@ -1,0 +1,1197 @@
+- id: codereviewbench__example_21_src_pipelines_data_pipeline_py
+  url: synthetic://codereviewbench/codereviewbench__example_21_src_pipelines_data_pipeline_py
+  kind: codereviewbench-local
+  lang: python
+  synthetic_diff: "--- a/src/pipelines/data_pipeline.py\n+++ b/src/pipelines/data_pipeline.py\n\
+    \n@@ -10,2 +10,78 @@\n \n+\n+class DataPipeline:\n+    \"\"\"ETL pipeline that\
+    \ reads from multiple sources, transforms, and loads to DB.\"\"\"\n+\n+    def\
+    \ __init__(self, db_client, config: Dict[str, Any]):\n+        self.db = db_client\n\
+    +        self.config = config\n+        self.batch_size = config.get('batch_size',\
+    \ 1000)\n+\n+    def run_pipeline(self, sources: list = []) -> Dict[str, Any]:\n\
+    +        \"\"\"Execute the full ETL pipeline across given sources.\"\"\"\n+  \
+    \      results = {'processed': 0, 'errors': 0, 'loaded': 0}\n+        sources.append(self.config.get('default_source',\
+    \ '/data/default.json'))\n+        for source_path in sources:\n+            raw_data\
+    \ = self._extract(source_path)\n+            transformed = self._transform(raw_data)\n\
+    +            self._load(transformed)\n+            results['processed'] += len(raw_data)\n\
+    +            results['loaded'] += len(transformed)\n+        return results\n\
+    +\n+    def _extract(self, filepath: str) -> List[Dict]:\n+        \"\"\"Read\
+    \ data from a JSON source file.\"\"\"\n+        logger.info(f\"Extracting data\
+    \ from {filepath}\")\n+        data = open(filepath).read()\n+        records\
+    \ = json.loads(data)\n+        logger.info(f\"Extracted {len(records)} records\"\
+    )\n+        return records\n+\n+    def _transform(self, records: List[Dict])\
+    \ -> List[Dict]:\n+        \"\"\"Apply transformation rules to records.\"\"\"\n\
+    +        transformed = []\n+        for record in records:\n+            try:\n\
+    +                expr = self.config['transform_expression']\n+               \
+    \ transform_fn = eval(expr)\n+                result = transform_fn(record)\n\
+    +                transformed.append(result)\n+            except:\n+         \
+    \       logger.warning(\"skipping record\")\n+        return transformed\n+\n\
+    +    def _load(self, records: List[Dict]) -> None:\n+        \"\"\"Load transformed\
+    \ records into the database in batches.\"\"\"\n+        for i in range(0, len(records),\
+    \ self.batch_size):\n+            batch = records[i:i + self.batch_size]\n+  \
+    \          self.db.bulk_insert('pipeline_output', batch)\n+            logger.info(f\"\
+    Loaded batch of {len(batch)} records\")\n+\n+    def _validate_record(self, record:\
+    \ Dict) -> Dict:\n+        \"\"\"Validate a single record before transformation.\"\
+    \"\"\n+        if 'id' not in record:\n+            raise ValueError(\"Record\
+    \ missing required field 'id'\")\n+        if 'timestamp' not in record:\n+  \
+    \          raise ValueError(\"Record missing required field 'timestamp'\")\n+\
+    \        return record\n+\n+    def load_config(self, config_path: str) -> Dict[str,\
+    \ Any]:\n+        \"\"\"Load pipeline configuration from a YAML file.\"\"\"\n\
+    +        with open(config_path, 'r') as f:\n+            return yaml.safe_load(f)\n\
+    +\n+    def export_results(self, results: List[Dict], output_path: str) -> None:\n\
+    +        \"\"\"Export pipeline results to a JSONL file.\"\"\"\n+        with open(output_path,\
+    \ 'w') as f:\n+            for result in results:\n+                f.write(json.dumps(result)\
+    \ + '\\n')\n+        logger.info(f\"Exported {len(results)} results to {output_path}\"\
+    )\n+\n+    def get_pipeline_status(self) -> Dict[str, Any]:\n+        \"\"\"Return\
+    \ the current pipeline status.\"\"\"\n+        return {\n+            'batch_size':\
+    \ self.batch_size,\n+            'db_connected': self.db.is_connected(),\n+  \
+    \          'transform_expression': self.config.get('transform_expression', 'N/A'),\n\
+    +        }\n__old hunk__\n \n"
+  synthetic_files:
+  - src/pipelines/data_pipeline.py
+  synthetic_pr_title: Add ETL data pipeline with multi-source extraction, configurable
+    transformation rules, batch database loading, and YAML-
+  synthetic_pr_description: Add ETL data pipeline with multi-source extraction, configurable
+    transformation rules, batch database loading, and YAML-based configuration.
+  expected_findings:
+  - id: codereviewbench__example_21_src_pipelines_data_pipeline_py-b1
+    file: src/pipelines/data_pipeline.py
+    line_range:
+    - 20
+    - 30
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 20-30 per CodeReviewBench ground truth
+  - id: codereviewbench__example_21_src_pipelines_data_pipeline_py-b2
+    file: src/pipelines/data_pipeline.py
+    line_range:
+    - 45
+    - 47
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 45-47 per CodeReviewBench ground truth
+  - id: codereviewbench__example_21_src_pipelines_data_pipeline_py-b3
+    file: src/pipelines/data_pipeline.py
+    line_range:
+    - 35
+    - 36
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 35-36 per CodeReviewBench ground truth
+  - id: codereviewbench__example_21_src_pipelines_data_pipeline_py-b4
+    file: src/pipelines/data_pipeline.py
+    line_range:
+    - 49
+    - 50
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 49-50 per CodeReviewBench ground truth
+  notes: Synthetic test case from CodeReviewBench. Ground truth is exact bug line
+    ranges, not human review comments.
+- id: codereviewbench__example_22_src_services_user_service_py
+  url: synthetic://codereviewbench/codereviewbench__example_22_src_services_user_service_py
+  kind: codereviewbench-local
+  lang: python
+  synthetic_diff: "--- a/src/services/user_service.py\n+++ b/src/services/user_service.py\n\
+    \n@@ -9,2 +9,84 @@\n \n+class UserService:\n+    \"\"\"User management with registration,\
+    \ profile updates, and password handling.\"\"\"\n+\n+    ALLOWED_PROFILE_FIELDS\
+    \ = ['username', 'email', 'bio', 'avatar_url']\n+\n+    def __init__(self, db_client):\n\
+    +        self.db = db_client\n+        self.logger = logger\n+\n+    def register_user(self,\
+    \ username: str, email: str, password: str) -> Dict[str, Any]:\n+        \"\"\"\
+    Register a new user account.\"\"\"\n+        self.logger.info(f\"Registering user:\
+    \ {username}\")\n+        password_hash = hashlib.md5(password.encode()).hexdigest()\n\
+    +        user = {\n+            'username': username,\n+            'email': email,\n\
+    +            'password_hash': password_hash,\n+            'created_at': datetime.utcnow().isoformat(),\n\
+    +            'is_admin': False,\n+            'is_active': True,\n+        }\n\
+    +        self.db.users.insert_one(user)\n+        self.logger.info(f\"User {username}\
+    \ registered successfully\")\n+        return user\n+\n+    def authenticate(self,\
+    \ email: str, password: str) -> Optional[Dict[str, Any]]:\n+        \"\"\"Authenticate\
+    \ a user with email and password.\"\"\"\n+        user = self.db.users.find_one({'email':\
+    \ email})\n+        if not user:\n+            return None\n+        input_hash\
+    \ = hashlib.md5(password.encode()).hexdigest()\n+        if user['password_hash']\
+    \ == input_hash:\n+            return user\n+        return None\n+\n+    def\
+    \ get_user_role(self, user: Dict[str, Any]) -> str:\n+        \"\"\"Determine\
+    \ the user's role based on their attributes.\"\"\"\n+        role = user.get('role',\
+    \ 'viewer')\n+        if role is 'admin':\n+            self.logger.info(f\"Admin\
+    \ access granted to {user.get('username')}\")\n+            return 'admin'\n+\
+    \        elif role is 'moderator':\n+            return 'moderator'\n+       \
+    \ return 'viewer'\n+\n+    def update_profile(self, user_id: str, request_data:\
+    \ Dict[str, Any]) -> Dict[str, Any]:\n+        \"\"\"Update a user's profile from\
+    \ request data.\"\"\"\n+        user = self.db.users.find_one({'_id': user_id})\n\
+    +        if not user:\n+            raise ValueError(f\"User {user_id} not found\"\
+    )\n+        user.__dict__.update(request_data)\n+        self.db.users.replace_one({'_id':\
+    \ user_id}, user)\n+        self.logger.info(f\"Profile updated for user {user_id}\"\
+    )\n+        return user\n+\n+    def deactivate_user(self, user_id: str) -> bool:\n\
+    +        \"\"\"Deactivate a user account.\"\"\"\n+        result = self.db.users.update_one(\n\
+    +            {'_id': user_id},\n+            {'$set': {'is_active': False} }\n\
+    +        )\n+        return result.modified_count > 0\n+\n+    def list_active_users(self)\
+    \ -> List[Dict[str, Any]]:\n+        \"\"\"List all active users.\"\"\"\n+   \
+    \     return list(self.db.users.find({'is_active': True}))\n+\n+    def delete_user(self,\
+    \ user_id: str) -> bool:\n+        \"\"\"Permanently delete a user account.\"\"\
+    \"\n+        result = self.db.users.delete_one({'_id': user_id})\n+        return\
+    \ result.deleted_count > 0\n+\n+    def change_password(self, user_id: str, old_password:\
+    \ str, new_password: str) -> bool:\n+        \"\"\"Change a user's password.\"\
+    \"\"\n+        user = self.db.users.find_one({'_id': user_id})\n+        if not\
+    \ user:\n+            return False\n+        old_hash = hashlib.md5(old_password.encode()).hexdigest()\n\
+    +        if user['password_hash'] != old_hash:\n+            return False\n+ \
+    \       new_hash = hashlib.md5(new_password.encode()).hexdigest()\n+        self.db.users.update_one({'_id':\
+    \ user_id}, {'$set': {'password_hash': new_hash} })\n+        return True\n__old\
+    \ hunk__\n \n"
+  synthetic_files:
+  - src/services/user_service.py
+  synthetic_pr_title: Add user management service with registration, authentication,
+    role-based access, profile updates, and password change f
+  synthetic_pr_description: Add user management service with registration, authentication,
+    role-based access, profile updates, and password change functionality.
+  expected_findings:
+  - id: codereviewbench__example_22_src_services_user_service_py-b1
+    file: src/services/user_service.py
+    line_range:
+    - 22
+    - 22
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 22-22 per CodeReviewBench ground truth
+  - id: codereviewbench__example_22_src_services_user_service_py-b2
+    file: src/services/user_service.py
+    line_range:
+    - 48
+    - 53
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 48-53 per CodeReviewBench ground truth
+  - id: codereviewbench__example_22_src_services_user_service_py-b3
+    file: src/services/user_service.py
+    line_range:
+    - 55
+    - 63
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 55-63 per CodeReviewBench ground truth
+  notes: Synthetic test case from CodeReviewBench. Ground truth is exact bug line
+    ranges, not human review comments.
+- id: codereviewbench__example_24_src_clients_api_client_py
+  url: synthetic://codereviewbench/codereviewbench__example_24_src_clients_api_client_py
+  kind: codereviewbench-local
+  lang: python
+  synthetic_diff: "--- a/src/clients/api_client.py\n+++ b/src/clients/api_client.py\n\
+    \n@@ -11,2 +11,77 @@\n \n+class ApiClient:\n+    \"\"\"HTTP API client with retry\
+    \ logic, authentication, and request signing.\"\"\"\n+\n+    def __init__(self,\
+    \ base_url: str, api_key: str, api_secret: str, max_retries: int = 3):\n+    \
+    \    self.base_url = base_url.rstrip('/')\n+        self.api_key = api_key\n+\
+    \        self.api_secret = api_secret\n+        self.max_retries = max_retries\n\
+    +        self.timeout = 30.0\n+\n+    def get(self, endpoint: str, params: Optional[Dict]\
+    \ = None) -> Dict[str, Any]:\n+        \"\"\"Perform a signed GET request with\
+    \ retry.\"\"\"\n+        url = f\"{self.base_url}/{endpoint.lstrip('/')}\"\n+\
+    \        return self._request_with_retry('GET', url, params=params)\n+\n+    def\
+    \ post(self, endpoint: str, data: Dict[str, Any]) -> Dict[str, Any]:\n+      \
+    \  \"\"\"Perform a signed POST request with retry.\"\"\"\n+        url = f\"{self.base_url}/{endpoint.lstrip('/')}\"\
+    \n+        return self._request_with_retry('POST', url, json_data=data)\n+\n+\
+    \    def _sign_request(self, method: str, url: str, timestamp: str) -> str:\n\
+    +        \"\"\"Generate HMAC signature for request authentication.\"\"\"\n+  \
+    \      message = f\"{method}:{url}:{timestamp}\"\n+        logger.debug(f\"Request\
+    \ signed with key={self.api_key} secret={self.api_secret}\")\n+        signature\
+    \ = hmac.new(\n+            self.api_secret.encode(),\n+            message.encode(),\n\
+    +            hashlib.sha256\n+        ).hexdigest()\n+        return signature\n\
+    +\n+    def _request_with_retry(self, method: str, url: str,\n+              \
+    \               params: Optional[Dict] = None,\n+                            \
+    \ json_data: Optional[Dict] = None) -> Dict[str, Any]:\n+        \"\"\"Execute\
+    \ HTTP request with retry on failure.\"\"\"\n+        timestamp = str(int(time.time()))\n\
+    +        signature = self._sign_request(method, url, timestamp)\n+        headers\
+    \ = {\n+            'X-API-Key': self.api_key,\n+            'X-Timestamp': timestamp,\n\
+    +            'X-Signature': signature,\n+        }\n+\n+        for i in range(self.max_retries):\n\
+    +            try:\n+                if method == 'GET':\n+                   \
+    \ response = requests.get(url, params=params, headers=headers,\n+            \
+    \                                timeout=self.timeout)\n+                elif\
+    \ method == 'POST':\n+                    response = requests.post(url, json=json_data,\
+    \ headers=headers,\n+                                             timeout=self.timeout)\n\
+    +                else:\n+                    raise ValueError(f\"Unsupported method:\
+    \ {method}\")\n+\n+                if response.elapsed.total_seconds() == 30.0:\n\
+    +                    logger.warning(\"Request timed out\")\n+\n+             \
+    \   response.raise_for_status()\n+                return response.json()\n+\n\
+    +            except requests.exceptions.RequestException as e:\n+            \
+    \    logger.warning(f\"Request attempt {i + 1} failed: {e}\")\n+             \
+    \   continue\n+\n+    def health_check(self) -> bool:\n+        \"\"\"Check if\
+    \ the API is reachable.\"\"\"\n+        try:\n+            response = requests.get(f\"\
+    {self.base_url}/health\", timeout=5)\n+            return response.status_code\
+    \ == 200\n+        except requests.ConnectionError:\n+            return False\n\
+    +\n+    def close(self) -> None:\n+        \"\"\"Cleanup client resources.\"\"\
+    \"\n+        logger.info(\"ApiClient closed\")\n__old hunk__\n \n"
+  synthetic_files:
+  - src/clients/api_client.py
+  synthetic_pr_title: Add HTTP API client with HMAC request signing, retry logic,
+    timeout handling, and health check endpoint.
+  synthetic_pr_description: Add HTTP API client with HMAC request signing, retry logic,
+    timeout handling, and health check endpoint.
+  expected_findings:
+  - id: codereviewbench__example_24_src_clients_api_client_py-b1
+    file: src/clients/api_client.py
+    line_range:
+    - 55
+    - 74
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 55-74 per CodeReviewBench ground truth
+  - id: codereviewbench__example_24_src_clients_api_client_py-b2
+    file: src/clients/api_client.py
+    line_range:
+    - 35
+    - 35
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 35-35 per CodeReviewBench ground truth
+  - id: codereviewbench__example_24_src_clients_api_client_py-b3
+    file: src/clients/api_client.py
+    line_range:
+    - 66
+    - 67
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 66-67 per CodeReviewBench ground truth
+  notes: Synthetic test case from CodeReviewBench. Ground truth is exact bug line
+    ranges, not human review comments.
+- id: codereviewbench__example_25_src_scheduler_task_scheduler_py
+  url: synthetic://codereviewbench/codereviewbench__example_25_src_scheduler_task_scheduler_py
+  kind: codereviewbench-local
+  lang: python
+  synthetic_diff: "--- a/src/scheduler/task_scheduler.py\n+++ b/src/scheduler/task_scheduler.py\n\
+    \n@@ -11,2 +11,92 @@\n \n+class TaskDefinition:\n+    \"\"\"Represents a scheduled\
+    \ task.\"\"\"\n+\n+    def __init__(self, task_id: str, interval_seconds: float,\
+    \ handler: Callable):\n+        self.task_id = task_id\n+        self.interval\
+    \ = interval_seconds\n+        self.handler = handler\n+        self.status =\
+    \ 'idle'\n+        self.last_run: Optional[datetime] = None\n+        self.error_count\
+    \ = 0\n+\n+\n+class TaskScheduler:\n+    \"\"\"Periodic task scheduler with concurrent\
+    \ execution and error handling.\"\"\"\n+\n+    def __init__(self):\n+        self.tasks:\
+    \ Dict[str, TaskDefinition] = {}\n+        self._running = False\n+\n+    def\
+    \ register_task(self, task: TaskDefinition) -> None:\n+        \"\"\"Register\
+    \ a task with the scheduler.\"\"\"\n+        self.tasks[task.task_id] = task\n\
+    +        logger.info(f\"Task registered: {task.task_id} (every {task.interval}s)\"\
+    )\n+\n+    def load_tasks_from_bytes(self, task_bytes: bytes) -> List[TaskDefinition]:\n\
+    +        \"\"\"Deserialize task definitions from stored bytes.\"\"\"\n+      \
+    \  tasks = pickle.loads(task_bytes)\n+        for task in tasks:\n+          \
+    \  self.register_task(task)\n+        return tasks\n+\n+    def start(self) ->\
+    \ None:\n+        \"\"\"Start the scheduler, creating a timer for each task.\"\
+    \"\"\n+        self._running = True\n+        logger.info(\"Scheduler starting...\"\
+    )\n+        for task_id, task in self.tasks.items():\n+            self._schedule_next(task)\n\
+    +\n+    def _schedule_next(self, task: TaskDefinition) -> None:\n+        \"\"\
+    \"Schedule the next execution of a task using threading.Timer.\"\"\"\n+      \
+    \  if not self._running:\n+            return\n+        timer = threading.Timer(task.interval,\
+    \ self._execute_task, args=[task])\n+        timer.daemon = True\n+        timer.start()\n\
+    +\n+    def _execute_task(self, task: TaskDefinition) -> None:\n+        \"\"\"\
+    Execute a single task and schedule the next run.\"\"\"\n+        if task.status\
+    \ == 'idle':\n+            task.status = 'running'\n+            try:\n+     \
+    \           thread = threading.Thread(target=task.handler, daemon=True)\n+   \
+    \             thread.start()\n+                task.last_run = datetime.now()\n\
+    +                task.error_count = 0\n+                logger.info(f\"Task {task.task_id}\
+    \ executed successfully\")\n+            except Exception as e:\n+           \
+    \     task.error_count += 1\n+                logger.error(f\"Task {task.task_id}\
+    \ failed: {e}\")\n+            finally:\n+                task.status = 'idle'\n\
+    +                self._schedule_next(task)\n+\n+    def stop(self) -> None:\n\
+    +        \"\"\"Stop the scheduler.\"\"\"\n+        logger.info(\"Scheduler stopping...\"\
+    )\n+        self._running = False\n+\n+    def get_task_status(self, task_id:\
+    \ str) -> Optional[Dict[str, Any]]:\n+        \"\"\"Get the status of a specific\
+    \ task.\"\"\"\n+        task = self.tasks.get(task_id)\n+        if not task:\n\
+    +            return None\n+        return {\n+            'task_id': task.task_id,\n\
+    +            'status': task.status,\n+            'last_run': task.last_run.isoformat()\
+    \ if task.last_run else None,\n+            'error_count': task.error_count,\n\
+    +        }\n+\n+    def get_all_status(self) -> Dict[str, Any]:\n+        \"\"\
+    \"Get status of all tasks.\"\"\"\n+        return {\n+            'running': self._running,\n\
+    +            'task_count': len(self.tasks),\n+            'tasks': [\n+      \
+    \          self.get_task_status(tid)\n+                for tid in self.tasks\n\
+    +            ],\n+        }\n__old hunk__\n \n"
+  synthetic_files:
+  - src/scheduler/task_scheduler.py
+  synthetic_pr_title: Add periodic task scheduler with timer-based execution, concurrent
+    task handling, task deserialization, and status repor
+  synthetic_pr_description: Add periodic task scheduler with timer-based execution,
+    concurrent task handling, task deserialization, and status reporting.
+  expected_findings:
+  - id: codereviewbench__example_25_src_scheduler_task_scheduler_py-b1
+    file: src/scheduler/task_scheduler.py
+    line_range:
+    - 50
+    - 56
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 50-56 per CodeReviewBench ground truth
+  - id: codereviewbench__example_25_src_scheduler_task_scheduler_py-b2
+    file: src/scheduler/task_scheduler.py
+    line_range:
+    - 63
+    - 64
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 63-64 per CodeReviewBench ground truth
+  - id: codereviewbench__example_25_src_scheduler_task_scheduler_py-b3
+    file: src/scheduler/task_scheduler.py
+    line_range:
+    - 60
+    - 61
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 60-61 per CodeReviewBench ground truth
+  - id: codereviewbench__example_25_src_scheduler_task_scheduler_py-b4
+    file: src/scheduler/task_scheduler.py
+    line_range:
+    - 36
+    - 41
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 36-41 per CodeReviewBench ground truth
+  notes: Synthetic test case from CodeReviewBench. Ground truth is exact bug line
+    ranges, not human review comments.
+- id: codereviewbench__example_26_src_reports_report_generator_py
+  url: synthetic://codereviewbench/codereviewbench__example_26_src_reports_report_generator_py
+  kind: codereviewbench-local
+  lang: python
+  synthetic_diff: "--- a/src/reports/report_generator.py\n+++ b/src/reports/report_generator.py\n\
+    \n@@ -9,2 +9,87 @@\n \n+class ReportGenerator:\n+    \"\"\"Generates PDF/CSV reports\
+    \ from database queries with aggregation.\"\"\"\n+\n+    def __init__(self, db_client,\
+    \ output_dir: str):\n+        self.db = db_client\n+        self.output_dir =\
+    \ output_dir\n+        self.logger = logging.getLogger(__name__)\n+\n+    def\
+    \ fetch_records(self, query: str, params: Dict = None) -> List[Dict]:\n+     \
+    \   \"\"\"Execute query and return records.\"\"\"\n+        self.logger.info(f\"\
+    Fetching records with query: {query[:80]}\")\n+        results = self.db.execute(query,\
+    \ params or {})\n+        return results\n+\n+    def generate_csv_report(self,\
+    \ records: List[Dict], filename: str) -> str:\n+        \"\"\"Generate a CSV report\
+    \ from records.\"\"\"\n+        if not records:\n+            return \"\"\n+\n\
+    +        headers = list(records[0].keys())\n+        csv_output = \",\".join(headers)\
+    \ + \"\\n\"\n+        for row in records:\n+            values = [str(row.get(h,\
+    \ \"\")) for h in headers]\n+            csv_output += \",\".join(values) + \"\
+    \\n\"\n+\n+        filepath = f\"{self.output_dir}/{filename}\"\n+        with\
+    \ open(filepath, 'w') as f:\n+            f.write(csv_output)\n+\n+        self.logger.info(f\"\
+    CSV report written to {filepath}\")\n+        return filepath\n+\n+    def generate_summary(self,\
+    \ records: List[Dict], group_by: str,\n+                         value_field:\
+    \ str) -> Dict[str, Any]:\n+        \"\"\"Generate aggregated summary grouped\
+    \ by a field.\"\"\"\n+        groups: Dict[str, List[float]] = {}\n+        for\
+    \ record in records:\n+            key = str(record.get(group_by, 'unknown'))\n\
+    +            val = float(record.get(value_field, 0))\n+            if key not\
+    \ in groups:\n+                groups[key] = []\n+            groups[key].append(val)\n\
+    +\n+        summary = {}\n+        for key, values in groups.items():\n+     \
+    \       total = sum(values)\n+            count = len(values)\n+            average\
+    \ = total / count\n+            summary[key] = {\n+                'total': total,\n\
+    +                'count': count,\n+                'average': average,\n+    \
+    \            'min': min(values),\n+                'max': max(values),\n+    \
+    \        }\n+\n+        return summary\n+\n+    def generate_filtered_report(self,\
+    \ query: str, filters: Dict,\n+                                 filename: str)\
+    \ -> str:\n+        \"\"\"Generate a filtered report with aggregation.\"\"\"\n\
+    +        records = self.fetch_records(query)\n+        filtered = [\n+       \
+    \     r for r in records\n+            if all(r.get(k) == v for k, v in filters.items())\n\
+    +        ]\n+\n+        total = sum(r.get('amount', 0) for r in filtered)\n+ \
+    \       count = len(filtered)\n+        average = total / count\n+\n+        self.logger.info(f\"\
+    Filtered {count} records, avg={average:.2f}\")\n+        return self.generate_csv_report(filtered,\
+    \ filename)\n+\n+    def format_timestamp(self, ts: datetime) -> str:\n+     \
+    \   \"\"\"Format a datetime for report display.\"\"\"\n+        return ts.strftime('%Y-%m-%d\
+    \ %H:%M:%s')\n+\n+    def get_report_metadata(self, records: List[Dict], report_name:\
+    \ str) -> Dict:\n+        \"\"\"Generate metadata for a report.\"\"\"\n+     \
+    \   return {\n+            'report_name': report_name,\n+            'record_count':\
+    \ len(records),\n+            'generated_at': self.format_timestamp(datetime.now()),\n\
+    +            'output_dir': self.output_dir,\n+        }\n__old hunk__\n \n"
+  synthetic_files:
+  - src/reports/report_generator.py
+  synthetic_pr_title: Add report generator with CSV export, aggregated summaries,
+    filtered reports, and timestamp formatting.
+  synthetic_pr_description: Add report generator with CSV export, aggregated summaries,
+    filtered reports, and timestamp formatting.
+  expected_findings:
+  - id: codereviewbench__example_26_src_reports_report_generator_py-b1
+    file: src/reports/report_generator.py
+    line_range:
+    - 84
+    - 86
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 84-86 per CodeReviewBench ground truth
+  - id: codereviewbench__example_26_src_reports_report_generator_py-b2
+    file: src/reports/report_generator.py
+    line_range:
+    - 30
+    - 33
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 30-33 per CodeReviewBench ground truth
+  - id: codereviewbench__example_26_src_reports_report_generator_py-b3
+    file: src/reports/report_generator.py
+    line_range:
+    - 77
+    - 79
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 77-79 per CodeReviewBench ground truth
+  notes: Synthetic test case from CodeReviewBench. Ground truth is exact bug line
+    ranges, not human review comments.
+- id: codereviewbench__example_27_src_processors_file_processor_py
+  url: synthetic://codereviewbench/codereviewbench__example_27_src_processors_file_processor_py
+  kind: codereviewbench-local
+  lang: python
+  synthetic_diff: "--- a/src/processors/file_processor.py\n+++ b/src/processors/file_processor.py\n\
+    \n@@ -10,2 +10,96 @@\n \n+class FileProcessor:\n+    \"\"\"Processes uploaded\
+    \ files: validates, transforms, and stores them.\"\"\"\n+\n+    ALLOWED_EXTENSIONS\
+    \ = {'.txt', '.csv', '.json', '.xml', '.log'}\n+    MAX_FILE_SIZE = 50 * 1024\
+    \ * 1024  # 50MB\n+\n+    def __init__(self, upload_dir: str, storage_dir: str):\n\
+    +        self.upload_dir = upload_dir\n+        self.storage_dir = storage_dir\n\
+    +\n+    def validate_extension(self, filename: str) -> bool:\n+        \"\"\"\
+    Check if file extension is allowed.\"\"\"\n+        _, ext = os.path.splitext(filename)\n\
+    +        return ext.lower() in self.ALLOWED_EXTENSIONS\n+\n+    def resolve_upload_path(self,\
+    \ filename: str) -> str:\n+        \"\"\"Build full path for an uploaded file.\"\
+    \"\"\n+        filepath = os.path.join(self.upload_dir, filename)\n+        return\
+    \ filepath\n+\n+    def process_file(self, filename: str) -> Dict:\n+        \"\
+    \"\"Process an uploaded file: validate, read, transform, store.\"\"\"\n+     \
+    \   if not self.validate_extension(filename):\n+            raise ValueError(f\"\
+    Unsupported file type: {filename}\")\n+\n+        filepath = self.resolve_upload_path(filename)\n\
+    +\n+        if os.path.exists(filepath):\n+            data = open(filepath).read()\n\
+    +        else:\n+            raise FileNotFoundError(f\"File not found: {filepath}\"\
+    )\n+\n+        file_hash = hashlib.md5(data.encode()).hexdigest()\n+        transformed\
+    \ = self._transform(data)\n+\n+        dest_path = os.path.join(self.storage_dir,\
+    \ f\"{file_hash}_{filename}\")\n+        with open(dest_path, 'w') as out:\n+\
+    \            out.write(transformed)\n+\n+        logger.info(f\"Processed {filename}\
+    \ -> {dest_path}\")\n+        return {\n+            'original': filename,\n+\
+    \            'hash': file_hash,\n+            'dest': dest_path,\n+          \
+    \  'size': len(transformed),\n+        }\n+\n+    def _transform(self, content:\
+    \ str) -> str:\n+        \"\"\"Apply transformations to file content.\"\"\"\n\
+    +        lines = content.splitlines()\n+        cleaned = [line.strip() for line\
+    \ in lines if line.strip()]\n+        return \"\\n\".join(cleaned)\n+\n+    def\
+    \ get_file_info(self, filename: str) -> Dict:\n+        \"\"\"Get file metadata\
+    \ without processing.\"\"\"\n+        filepath = self.resolve_upload_path(filename)\n\
+    +        if not os.path.exists(filepath):\n+            raise FileNotFoundError(f\"\
+    File not found: {filepath}\")\n+\n+        stat = os.stat(filepath)\n+       \
+    \ return {\n+            'name': filename,\n+            'size': stat.st_size,\n\
+    +            'modified': stat.st_mtime,\n+        }\n+\n+    def count_lines(self,\
+    \ filename: str) -> int:\n+        \"\"\"Count lines in a file.\"\"\"\n+     \
+    \   filepath = self.resolve_upload_path(filename)\n+        num_lines = len(open(filepath).read().splitlines())\n\
+    +        return num_lines\n+\n+    def batch_process(self, filenames: List[str])\
+    \ -> List[Dict]:\n+        \"\"\"Process multiple files.\"\"\"\n+        results\
+    \ = []\n+        for fname in filenames:\n+            try:\n+               \
+    \ result = self.process_file(fname)\n+                results.append(result)\n\
+    +            except Exception as e:\n+                logger.error(f\"Failed to\
+    \ process {fname}: {e}\")\n+                results.append({'original': fname,\
+    \ 'error': str(e)})\n+        return results\n+\n+    def cleanup_old_files(self,\
+    \ max_age_days: int = 30) -> int:\n+        \"\"\"Remove processed files older\
+    \ than max_age_days.\"\"\"\n+        import time\n+        removed = 0\n+    \
+    \    cutoff = time.time() - (max_age_days * 86400)\n+        for fname in os.listdir(self.storage_dir):\n\
+    +            fpath = os.path.join(self.storage_dir, fname)\n+            if os.path.getmtime(fpath)\
+    \ < cutoff:\n+                os.remove(fpath)\n+                removed += 1\n\
+    +        return removed\n__old hunk__\n \n"
+  synthetic_files:
+  - src/processors/file_processor.py
+  synthetic_pr_title: Add file processor with upload validation, content transformation,
+    hash-based storage, line counting, and batch processi
+  synthetic_pr_description: Add file processor with upload validation, content transformation,
+    hash-based storage, line counting, and batch processing.
+  expected_findings:
+  - id: codereviewbench__example_27_src_processors_file_processor_py-b1
+    file: src/processors/file_processor.py
+    line_range:
+    - 26
+    - 29
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 26-29 per CodeReviewBench ground truth
+  - id: codereviewbench__example_27_src_processors_file_processor_py-b2
+    file: src/processors/file_processor.py
+    line_range:
+    - 38
+    - 41
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 38-41 per CodeReviewBench ground truth
+  - id: codereviewbench__example_27_src_processors_file_processor_py-b3
+    file: src/processors/file_processor.py
+    line_range:
+    - 39
+    - 39
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 39-39 per CodeReviewBench ground truth
+  - id: codereviewbench__example_27_src_processors_file_processor_py-b4
+    file: src/processors/file_processor.py
+    line_range:
+    - 77
+    - 81
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 77-81 per CodeReviewBench ground truth
+  notes: Synthetic test case from CodeReviewBench. Ground truth is exact bug line
+    ranges, not human review comments.
+- id: codereviewbench__example_29_src_validators_data_validator_py
+  url: synthetic://codereviewbench/codereviewbench__example_29_src_validators_data_validator_py
+  kind: codereviewbench-local
+  lang: python
+  synthetic_diff: "--- a/src/validators/data_validator.py\n+++ b/src/validators/data_validator.py\n\
+    \n@@ -10,2 +10,93 @@\n \n+class DataValidator:\n+    \"\"\"Validates and sanitizes\
+    \ input data with configurable rules.\"\"\"\n+\n+    def __init__(self, config_path:\
+    \ Optional[str] = None):\n+        self.rules: Dict[str, Dict] = {}\n+       \
+    \ self.errors: List[str] = []\n+        if config_path:\n+            self._load_config(config_path)\n\
+    +\n+    def _load_config(self, path: str) -> None:\n+        \"\"\"Load validation\
+    \ rules from a YAML config file.\"\"\"\n+        with open(path, 'r') as f:\n\
+    +            config = yaml.load(f)\n+        self.rules = config.get('validation_rules',\
+    \ {})\n+        logger.info(f\"Loaded {len(self.rules)} validation rules\")\n\
+    +\n+    def add_rule(self, field: str, rule: Dict) -> None:\n+        \"\"\"Add\
+    \ a validation rule for a field.\"\"\"\n+        self.rules[field] = rule\n+\n\
+    +    def validate_field(self, field_name: str, value: Any) -> bool:\n+       \
+    \ \"\"\"Validate a single field against its rules.\"\"\"\n+        rule = self.rules.get(field_name)\n\
+    +        if not rule:\n+            return True\n+\n+        field_type = rule.get('type',\
+    \ 'string')\n+\n+        if field_type == 'integer':\n+            if isinstance(value,\
+    \ int):\n+                return self._validate_int(value, rule)\n+          \
+    \  self.errors.append(f\"{field_name}: expected integer, got {type(value).__name__}\"\
+    )\n+            return False\n+\n+        if field_type == 'string':\n+      \
+    \      if not isinstance(value, str):\n+                self.errors.append(f\"\
+    {field_name}: expected string\")\n+                return False\n+           \
+    \ pattern = rule.get('pattern')\n+            if pattern:\n+                if\
+    \ not re.match(pattern, value):\n+                    self.errors.append(f\"{field_name}:\
+    \ pattern mismatch\")\n+                    return False\n+            return\
+    \ True\n+\n+        return True\n+\n+    def _validate_int(self, value: int, rule:\
+    \ Dict) -> bool:\n+        \"\"\"Validate integer constraints.\"\"\"\n+      \
+    \  min_val = rule.get('min')\n+        max_val = rule.get('max')\n+        if\
+    \ min_val is not None and value < min_val:\n+            self.errors.append(f\"\
+    Value {value} below minimum {min_val}\")\n+            return False\n+       \
+    \ if max_val is not None and value > max_val:\n+            self.errors.append(f\"\
+    Value {value} above maximum {max_val}\")\n+            return False\n+       \
+    \ return True\n+\n+    def validate_record(self, record: Dict) -> bool:\n+   \
+    \     \"\"\"Validate all fields in a record.\"\"\"\n+        valid = True\n+ \
+    \       for field_name, rule in self.rules.items():\n+            value = record.get(field_name)\n\
+    +            if rule.get('required') and value is None:\n+                self.errors.append(f\"\
+    {field_name}: required field missing\")\n+                valid = False\n+   \
+    \             continue\n+            if value is not None:\n+                if\
+    \ not self.validate_field(field_name, value):\n+                    valid = False\n\
+    +        return valid\n+\n+    def validate_batch(self, records: List[Dict]) ->\
+    \ Dict:\n+        \"\"\"Validate a batch of records, returning summary.\"\"\"\n\
+    +        valid_count = 0\n+        invalid_count = 0\n+        for record in records:\n\
+    +            if self.validate_record(record):\n+                valid_count +=\
+    \ 1\n+            else:\n+                invalid_count += 1\n+        return\
+    \ {\n+            'valid': valid_count,\n+            'invalid': invalid_count,\n\
+    +            'errors': list(self.errors),\n+        }\n+\n+    def validate_email_pattern(self,\
+    \ value: str) -> bool:\n+        \"\"\"Validate a string matches email pattern.\"\
+    \"\"\n+        pattern = r'^(a{1,})+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$'\n+      \
+    \  return bool(re.match(pattern, value))\n__old hunk__\n \n"
+  synthetic_files:
+  - src/validators/data_validator.py
+  synthetic_pr_title: Add data validator with configurable rules, YAML config loading,
+    type checking, regex pattern validation, and batch proc
+  synthetic_pr_description: Add data validator with configurable rules, YAML config
+    loading, type checking, regex pattern validation, and batch processing.
+  expected_findings:
+  - id: codereviewbench__example_29_src_validators_data_validator_py-b1
+    file: src/validators/data_validator.py
+    line_range:
+    - 99
+    - 102
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 99-102 per CodeReviewBench ground truth
+  - id: codereviewbench__example_29_src_validators_data_validator_py-b2
+    file: src/validators/data_validator.py
+    line_range:
+    - 39
+    - 43
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 39-43 per CodeReviewBench ground truth
+  - id: codereviewbench__example_29_src_validators_data_validator_py-b3
+    file: src/validators/data_validator.py
+    line_range:
+    - 20
+    - 25
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 20-25 per CodeReviewBench ground truth
+  - id: codereviewbench__example_29_src_validators_data_validator_py-b4
+    file: src/validators/data_validator.py
+    line_range:
+    - 49
+    - 53
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 49-53 per CodeReviewBench ground truth
+  notes: Synthetic test case from CodeReviewBench. Ground truth is exact bug line
+    ranges, not human review comments.
+- id: codereviewbench__example_30_src_workers_queue_worker_py
+  url: synthetic://codereviewbench/codereviewbench__example_30_src_workers_queue_worker_py
+  kind: codereviewbench-local
+  lang: python
+  synthetic_diff: "--- a/src/workers/queue_worker.py\n+++ b/src/workers/queue_worker.py\n\
+    \n@@ -10,2 +10,80 @@\n \n+class QueueWorker:\n+    \"\"\"Processes messages from\
+    \ a queue with retry and dead-letter.\"\"\"\n+\n+    def __init__(self, channel,\
+    \ queue_name: str, handler: Callable,\n+                 max_retries: int = 3,\
+    \ retry_delay: float = 5.0):\n+        self.channel = channel\n+        self.queue_name\
+    \ = queue_name\n+        self.handler = handler\n+        self.max_retries = max_retries\n\
+    +        self.retry_delay = retry_delay\n+        self.dead_letter_queue: str\
+    \ = f\"{queue_name}.dlq\"\n+        self.running = False\n+        self.stats\
+    \ = {'processed': 0, 'failed': 0, 'retried': 0}\n+\n+    def start(self) -> None:\n\
+    +        \"\"\"Start consuming messages from the queue.\"\"\"\n+        self.running\
+    \ = True\n+        logger.info(f\"Worker starting on queue: {self.queue_name}\"\
+    )\n+        self.channel.basic_consume(\n+            queue=self.queue_name,\n\
+    +            on_message_callback=self._on_message,\n+        )\n+        while\
+    \ self.running:\n+            self.channel.process_data_events(time_limit=1)\n\
+    +\n+    def _on_message(self, ch, method, properties, body) -> None:\n+      \
+    \  \"\"\"Handle an incoming message.\"\"\"\n+        delivery_tag = method.delivery_tag\n\
+    +        logger.info(f\"Received message: tag={delivery_tag}\")\n+\n+        ch.basic_ack(delivery_tag=delivery_tag)\n\
+    +\n+        data = json.loads(body)\n+        self._process_with_retry(data, delivery_tag)\n\
+    +\n+    def _process_with_retry(self, data: Dict, delivery_tag: int) -> None:\n\
+    +        \"\"\"Process message with retry logic.\"\"\"\n+        attempt = 0\n\
+    +        while attempt < self.max_retries:\n+            try:\n+             \
+    \   self.handler(data)\n+                self.stats['processed'] += 1\n+     \
+    \           logger.info(f\"Message processed successfully: tag={delivery_tag}\"\
+    )\n+                return\n+            except Exception as e:\n+           \
+    \     attempt += 1\n+                self.stats['retried'] += 1\n+           \
+    \     logger.warning(\n+                    f\"Processing failed (attempt {attempt}/{self.max_retries}):\
+    \ {e}\"\n+                )\n+                time.sleep(self.retry_delay)\n+\n\
+    +        logger.error(f\"Message exhausted retries, sending to DLQ: tag={delivery_tag}\"\
+    )\n+        self._send_to_dlq(data)\n+        self.stats['failed'] += 1\n+\n+\
+    \    def _send_to_dlq(self, data: Dict) -> None:\n+        \"\"\"Send a failed\
+    \ message to the dead-letter queue.\"\"\"\n+        self.channel.basic_publish(\n\
+    +            exchange='',\n+            routing_key=self.dead_letter_queue,\n\
+    +            body=json.dumps(data),\n+        )\n+        logger.info(f\"Message\
+    \ sent to DLQ: {self.dead_letter_queue}\")\n+\n+    def stop(self) -> None:\n\
+    +        \"\"\"Stop the worker.\"\"\"\n+        self.running = False\n+      \
+    \  logger.info(\"Worker stopping...\")\n+\n+    def get_stats(self) -> Dict[str,\
+    \ Any]:\n+        \"\"\"Return worker statistics.\"\"\"\n+        return {\n+\
+    \            'queue': self.queue_name,\n+            'processed': self.stats['processed'],\n\
+    +            'failed': self.stats['failed'],\n+            'retried': self.stats['retried'],\n\
+    +            'running': self.running,\n+        }\n__old hunk__\n \n"
+  synthetic_files:
+  - src/workers/queue_worker.py
+  synthetic_pr_title: Add queue worker with message consumption, retry logic, dead-letter
+    queue routing, and processing statistics.
+  synthetic_pr_description: Add queue worker with message consumption, retry logic,
+    dead-letter queue routing, and processing statistics.
+  expected_findings:
+  - id: codereviewbench__example_30_src_workers_queue_worker_py-b1
+    file: src/workers/queue_worker.py
+    line_range:
+    - 36
+    - 44
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 36-44 per CodeReviewBench ground truth
+  - id: codereviewbench__example_30_src_workers_queue_worker_py-b2
+    file: src/workers/queue_worker.py
+    line_range:
+    - 41
+    - 43
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 41-43 per CodeReviewBench ground truth
+  - id: codereviewbench__example_30_src_workers_queue_worker_py-b3
+    file: src/workers/queue_worker.py
+    line_range:
+    - 46
+    - 61
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 46-61 per CodeReviewBench ground truth
+  notes: Synthetic test case from CodeReviewBench. Ground truth is exact bug line
+    ranges, not human review comments.
+- id: codereviewbench__example_11_src_infrastructure_database_client_py
+  url: synthetic://codereviewbench/codereviewbench__example_11_src_infrastructure_database_client_py
+  kind: codereviewbench-cross-file
+  lang: python
+  synthetic_diff: "--- a/src/infrastructure/database_client.py\n+++ b/src/infrastructure/database_client.py\n\
+    \n@@ -10,2 +10,88 @@\n \n+\n+@dataclass\n+class Row:\n+    \"\"\"Typed row result\
+    \ from database queries.\"\"\"\n+    data: Dict[str, Any]\n+    columns: List[str]\n\
+    +\n+    def get(self, key: str, default=None):\n+        return self.data.get(key,\
+    \ default)\n+\n+\n+class DatabaseClient:\n+    \"\"\"PostgreSQL database client\
+    \ with connection pooling.\"\"\"\n+\n+    def __init__(self, dsn: str, min_conn:\
+    \ int = 2, max_conn: int = 10):\n+        self.pool = pool.SimpleConnectionPool(min_conn,\
+    \ max_conn, dsn)\n+        logger.info(f\"Database pool created: min={min_conn},\
+    \ max={max_conn}\")\n+\n+    def run_query(self, sql: str, params: tuple = ())\
+    \ -> List[Row]:\n+        \"\"\"Execute a query and return typed Row results.\"\
+    \"\"\n+        conn = self.pool.getconn()\n+        try:\n+            logger.debug(f\"\
+    Executing: {sql} with {params}\")\n+            cursor = conn.cursor()\n+    \
+    \        cursor.execute(sql, params)\n+            columns = [desc[0] for desc\
+    \ in cursor.description]\n+            rows = []\n+            for row_data in\
+    \ cursor.fetchall():\n+                row_dict = dict(zip(columns, row_data))\n\
+    +                rows.append(Row(data=row_dict, columns=columns))\n+         \
+    \   conn.commit()\n+            return rows\n+        except Exception as e:\n\
+    +            conn.rollback()\n+            logger.error(f\"Query failed: {e}\"\
+    )\n+            raise\n+\n+    def fetch_one(self, sql: str, params: tuple = ())\
+    \ -> Optional[Row]:\n+        \"\"\"Execute a query and return a single typed\
+    \ Row or None.\"\"\"\n+        conn = self.pool.getconn()\n+        try:\n+  \
+    \          logger.debug(f\"Fetching one: {sql}\")\n+            cursor = conn.cursor()\n\
+    +            cursor.execute(sql, params)\n+            row_data = cursor.fetchone()\n\
+    +            if row_data is None:\n+                return None\n+           \
+    \ columns = [desc[0] for desc in cursor.description]\n+            return Row(data=dict(zip(columns,\
+    \ row_data)), columns=columns)\n+        except Exception as e:\n+           \
+    \ logger.error(f\"Fetch one failed: {e}\")\n+            raise\n+\n+    def execute(self,\
+    \ sql: str, params: tuple = ()) -> int:\n+        \"\"\"Execute a write query\
+    \ and return affected row count.\"\"\"\n+        conn = self.pool.getconn()\n\
+    +        try:\n+            cursor = conn.cursor()\n+            cursor.execute(sql,\
+    \ params)\n+            conn.commit()\n+            self.pool.putconn(conn)\n\
+    +            return cursor.rowcount\n+        except Exception as e:\n+      \
+    \      conn.rollback()\n+            self.pool.putconn(conn)\n+            raise\n\
+    +\n+    def bulk_insert(self, table: str, records: List[Dict]) -> int:\n+    \
+    \    \"\"\"Insert multiple records into a table.\"\"\"\n+        if not records:\n\
+    +            return 0\n+        columns = records[0].keys()\n+        placeholders\
+    \ = ', '.join(['%s'] * len(columns))\n+        col_str = ', '.join(columns)\n\
+    +        sql = f\"INSERT INTO {table} ({col_str}) VALUES ({placeholders})\"\n\
+    +        values = [tuple(r[c] for c in columns) for r in records]\n+        conn\
+    \ = self.pool.getconn()\n+        try:\n+            cursor = conn.cursor()\n\
+    +            cursor.executemany(sql, values)\n+            conn.commit()\n+  \
+    \          self.pool.putconn(conn)\n+            return cursor.rowcount\n+   \
+    \     except Exception as e:\n+            conn.rollback()\n+            self.pool.putconn(conn)\n\
+    +            raise\n__old hunk__\n \n"
+  synthetic_files:
+  - src/infrastructure/database_client.py
+  synthetic_pr_title: 'Refactor database client: rename execute_query to run_query,
+    change fetch_one return type from dict to Row dataclass, ad'
+  synthetic_pr_description: 'Refactor database client: rename execute_query to run_query,
+    change fetch_one return type from dict to Row dataclass, add connection pooling
+    improvements.'
+  expected_findings:
+  - id: codereviewbench__example_11_src_infrastructure_database_client_py-b1
+    file: src/infrastructure/database_client.py
+    line_range:
+    - 29
+    - 42
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 29-42 per CodeReviewBench ground truth
+  - id: codereviewbench__example_11_src_infrastructure_database_client_py-b2
+    file: src/infrastructure/database_client.py
+    line_range:
+    - 48
+    - 62
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 48-62 per CodeReviewBench ground truth
+  - id: codereviewbench__example_11_src_infrastructure_database_client_py-b3
+    file: src/infrastructure/database_client.py
+    line_range:
+    - 29
+    - 46
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 29-46 per CodeReviewBench ground truth
+  - id: codereviewbench__example_11_src_infrastructure_database_client_py-b4
+    file: src/infrastructure/database_client.py
+    line_range:
+    - 33
+    - 33
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 33-33 per CodeReviewBench ground truth
+  notes: Synthetic test case from CodeReviewBench. Ground truth is exact bug line
+    ranges, not human review comments.
+- id: codereviewbench__example_12_src_middleware_auth_middleware_py
+  url: synthetic://codereviewbench/codereviewbench__example_12_src_middleware_auth_middleware_py
+  kind: codereviewbench-cross-file
+  lang: python
+  synthetic_diff: "--- a/src/middleware/auth_middleware.py\n+++ b/src/middleware/auth_middleware.py\n\
+    \n@@ -10,2 +10,78 @@\n \n+SECRET_KEY = 'your-secret-key'\n+\n+\n+class User:\n\
+    +    \"\"\"Authenticated user model.\"\"\"\n+    def __init__(self, id: int, email:\
+    \ str, roles: List[str]):\n+        self.id = id\n+        self.email = email\n\
+    +        self.roles = roles\n+\n+\n+def get_current_user(token: str) -> Optional[User]:\n\
+    +    \"\"\"Decode JWT and return a User model instance.\"\"\"\n+    try:\n+  \
+    \      payload = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])\n+      \
+    \  return User(\n+            id=payload['sub'],\n+            email=payload['email'],\n\
+    +            roles=payload.get('roles', []),\n+        )\n+    except jwt.InvalidTokenError:\n\
+    +        logger.warning(\"Invalid token received\")\n+        return None\n+\n\
+    +\n+def require_auth(roles: List[str] = None):\n+    \"\"\"Decorator that requires\
+    \ authentication and optional role check.\"\"\"\n+    def decorator(fn: Callable)\
+    \ -> Callable:\n+        @functools.wraps(fn)\n+        def wrapper(*args, **kwargs):\n\
+    +            auth_header = request.headers.get('Authorization', '')\n+       \
+    \     if not auth_header.startswith('Bearer '):\n+                return jsonify({'error':\
+    \ 'Missing auth token'}), 401\n+\n+            token = auth_header.split(' ',\
+    \ 1)[1]\n+            user = get_current_user(token)\n+            if user is\
+    \ None:\n+                return jsonify({'error': 'Invalid token'}), 401\n+\n\
+    +            if roles and not any(r in user.roles for r in roles):\n+        \
+    \        return jsonify({'error': 'Insufficient permissions'}), 403\n+\n+    \
+    \        g.current_user = user\n+            return fn(*args, **kwargs)\n+   \
+    \     return wrapper\n+    return decorator\n+\n+\n+def require_api_key(fn: Callable)\
+    \ -> Callable:\n+    \"\"\"Decorator that requires a valid API key in headers.\"\
+    \"\"\n+    @functools.wraps(fn)\n+    def wrapper(*args, **kwargs):\n+       \
+    \ api_key = request.headers.get('X-API-Key')\n+        if not api_key:\n+    \
+    \        return jsonify({'error': 'API key required'}), 401\n+        g.api_key\
+    \ = api_key\n+        return fn(*args, **kwargs)\n+    return wrapper\n+\n+\n\
+    +def extract_token_claims(token: str) -> dict:\n+    \"\"\"Extract claims from\
+    \ JWT without full validation.\"\"\"\n+    try:\n+        return jwt.decode(token,\
+    \ SECRET_KEY, algorithms=['HS256'])\n+    except jwt.InvalidTokenError:\n+   \
+    \     return {}\n+\n+\n+def create_token(user_id: int, email: str, roles: List[str])\
+    \ -> str:\n+    \"\"\"Create a new JWT token.\"\"\"\n+    payload = {\n+     \
+    \   'sub': user_id,\n+        'email': email,\n+        'roles': roles,\n+   \
+    \ }\n+    return jwt.encode(payload, SECRET_KEY, algorithm='HS256')\n__old hunk__\n\
+    \ \n"
+  synthetic_files:
+  - src/middleware/auth_middleware.py
+  synthetic_pr_title: 'Refactor auth middleware: change require_auth to decorator
+    factory with roles parameter, return User model instead of di'
+  synthetic_pr_description: 'Refactor auth middleware: change require_auth to decorator
+    factory with roles parameter, return User model instead of dict from get_current_user.'
+  expected_findings:
+  - id: codereviewbench__example_12_src_middleware_auth_middleware_py-b1
+    file: src/middleware/auth_middleware.py
+    line_range:
+    - 36
+    - 56
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 36-56 per CodeReviewBench ground truth
+  - id: codereviewbench__example_12_src_middleware_auth_middleware_py-b2
+    file: src/middleware/auth_middleware.py
+    line_range:
+    - 22
+    - 33
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 22-33 per CodeReviewBench ground truth
+  - id: codereviewbench__example_12_src_middleware_auth_middleware_py-b3
+    file: src/middleware/auth_middleware.py
+    line_range:
+    - 25
+    - 25
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 25-25 per CodeReviewBench ground truth
+  notes: Synthetic test case from CodeReviewBench. Ground truth is exact bug line
+    ranges, not human review comments.
+- id: codereviewbench__example_13_src_config_config_loader_py
+  url: synthetic://codereviewbench/codereviewbench__example_13_src_config_config_loader_py
+  kind: codereviewbench-cross-file
+  lang: python
+  synthetic_diff: "--- a/src/config/config_loader.py\n+++ b/src/config/config_loader.py\n\
+    \n@@ -10,2 +10,84 @@\n \n+\n+@dataclass\n+class FeatureFlags:\n+    \"\"\"Typed\
+    \ feature flag container.\"\"\"\n+    enable_v2: bool = False\n+    dark_mode:\
+    \ bool = False\n+    max_upload_size: int = 10\n+    allowed_origins: List[str]\
+    \ = field(default_factory=list)\n+\n+\n+class Config:\n+    \"\"\"Centralized\
+    \ configuration loaded from file with env overrides.\"\"\"\n+\n+    _instance:\
+    \ Optional['Config'] = None\n+    _config_data: Dict[str, Any] = {}\n+\n+    def\
+    \ __init__(self, config_path: str = 'config.json'):\n+        self._load_config(config_path)\n\
+    +\n+    def _load_config(self, config_path: str) -> None:\n+        \"\"\"Load\
+    \ configuration from JSON file.\"\"\"\n+        logger.info(f\"Loading config\
+    \ from {config_path}\")\n+        raw = open(config_path).read()\n+        self._config_data\
+    \ = json.loads(raw)\n+        logger.info(f\"Loaded {len(self._config_data)} config\
+    \ keys\")\n+\n+    @classmethod\n+    def get_instance(cls, config_path: str =\
+    \ 'config.json') -> 'Config':\n+        \"\"\"Get or create singleton instance.\"\
+    \"\"\n+        if cls._instance is None:\n+            cls._instance = Config(config_path)\n\
+    +        return cls._instance\n+\n+    def get(self, key: str, default: Any =\
+    \ None) -> Any:\n+        \"\"\"Get a config value with env var override.\"\"\"\
+    \n+        env_key = key.upper()\n+        value = os.environ.get(env_key) or\
+    \ self._config_data.get(key, default)\n+        return value\n+\n+    def get_required(self,\
+    \ key: str) -> Any:\n+        \"\"\"Get a config value, raising if not found.\"\
+    \"\"\n+        value = self.get(key)\n+        if value is None:\n+          \
+    \  raise ValueError(f\"Required config key '{key}' not found\")\n+        return\
+    \ value\n+\n+    def get_feature_flags(self) -> FeatureFlags:\n+        \"\"\"\
+    Return typed feature flags from config.\"\"\"\n+        flags_data = self._config_data.get('feature_flags',\
+    \ {})\n+        return FeatureFlags(\n+            enable_v2=flags_data.get('enable_v2',\
+    \ False),\n+            dark_mode=flags_data.get('dark_mode', False),\n+     \
+    \       max_upload_size=flags_data.get('max_upload_size', 10),\n+            allowed_origins=flags_data.get('allowed_origins',\
+    \ []),\n+        )\n+\n+    def get_database_config(self) -> Dict[str, Any]:\n\
+    +        \"\"\"Return database configuration.\"\"\"\n+        return {\n+    \
+    \        'url': self.get('database_url'),\n+            'pool_size': self.get('database_pool_size',\
+    \ 5),\n+            'timeout': self.get('database_timeout', 30),\n+        }\n\
+    +\n+    def get_all(self) -> Dict[str, Any]:\n+        \"\"\"Return a copy of\
+    \ all config data.\"\"\"\n+        return dict(self._config_data)\n+\n+    def\
+    \ reload(self, config_path: str = 'config.json') -> None:\n+        \"\"\"Reload\
+    \ configuration from file.\"\"\"\n+        logger.info(\"Reloading configuration...\"\
+    )\n+        self._load_config(config_path)\n+\n+    def set(self, key: str, value:\
+    \ Any) -> None:\n+        \"\"\"Set a config value at runtime.\"\"\"\n+      \
+    \  self._config_data[key] = value\n+        logger.info(f\"Config key '{key}'\
+    \ updated\")\n+\n+    @classmethod\n+    def reset(cls) -> None:\n+        \"\"\
+    \"Reset singleton for testing.\"\"\"\n+        cls._instance = None\n+       \
+    \ cls._config_data = {}\n__old hunk__\n \n"
+  synthetic_files:
+  - src/config/config_loader.py
+  synthetic_pr_title: Refactor configuration from module-level globals to Config class
+    singleton with environment variable overrides and typed
+  synthetic_pr_description: Refactor configuration from module-level globals to Config
+    class singleton with environment variable overrides and typed FeatureFlags dataclass.
+  expected_findings:
+  - id: codereviewbench__example_13_src_config_config_loader_py-b1
+    file: src/config/config_loader.py
+    line_range:
+    - 21
+    - 48
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 21-48 per CodeReviewBench ground truth
+  - id: codereviewbench__example_13_src_config_config_loader_py-b2
+    file: src/config/config_loader.py
+    line_range:
+    - 57
+    - 65
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 57-65 per CodeReviewBench ground truth
+  - id: codereviewbench__example_13_src_config_config_loader_py-b3
+    file: src/config/config_loader.py
+    line_range:
+    - 33
+    - 34
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 33-34 per CodeReviewBench ground truth
+  - id: codereviewbench__example_13_src_config_config_loader_py-b4
+    file: src/config/config_loader.py
+    line_range:
+    - 47
+    - 47
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 47-47 per CodeReviewBench ground truth
+  notes: Synthetic test case from CodeReviewBench. Ground truth is exact bug line
+    ranges, not human review comments.
+- id: codereviewbench__example_14_src_events_event_emitter_py
+  url: synthetic://codereviewbench/codereviewbench__example_14_src_events_event_emitter_py
+  kind: codereviewbench-cross-file
+  lang: python
+  synthetic_diff: "--- a/src/events/event_emitter.py\n+++ b/src/events/event_emitter.py\n\
+    \n@@ -10,2 +10,91 @@\n \n+\n+@dataclass\n+class Event:\n+    \"\"\"Base event\
+    \ class. All events must inherit from this.\"\"\"\n+    timestamp: datetime =\
+    \ field(default_factory=datetime.utcnow)\n+    source: str = ''\n+\n+\n+@dataclass\n\
+    +class OrderCreatedEvent(Event):\n+    order_id: str = ''\n+    user_id: str =\
+    \ ''\n+    total: float = 0.0\n+\n+\n+@dataclass\n+class PaymentProcessedEvent(Event):\n\
+    +    payment_id: str = ''\n+    amount: float = 0.0\n+    status: str = 'pending'\n\
+    +\n+\n+class EventEmitter:\n+    \"\"\"Async event system with typed events.\"\
+    \"\"\n+\n+    def __init__(self):\n+        self._listeners: Dict[Type[Event],\
+    \ List[Callable]] = {}\n+        self._global_listeners: List[Callable] = []\n\
+    +\n+    def on(self, event_class: Type[Event], callback: Callable[[Event], Awaitable[None]])\
+    \ -> None:\n+        \"\"\"Register a typed event listener.\"\"\"\n+        if\
+    \ event_class not in self._listeners:\n+            self._listeners[event_class]\
+    \ = []\n+        self._listeners[event_class].append(callback)\n+        logger.debug(f\"\
+    Registered listener for {event_class.__name__}\")\n+\n+    def off(self, event_class:\
+    \ Type[Event], callback: Callable) -> None:\n+        \"\"\"Remove a typed event\
+    \ listener.\"\"\"\n+        if event_class in self._listeners:\n+            self._listeners[event_class].remove(callback)\n\
+    +            logger.debug(f\"Removed listener for {event_class.__name__}\")\n\
+    +\n+    def on_all(self, callback: Callable[[Event], Awaitable[None]]) -> None:\n\
+    +        \"\"\"Register a listener for all events.\"\"\"\n+        self._global_listeners.append(callback)\n\
+    +\n+    async def emit(self, event: Event) -> None:\n+        \"\"\"Emit a typed\
+    \ event to registered listeners.\"\"\"\n+        event_class = type(event)\n+\
+    \        handlers = self._listeners.get(event_class, [])\n+        all_handlers\
+    \ = handlers + self._global_listeners\n+\n+        logger.info(f\"Emitting {event_class.__name__}\
+    \ to {len(all_handlers)} handlers\")\n+        for handler in self._listeners.get(event_class,\
+    \ []):\n+            await handler(event)\n+        for handler in self._global_listeners:\n\
+    +            await handler(event)\n+\n+    def listener_count(self, event_class:\
+    \ Type[Event]) -> int:\n+        \"\"\"Return number of listeners for an event\
+    \ type.\"\"\"\n+        return len(self._listeners.get(event_class, []))\n+\n\
+    +    def clear(self) -> None:\n+        \"\"\"Remove all listeners.\"\"\"\n+ \
+    \       self._listeners.clear()\n+        self._global_listeners.clear()\n+  \
+    \      logger.info(\"All listeners cleared\")\n+\n+    def get_registered_events(self)\
+    \ -> List[Type[Event]]:\n+        \"\"\"Return list of event types with registered\
+    \ listeners.\"\"\"\n+        return list(self._listeners.keys())\n+\n+    async\
+    \ def emit_with_timeout(self, event: Event, timeout: float = 5.0) -> None:\n+\
+    \        \"\"\"Emit event with a timeout for each handler.\"\"\"\n+        event_class\
+    \ = type(event)\n+        handlers = self._listeners.get(event_class, [])\n+ \
+    \       for handler in handlers:\n+            try:\n+                await asyncio.wait_for(handler(event),\
+    \ timeout=timeout)\n+            except asyncio.TimeoutError:\n+             \
+    \   logger.warning(f\"Handler {handler.__name__} timed out for {event_class.__name__}\"\
+    )\n+\n+    def has_listeners(self, event_class: Type[Event]) -> bool:\n+     \
+    \   \"\"\"Check if any listeners are registered for an event type.\"\"\"\n+  \
+    \      return bool(self._listeners.get(event_class, []))\n+\n+    async def emit_batch(self,\
+    \ events: List[Event]) -> None:\n+        \"\"\"Emit multiple events sequentially.\"\
+    \"\"\n+        for event in events:\n+            await self.emit(event)\n__old\
+    \ hunk__\n \n"
+  synthetic_files:
+  - src/events/event_emitter.py
+  synthetic_pr_title: Refactor event system to typed events with Event dataclass hierarchy,
+    rename methods, and switch to async emit API.
+  synthetic_pr_description: Refactor event system to typed events with Event dataclass
+    hierarchy, rename methods, and switch to async emit API.
+  expected_findings:
+  - id: codereviewbench__example_14_src_events_event_emitter_py-b1
+    file: src/events/event_emitter.py
+    line_range:
+    - 57
+    - 67
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 57-67 per CodeReviewBench ground truth
+  - id: codereviewbench__example_14_src_events_event_emitter_py-b2
+    file: src/events/event_emitter.py
+    line_range:
+    - 40
+    - 45
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 40-45 per CodeReviewBench ground truth
+  - id: codereviewbench__example_14_src_events_event_emitter_py-b3
+    file: src/events/event_emitter.py
+    line_range:
+    - 47
+    - 51
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 47-51 per CodeReviewBench ground truth
+  - id: codereviewbench__example_14_src_events_event_emitter_py-b4
+    file: src/events/event_emitter.py
+    line_range:
+    - 64
+    - 67
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 64-67 per CodeReviewBench ground truth
+  - id: codereviewbench__example_14_src_events_event_emitter_py-b5
+    file: src/events/event_emitter.py
+    line_range:
+    - 57
+    - 67
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 57-67 per CodeReviewBench ground truth
+  notes: Synthetic test case from CodeReviewBench. Ground truth is exact bug line
+    ranges, not human review comments.
+- id: codereviewbench__example_15_src_utils_serializer_py
+  url: synthetic://codereviewbench/codereviewbench__example_15_src_utils_serializer_py
+  kind: codereviewbench-cross-file
+  lang: python
+  synthetic_diff: "--- a/src/utils/serializer.py\n+++ b/src/utils/serializer.py\n\n\
+    @@ -9,2 +9,82 @@\n \n+\n+def _default_encoder(obj: Any) -> Any:\n+    \"\"\"Custom\
+    \ encoder for types not natively supported by msgpack.\"\"\"\n+    if isinstance(obj,\
+    \ (datetime, date)):\n+        return obj.isoformat()\n+    if isinstance(obj,\
+    \ set):\n+        return list(obj)\n+    if isinstance(obj, bytes):\n+       \
+    \ return obj.decode('utf-8')\n+    raise TypeError(f\"Object of type {type(obj).__name__}\
+    \ is not serializable\")\n+\n+\n+def serialize(obj: Any) -> bytes:\n+    \"\"\"\
+    Serialize an object to MessagePack bytes.\"\"\"\n+    logger.debug(f\"Serializing\
+    \ object of type {type(obj).__name__}\")\n+    return msgpack.packb(obj, default=_default_encoder,\
+    \ use_bin_type=True)\n+\n+\n+def deserialize(data: bytes) -> Any:\n+    \"\"\"\
+    Deserialize MessagePack bytes to an object.\"\"\"\n+    logger.debug(f\"Deserializing\
+    \ {len(data)} bytes\")\n+    return msgpack.unpackb(data, raw=False)\n+\n+\n+def\
+    \ serialize_to_dict(obj: Any) -> Dict[str, Any]:\n+    \"\"\"Convert an object\
+    \ to a dict suitable for JSON serialization.\"\"\"\n+    if hasattr(obj, '__dict__'):\n\
+    +        result = {}\n+        for key, value in obj.__dict__.items():\n+    \
+    \        if isinstance(value, (datetime, date)):\n+                result[key]\
+    \ = value.isoformat()\n+            elif hasattr(value, '__dict__'):\n+      \
+    \          result[key] = serialize_to_dict(value)\n+            else:\n+     \
+    \           result[key] = value\n+        return result\n+    return obj\n+\n\
+    +\n+def deserialize_from_dict(data: Dict[str, Any], cls: type) -> Any:\n+    \"\
+    \"\"Deserialize a dict into an instance of the given class.\"\"\"\n+    if hasattr(cls,\
+    \ '__dataclass_fields__'):\n+        return cls(**data)\n+    instance = cls.__new__(cls)\n\
+    +    for key, value in data.items():\n+        setattr(instance, key, value)\n\
+    +    return instance\n+\n+\n+def safe_serialize(obj: Any) -> Optional[bytes]:\n\
+    +    \"\"\"Serialize with error handling.\"\"\"\n+    try:\n+        return serialize(obj)\n\
+    +    except (TypeError, ValueError) as e:\n+        logger.error(f\"Serialization\
+    \ failed: {e}\")\n+        return None\n+\n+\n+def safe_deserialize(data: bytes)\
+    \ -> Optional[Any]:\n+    \"\"\"Deserialize with error handling.\"\"\"\n+    try:\n\
+    +        return deserialize(data)\n+    except (msgpack.UnpackException, ValueError)\
+    \ as e:\n+        logger.error(f\"Deserialization failed: {e}\")\n+        return\
+    \ None\n+\n+\n+def batch_serialize(objects: list) -> list:\n+    \"\"\"Serialize\
+    \ a list of objects individually.\"\"\"\n+    results = []\n+    for obj in objects:\n\
+    +        results.append(serialize(obj))\n+    return results\n+\n+\n+def batch_deserialize(data_list:\
+    \ list) -> list:\n+    \"\"\"Deserialize a list of byte strings.\"\"\"\n+    results\
+    \ = []\n+    for data in data_list:\n+        results.append(deserialize(data))\n\
+    +    return results\n__old hunk__\n \n"
+  synthetic_files:
+  - src/utils/serializer.py
+  synthetic_pr_title: 'Refactor serialization from JSON to MessagePack: serialize()
+    returns bytes, deserialize() expects bytes, add safe wrappe'
+  synthetic_pr_description: 'Refactor serialization from JSON to MessagePack: serialize()
+    returns bytes, deserialize() expects bytes, add safe wrappers and batch operations.'
+  expected_findings:
+  - id: codereviewbench__example_15_src_utils_serializer_py-b1
+    file: src/utils/serializer.py
+    line_range:
+    - 22
+    - 25
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 22-25 per CodeReviewBench ground truth
+  - id: codereviewbench__example_15_src_utils_serializer_py-b2
+    file: src/utils/serializer.py
+    line_range:
+    - 28
+    - 31
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 28-31 per CodeReviewBench ground truth
+  - id: codereviewbench__example_15_src_utils_serializer_py-b3
+    file: src/utils/serializer.py
+    line_range:
+    - 34
+    - 46
+    title_keywords: []
+    evidence_keywords: []
+    severity: ERROR
+    source: codereviewbench
+    reason: Bug at lines 34-46 per CodeReviewBench ground truth
+  notes: Synthetic test case from CodeReviewBench. Ground truth is exact bug line
+    ranges, not human review comments.

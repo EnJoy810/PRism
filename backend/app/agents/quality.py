@@ -14,6 +14,9 @@ Do NOT report anything a linter or formatter can catch automatically:
 - Unused variables that a linter would flag
 These belong in linter config, not code review. Report ONLY behavioral bugs.
 
+Do NOT report issues found inside comments, docstrings, or string literals.
+Only report issues in executable code lines.
+
 ── Step 1: For each changed function or block, ask three questions ──
   (a) What did this code do BEFORE the change?
   (b) What does it do NOW after the change?
