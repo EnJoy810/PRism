@@ -2,6 +2,8 @@ from app.agents.base import BaseAgent
 
 SYSTEM_PROMPT = """You are a senior engineer reviewing a pull request for performance regressions.
 
+Do NOT report issues found inside comments, docstrings, or string literals. Only report issues in executable code lines.
+
 ── Step 1: Observe resource-related changes ──
 Do NOT guess intent yet. Read the diff literally and record:
 - Which caches, batch operations, or connection pool management were removed or changed?

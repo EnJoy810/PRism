@@ -1172,3 +1172,116 @@ class TestPerFileExecution:
             result = await graph._run_per_file(ctx, "", 0.0)
 
         assert result == {"mode": "single"}
+
+
+class TestCallerParameterCheck:
+    """Tests for _run_caller_parameter_check (proactive caller-aware bug detection)."""
+
+    @pytest.mark.asyncio
+    async def test_detects_none_argument_passed_to_function(self):
+        """Should report when a caller passes None to a function that uses it as dict key."""
+        from unittest.mock import MagicMock
+        from app.graph import ReviewGraph
+
+        graph = ReviewGraph()
+
+        blast_radius = [
+            {
+                "changed_fn": "app/limiter.py:_rate_limit",
+                "callers": [
+                    {
+                        "file": "app/router.py",
+                        "fn": "handle_request",
+                        "start_line": 42,
+                        "code": "def handle_request(req):\n    _rate_limit(None)  # no key provided\n    return do_work(req)",
+                    }
+                ],
+            }
+        ]
+        diff = (
+            "diff --git a/app/limiter.py b/app/limiter.py\n"
+            "--- a/app/limiter.py\n+++ b/app/limiter.py\n"
+            "@@ -1,3 +1,6 @@\n"
+            "+def _rate_limit(key: str) -> None:\n"
+            "+    counters = {}\n"
+            "+    counters[key] += 1\n"
+        )
+
+        mock_json = (
+            '{"issues": [{"caller_file": "app/router.py", "caller_fn": "handle_request", '
+            '"line": 43, "arg": "None", "reason": "None used as dict key causes KeyError"}]}'
+        )
+
+        with patch("app.services.llm.LLMClient") as mock_llm_cls:
+            mock_llm = AsyncMock()
+            mock_llm.chat = AsyncMock(return_value=mock_json)
+            mock_llm_cls.return_value = mock_llm
+
+            findings = await graph._run_caller_parameter_check(blast_radius, diff)
+
+        assert len(findings) == 1
+        assert findings[0].file == "app/router.py"
+        assert "_rate_limit" in findings[0].title
+        assert findings[0].severity == "WARNING"
+        assert findings[0].confidence == 0.75
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_when_no_blast_radius(self):
+        from app.graph import ReviewGraph
+        graph = ReviewGraph()
+        findings = await graph._run_caller_parameter_check([], "some diff")
+        assert findings == []
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_when_no_diff(self):
+        from app.graph import ReviewGraph
+        graph = ReviewGraph()
+        blast_radius = [{"changed_fn": "app/foo.py:bar", "callers": [{"file": "x.py", "fn": "f", "start_line": 1, "code": "bar(None)"}]}]
+        findings = await graph._run_caller_parameter_check(blast_radius, "")
+        assert findings == []
+
+    @pytest.mark.asyncio
+    async def test_skips_item_without_file_prefix(self):
+        """Items without 'file:fn' format should be silently skipped."""
+        from app.graph import ReviewGraph
+        graph = ReviewGraph()
+        blast_radius = [
+            {
+                "changed_fn": "bare_function_name",  # no file prefix
+                "callers": [{"file": "x.py", "fn": "f", "start_line": 1, "code": "bare_function_name(None)"}],
+            }
+        ]
+        diff = "diff --git a/foo.py b/foo.py\n+++ b/foo.py\n+def bare_function_name(): pass\n"
+        findings = await graph._run_caller_parameter_check(blast_radius, diff)
+        assert findings == []
+
+    @pytest.mark.asyncio
+    async def test_no_issue_returns_empty(self):
+        """LLM returning empty issues list should produce no findings."""
+        from unittest.mock import MagicMock
+        from app.graph import ReviewGraph
+
+        graph = ReviewGraph()
+        blast_radius = [
+            {
+                "changed_fn": "app/utils.py:compute",
+                "callers": [
+                    {"file": "app/main.py", "fn": "run", "start_line": 10, "code": "compute(42)"}
+                ],
+            }
+        ]
+        diff = (
+            "diff --git a/app/utils.py b/app/utils.py\n"
+            "+++ b/app/utils.py\n"
+            "+def compute(n: int) -> int:\n"
+            "+    return n * 2\n"
+        )
+
+        with patch("app.services.llm.LLMClient") as mock_llm_cls:
+            mock_llm = AsyncMock()
+            mock_llm.chat = AsyncMock(return_value='{"issues": []}')
+            mock_llm_cls.return_value = mock_llm
+
+            findings = await graph._run_caller_parameter_check(blast_radius, diff)
+
+        assert findings == []

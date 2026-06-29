@@ -20,6 +20,16 @@ def _make_diff(file_path: str, content: str, start_line: int = 1) -> str:
 # ---------------------------------------------------------------------------
 
 def test_python_line_in_triple_double_quote_docstring():
+    """Multiline docstring detection is intentionally NOT supported.
+
+    Tracking docstring open/close via diff reconstruction is fragile: context
+    lines may be missing from diffs, breaking the state machine and causing
+    real findings to be dropped. LLM agents are instructed in their system
+    prompts to skip docstring content directly (industry practice).
+
+    This test documents the known limitation: a line inside a multiline
+    docstring is NOT filtered by is_line_in_non_executable_context.
+    """
     content = textwrap.dedent("""\
         def _extract_ts_imports(self, content: str) -> list[str]:
             \"\"\"
@@ -32,8 +42,8 @@ def test_python_line_in_triple_double_quote_docstring():
             pattern = re.compile(r'import')
     """)
     diff = _make_diff("app/services/indexer.py", content)
-    # line 6: "    import { X, Y } from './path'"  — 在 docstring 里
-    assert is_line_in_non_executable_context(diff, "app/services/indexer.py", 6) is True
+    # line 6: inside docstring — NOT filtered (multiline detection removed)
+    assert is_line_in_non_executable_context(diff, "app/services/indexer.py", 6) is False
 
 
 def test_python_line_after_docstring_is_code():
@@ -59,6 +69,11 @@ def test_python_single_line_comment():
 
 
 def test_python_triple_single_quote_docstring():
+    """Same as above: multiline docstring detection is not supported.
+
+    A line inside a triple-single-quote docstring is NOT filtered.
+    The LLM system prompt handles this case at the source.
+    """
     content = textwrap.dedent("""\
         def bar():
             '''
@@ -68,8 +83,8 @@ def test_python_triple_single_quote_docstring():
             return 1
     """)
     diff = _make_diff("app/bar.py", content)
-    # line 4: "        import X from './path'"
-    assert is_line_in_non_executable_context(diff, "app/bar.py", 4) is True
+    # line 4: inside docstring — NOT filtered (multiline detection removed)
+    assert is_line_in_non_executable_context(diff, "app/bar.py", 4) is False
 
 
 # ---------------------------------------------------------------------------

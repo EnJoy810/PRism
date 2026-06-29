@@ -133,12 +133,42 @@ cd backend && python -m app.cli review https://github.com/owner/repo/pull/42
 - Evidence 程序验证（行号必须真实存在于 diff 新增行）
 - Severity 过滤（INFO 默认不报）
 - OpenAI-compatible LLM 配置（兼容 DeepSeek fallback）
+- 调用图跨文件分析：`repo.py` shallow clone + `indexer.py` tree-sitter + `blast_radius.py` BFS depth=2
+- Caller-aware bug 检测：3 层架构（AST gate → 1-hop caller fetch → LLM 验证），已在测试仓库验证 None-key 碰撞检测
 
-### 第一阶段：调用图跨文件分析（进行中）
-见 PLAN_CALLGRAPH.md。`repo.py`、`indexer.py`、`blast_radius.py` 基础模块已存在，仍需集成验证和真实 PR 评测。
-解决"改了 A，B 跟着挂，工具看不到"的结构性缺陷。
+### 第二阶段：提升 Review 信噪比（下一个大方向）
 
-### 第二阶段：Linter + LLM 并行
+**背景**：AI code review 建议采纳率 16.6%，人类 reviewer 56.5%，差 3 倍。根因不是 AI 找的问题不对，是 review 方式不对——AI 扫全量报清单，开发者看不出重点，两周后开始无视。
+
+竞品调研结论（2026-06）：
+- CodeRabbit：理解意图是人的事，AI 做信息重组（Walkthrough + 分组摘要），不做 intent pass
+- GitHub Copilot：agentic 自主探索，40% PR 仍错过架构意图，说明专门加 intent pass 也解决不了
+- 行业共识：**不是加新步骤，而是给现有步骤喂更多上下文**
+
+**具体要做的事**：
+
+**P0：PR 上下文注入现有 Agent**
+- 把 PR title、description、commit message 作为显式输入注入所有 Agent 的 prompt
+- 让每个 Agent review 时都知道"这个 PR 的目的是什么"，避免无差别扫全量
+- 不加新的 LLM 调用，零延迟/成本增加
+- 实现：`fetch_pr_context` 已拉 PR 描述，确认注入到 agent_context 里
+
+**P1：优先级分层**
+- 当前所有 WARNING 地位平等，开发者看不出重点
+- 区分"必须改"（运行时错误/安全漏洞）和"建议改"（设计问题/可读性）
+- 在 PR 评论里显式标注，不是平铺列表
+
+**P2：Quality Agent 排除 linter 能报的**
+- 真人不在 review 里说"变量名不好"，那是 linter 的事
+- Quality Agent prompt 明确排除 style/formatting/naming 类问题
+- 专注 linter 看不到的：逻辑漏洞、边界 case、接口设计问题
+
+**P3：跨文件影响作为前置上下文**
+- callgraph blast_radius 结果目前是后处理步骤
+- 如果检测到跨文件影响，提前注入 Agent context，让 Agent 重点关注受影响文件
+- 不是等 Agent 跑完再补充，而是作为输入
+
+### 第三阶段：Linter + LLM 并行
 和 CodeRabbit 同一架构判断：
 - Bandit（Python 安全）/ Semgrep 先扫，确定性问题直接进 findings，不过 LLM
 - LLM 负责找规则扫不到的逻辑漏洞
@@ -146,11 +176,11 @@ cd backend && python -m app.cli review https://github.com/owner/repo/pull/42
 纯 LLM 精确率 65%，混合方案接近 90%，arxiv 2411.03079 数据支撑。
 
 ### 开源发布时机
-调用图做完后发布 Show HN。那时能说：
+优先级分层 + Quality Agent 过滤做完后发布 Show HN。那时能说：
 1. 开源自部署，不被商业配额绑架
 2. 每条问题有行号证据，程序验证
 3. 能看到跨文件影响
-4. 报得少，不会两周后被开发者无视
+4. 报得少，每条有优先级，不会两周后被开发者无视
 
 ---
 

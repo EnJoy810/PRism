@@ -147,7 +147,7 @@ async def review_job(ctx, pr_url: str, event: str, installation_id: int | None =
         if token and check_run_id:
             await update_check_run(owner, repo, check_run_id, token, "failure", 0, "N/A")
     except Exception as e:
-        logger.error("Review failed for %s: %s", pr_url, e)
+        logger.error("Review failed for %s: %s", pr_url, e, exc_info=True)
         if token and check_run_id:
             await update_check_run(owner, repo, check_run_id, token, "failure", 0, "N/A")
 

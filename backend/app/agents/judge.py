@@ -232,37 +232,15 @@ class JudgeAgent:
         return self._llm
 
     def dedup(self, findings: list[FindingSchema]) -> list[FindingSchema]:
-        # Pass A: exact (file, line, title) dedup
+        # Exact (file, line, title) dedup: same location and same title → keep highest severity.
+        # Semantic dedup (LLM-based) handles same-bug-different-title cases downstream.
         by_exact: dict[tuple[str, int | None, str], FindingSchema] = {}
         for f in findings:
             key = (f.file, f.line, f.title)
             existing = by_exact.get(key)
             if existing is None or SEVERITY_ORDER.get(f.severity, 99) < SEVERITY_ORDER.get(existing.severity, 99):
                 by_exact[key] = f
-
-        # Pass B: same (file, line) → keep only the highest-severity finding.
-        # Guards against LLM reporting the same bug with different titles.
-        by_line: dict[tuple[str, int], FindingSchema] = {}
-        for f in by_exact.values():
-            if f.line is None:
-                continue
-            line_key = (f.file, f.line)
-            existing = by_line.get(line_key)
-            if existing is None or SEVERITY_ORDER.get(f.severity, 99) < SEVERITY_ORDER.get(existing.severity, 99):
-                by_line[line_key] = f
-
-        result: list[FindingSchema] = []
-        seen_line_keys: set[tuple[str, int]] = set()
-        for f in by_exact.values():
-            if f.line is not None:
-                line_key = (f.file, f.line)
-                if by_line.get(line_key) is not f:
-                    continue  # a higher-severity finding on this line will be kept instead
-                if line_key in seen_line_keys:
-                    continue
-                seen_line_keys.add(line_key)
-            result.append(f)
-        return result
+        return list(by_exact.values())
 
     async def _semantic_dedup_group(self, findings: list[FindingSchema]) -> list[FindingSchema]:
         if len(findings) <= 1:
