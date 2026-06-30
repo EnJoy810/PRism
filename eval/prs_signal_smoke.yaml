@@ -1,15 +1,154 @@
+# Signal / precision eval set — real-world merged PRs with human review comments.
+#
+# Selection criteria:
+#   - merged PR from active open-source projects in Python / TypeScript
+#   - diff 50-300 lines (not trivial, not overwhelming)
+#   - >= 2 inline review_comments (evidence of serious human review)
+#
+# How to use:
+#   cd backend && .venv/bin/python ../eval/run_eval.py \
+#       --samples ../eval/prs_signal_smoke.yaml --out ../eval/runs
+#
+# Scoring: no golden expected_findings here.
+# After running, open each .md output and manually label each finding:
+#   👍 = actionable, correct, worth a developer's attention
+#   👎 = noise, wrong, or trivially obvious
+# Precision = 👍 / (👍 + 👎)
+
+# ── Next.js (TypeScript) ──────────────────────────────────────────────────────
+
+- id: nextjs-59157
+  url: https://github.com/vercel/next.js/pull/59157
+  kind: bug-fix
+  lang: typescript
+  diff_lines: 102   # +81/-21
+  review_comments: 5
+  notes: Fix outputFileTracingExcludes with pages/api edge runtime
+
+- id: nextjs-59239
+  url: https://github.com/vercel/next.js/pull/59239
+  kind: refactor
+  lang: typescript
+  diff_lines: 33    # +16/-17
+  review_comments: 4
+  notes: Move App Router client-side constants to separate file
+
+- id: nextjs-46995
+  url: https://github.com/vercel/next.js/pull/46995
+  kind: feature
+  lang: typescript
+  diff_lines: 196   # +181/-15
+  review_comments: 4
+  notes: Add support for scrolling to hash fragment
+
+- id: nextjs-48556
+  url: https://github.com/vercel/next.js/pull/48556
+  kind: bug-fix
+  lang: typescript
+  diff_lines: 92    # +64/-28
+  review_comments: 2
+  notes: Prefer deployment url for metadata routes on production
+
+- id: nextjs-71489
+  url: https://github.com/vercel/next.js/pull/71489
+  kind: bug-fix
+  lang: typescript
+  diff_lines: 314   # +252/-62
+  review_comments: 4
+  notes: Replace turbopack sourcemap URIs
+
+- id: nextjs-95100
+  url: https://github.com/vercel/next.js/pull/95100
+  kind: bug-fix
+  lang: typescript
+  diff_lines: 103   # +78/-25
+  review_comments: 4
+  notes: Keep resolved cache life for cacheMaxMemorySize:0 caches
+
+- id: nextjs-58968
+  url: https://github.com/vercel/next.js/pull/58968
+  kind: bug-fix
+  lang: typescript
+  diff_lines: 215   # +177/-38
+  review_comments: 2
+  notes: Fix bugs with baseUrl and mdxRs
+
+# ── NestJS (TypeScript) ───────────────────────────────────────────────────────
+
+- id: nestjs-8738
+  url: https://github.com/nestjs/nest/pull/8738
+  kind: bug-fix
+  lang: typescript
+  diff_lines: 18    # +17/-1
+  review_comments: 9
+  notes: Auto flush logs after useLogger call — high review activity on small change
+
+- id: nestjs-5790
+  url: https://github.com/nestjs/nest/pull/5790
+  kind: bug-fix
+  lang: typescript
+  diff_lines: 33    # +28/-5
+  review_comments: 2
+  notes: Fix RMQ socketOptions incorrectly passed to amqp-connection-manager
+
+- id: nestjs-2457
+  url: https://github.com/nestjs/nest/pull/2457
+  kind: bug-fix
+  lang: typescript
+  diff_lines: 17    # +16/-1
+  review_comments: 2
+  notes: Add replacer to handle functions/classes in module serialization
+
+# ── Pydantic (Python) ─────────────────────────────────────────────────────────
+
+- id: pydantic-5877
+  url: https://github.com/pydantic/pydantic/pull/5877
+  kind: feature
+  lang: python
+  diff_lines: 258   # +239/-19
+  review_comments: 21
+  notes: Add validators for TypedDict — high review activity
+
+- id: pydantic-5873
+  url: https://github.com/pydantic/pydantic/pull/5873
+  kind: bug-fix
+  lang: python
+  diff_lines: 71    # +50/-21
+  review_comments: 3
+  notes: Fix kw_only inheritance
+
+- id: pydantic-3197
+  url: https://github.com/pydantic/pydantic/pull/3197
+  kind: bug-fix
+  lang: python
+  diff_lines: 25    # +24/-1
+  review_comments: 11
+  notes: Replace encode_default isinstance check with strict type check
+
+- id: pydantic-3216
+  url: https://github.com/pydantic/pydantic/pull/3216
+  kind: bug-fix
+  lang: python
+  diff_lines: 22    # +22/-0
+  review_comments: 3
+  notes: Validator decorator field check
+
+# ── Existing entries ──────────────────────────────────────────────────────────
+
 - id: fastapi-12000
-  repo: fastapi/fastapi
   url: https://github.com/fastapi/fastapi/pull/12000
   kind: public-config-change
+  lang: python
   notes: Prior eval produced labeler config findings.
+
 - id: pydantic-10500
-  repo: pydantic/pydantic
   url: https://github.com/pydantic/pydantic/pull/10500
   kind: public-python-change
+  lang: python
   notes: Prior eval produced schema/type behavior finding.
+
 - id: encode-httpx-3300
-  repo: encode/httpx
   url: https://github.com/encode/httpx/pull/3300
   kind: public-python-api-change
+  lang: python
   notes: Prior eval produced export/type/API findings.
