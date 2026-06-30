@@ -1,0 +1,21 @@
+# Signal smoke — next.js excluded (repo too large, times out at 300s)
+- id: nestjs-8738
+  url: https://github.com/nestjs/nest/pull/8738
+- id: nestjs-5790
+  url: https://github.com/nestjs/nest/pull/5790
+- id: nestjs-2457
+  url: https://github.com/nestjs/nest/pull/2457
+- id: pydantic-5877
+  url: https://github.com/pydantic/pydantic/pull/5877
+- id: pydantic-5873
+  url: https://github.com/pydantic/pydantic/pull/5873
+- id: pydantic-3197
+  url: https://github.com/pydantic/pydantic/pull/3197
+- id: pydantic-3216
+  url: https://github.com/pydantic/pydantic/pull/3216
+- id: fastapi-12000
+  url: https://github.com/fastapi/fastapi/pull/12000
+- id: pydantic-10500
+  url: https://github.com/pydantic/pydantic/pull/10500
+- id: encode-httpx-3300
+  url: https://github.com/encode/httpx/pull/3300
