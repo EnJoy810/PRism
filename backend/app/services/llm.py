@@ -48,14 +48,15 @@ class _SkipRetry(Exception):
 
 
 class TokenBudget:
-    def __init__(self, max_tokens_per_call: int = 4096):
+    def __init__(self, max_tokens_per_call: int = 4096, max_total_tokens: int = 200_000):
         self.max_tokens_per_call = max_tokens_per_call
+        self.max_total_tokens = max_total_tokens
         self.total_tokens = 0
         self.call_count = 0
 
     @property
     def exceeded(self) -> bool:
-        return False
+        return self.total_tokens >= self.max_total_tokens
 
     def would_exceed_call(self, estimated_tokens: int) -> bool:
         return estimated_tokens > self.max_tokens_per_call
@@ -113,6 +114,7 @@ class LLMClient:
         top_p: float = 1.0,
         stream: bool = False,
         estimated_tokens: int | None = None,
+        response_format: dict | None = None,
     ) -> str:
         if estimated_tokens is None:
             estimated_tokens = sum(len(str(m.get("content", ""))) for m in messages) // 4
@@ -131,6 +133,8 @@ class LLMClient:
             top_p=top_p,
             stream=stream,
         )
+        if response_format is not None:
+            create_kwargs["response_format"] = response_format
         if max_tokens is not None:
             create_kwargs["max_tokens"] = max_tokens
         # DeepSeek V4 Flash defaults to thinking mode (reasoning_content only,

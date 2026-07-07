@@ -81,6 +81,107 @@ def chunk_diff_by_file(diff: str) -> list[dict]:
     return result
 
 
+def classify_hunk(hunk_lines: list[str]) -> str:
+    """Return 'mechanical' or 'logical' for a single hunk.
+
+    A hunk is mechanical if ALL of the following are true (pure rules, no LLM):
+    1. Pure whitespace change: added and removed lines are identical after strip.
+    2. Pure rename: after collapsing identifiers to '_', structure is identical.
+    3. Pure import block: all added lines are import/require statements.
+
+    Otherwise logical.
+    """
+    added = [ln[1:] for ln in hunk_lines if ln.startswith("+") and not ln.startswith("+++")]
+    removed = [ln[1:] for ln in hunk_lines if ln.startswith("-") and not ln.startswith("---")]
+
+    if not added and not removed:
+        return "mechanical"
+
+    _import_re = re.compile(r"^\s*(import |from .+ import |require\(|const .+ = require)")
+
+    # Rule 1: pure whitespace
+    if added and removed and [ln.strip() for ln in added] == [ln.strip() for ln in removed]:
+        return "mechanical"
+
+    # Rule 3: all added lines are imports (checked before rename to avoid false positives)
+    if added and all(_import_re.match(ln) for ln in added):
+        # Only mechanical if removed lines are also import-only (or empty)
+        if not removed or all(_import_re.match(ln) for ln in removed):
+            return "mechanical"
+
+    # Rule 2: rename — collapse all identifiers and compare structure
+    def _skeleton(line: str) -> str:
+        return re.sub(r"[a-zA-Z_]\w*", "_", line.strip())
+
+    if added and removed and [_skeleton(ln) for ln in added] == [_skeleton(ln) for ln in removed]:
+        return "mechanical"
+
+    return "logical"
+
+
+def filter_mechanical_hunks(file_items: list[dict]) -> tuple[list[dict], list[str]]:
+    """Remove mechanical hunks from each file's diff.
+
+    Each item is {"file": str, "diff": str}.
+    Returns a list with the same files, but diffs stripped of mechanical-only hunks.
+    Files where ALL hunks are mechanical are dropped entirely; they are tracked in the
+    returned metadata (second return value: list of skipped filenames).
+
+    Returns (filtered_items, skipped_files).
+    """
+    result: list[dict] = []
+    skipped: list[str] = []
+
+    for item in file_items:
+        diff = item["diff"]
+        lines = diff.split("\n")
+
+        # Split diff into header + list of (hunk_header_line, hunk_body_lines)
+        header_lines: list[str] = []
+        hunks: list[tuple[str, list[str]]] = []
+        in_hunk = False
+        current_hunk_header = ""
+        current_hunk_body: list[str] = []
+
+        for line in lines:
+            if line.startswith("@@"):
+                if in_hunk:
+                    hunks.append((current_hunk_header, current_hunk_body))
+                current_hunk_header = line
+                current_hunk_body = []
+                in_hunk = True
+            elif not in_hunk:
+                header_lines.append(line)
+            else:
+                current_hunk_body.append(line)
+
+        if in_hunk:
+            hunks.append((current_hunk_header, current_hunk_body))
+
+        if not hunks:
+            result.append(item)
+            continue
+
+        logical_hunks = [
+            (hdr, body)
+            for hdr, body in hunks
+            if classify_hunk([hdr] + body) == "logical"
+        ]
+
+        if not logical_hunks:
+            skipped.append(item["file"])
+            continue
+
+        # Reconstruct diff with only logical hunks (header preserved)
+        new_diff = "\n".join(header_lines)
+        for hdr, body in logical_hunks:
+            new_diff += "\n" + hdr + "\n" + "\n".join(body)
+
+        result.append({"file": item["file"], "diff": new_diff})
+
+    return result, skipped
+
+
 def build_position_map(diff: str) -> dict[str, dict[int, int]]:
     """
     解析 unified diff，返回 {文件路径: {新文件行号: diff内position偏移量}}。

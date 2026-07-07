@@ -116,6 +116,7 @@ def _format_inline_body(issue: ReviewIssue) -> str:
 def _build_review_body(
     result: ReviewResult,
     fallback_issues: list[ReviewIssue],
+    coverage: dict | None = None,
 ) -> str:
     lines = [
         "## PRism Review",
@@ -125,6 +126,26 @@ def _build_review_body(
         f"**总结**: {result.summary}",
         "",
     ]
+
+    # Large PR warning
+    if coverage and coverage.get("is_large_pr"):
+        total = coverage.get("total", 0)
+        reviewed = coverage.get("reviewed", 0)
+        skipped_mech = coverage.get("skipped_mechanical", [])
+        stats = result.stats
+        total_lines = (stats.additions or 0) + (stats.deletions or 0)
+        lines += [
+            f"> ⚠️ **大 PR 提示**：本 PR 包含 {total} 个文件 / {total_lines} 行改动，超过建议上限。",
+            "> AI 审查覆盖不完整，建议拆分后重新提交。",
+            ">",
+            f"> 📊 **覆盖范围**：审查了 {reviewed}/{total} 个文件",
+        ]
+        if skipped_mech:
+            skipped_display = "、".join(f"`{f}`" for f in skipped_mech[:5])
+            if len(skipped_mech) > 5:
+                skipped_display += f" 等 {len(skipped_mech)} 个文件"
+            lines.append(f"> 跳过文件：{skipped_display}（全为格式化/重命名等机械改动）")
+        lines.append("")
 
     # walkthrough 表（兼容尚未有该字段的旧模型）
     walkthrough = getattr(result, "walkthrough", None) or []
@@ -144,12 +165,6 @@ def _build_review_body(
                 summary = getattr(entry, "summary", "")
             lines.append(f"| `{path}` | {summary} |")
         lines.append("")
-
-    if result.diff_truncated:
-        lines += [
-            "> ⚠️ diff 超过 100KB，仅分析了前 100KB 的变更，部分文件未覆盖。",
-            "",
-        ]
 
     # fallback 问题汇总（无法定位到具体行的问题）
     if fallback_issues:
@@ -204,6 +219,7 @@ async def post_review_to_github(
     github_token: str,
     result: ReviewResult,
     position_map: dict[str, dict[int, int]],
+    coverage: dict | None = None,
 ) -> dict:
     inline_comments: list[dict] = []
     fallback_issues: list[ReviewIssue] = []
@@ -230,7 +246,7 @@ async def post_review_to_github(
         else:
             fallback_issues.append(issue)
 
-    body = _build_review_body(result, fallback_issues)
+    body = _build_review_body(result, fallback_issues, coverage=coverage)
 
     last_exc: Exception | None = None
     for attempt in range(_MAX_RETRIES):

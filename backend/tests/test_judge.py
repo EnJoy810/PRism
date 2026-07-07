@@ -164,11 +164,17 @@ class TestImpactGate:
         result = judge.reduce_noise([f], min_confidence=0.6)
         assert result == []
 
-    def test_missing_impact_type_uses_legacy_noise_filter(self):
+    def test_missing_impact_type_is_discarded(self):
+        """Findings without an explicit actionable impact_type are filtered out.
+
+        The legacy fallback (_is_low_value_quality_finding) was removed in favor
+        of a strict gate: impact_type MUST be in _ACTIONABLE_IMPACT_TYPES.
+        This enforces the SNR-first principle — agents must classify impact.
+        """
         f = _finding("a.ts", 10, "Runtime bug", "WARNING", 0.9, "quality", impact_type=None)
         judge = JudgeAgent(api_key="sk-test")
         result = judge.reduce_noise([f], min_confidence=0.6)
-        assert result == [f]
+        assert result == []
 
     def test_frontend_idor_from_client_param_discarded_without_backend_evidence(self):
         f = _finding(

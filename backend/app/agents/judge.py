@@ -17,59 +17,6 @@ _CATEGORY_KEYWORDS: dict[str, set[str]] = {
                 "import", "type", "null", "error handling"},
 }
 
-_LOW_VALUE_QUALITY_KEYWORDS = {
-    "annotation",
-    "comment",
-    "consistency",
-    "docstring",
-    "format",
-    "formatting",
-    "label",
-    "naming",
-    "readability",
-    "style",
-    "type annotation",
-    "标签",
-    "注释",
-    "返回注解",
-    "格式",
-    "可读性",
-    "命名",
-    "一致性",
-    "风格",
-}
-
-_CONSEQUENCE_KEYWORDS = {
-    "api",
-    "backward",
-    "break",
-    "call",
-    "caller",
-    "ci",
-    "crash",
-    "exception",
-    "fail",
-    "failure",
-    "incompatible",
-    "mypy",
-    "pyright",
-    "runtime",
-    "signature mismatch",
-    "type check",
-    "typeerror",
-    "兼容",
-    "失败",
-    "异常",
-    "崩溃",
-    "破坏",
-    "类型检查",
-    "签名不匹配",
-    "调用",
-    "运行时",
-}
-
-_LOW_VALUE_IMPACT_TYPES = {"style_only", "info_only", "documentation_only"}
-
 _FRONTEND_EXTENSIONS = (".ts", ".tsx", ".js", ".jsx", ".vue", ".svelte")
 
 _FRONTEND_PATH_MARKERS = (
@@ -394,15 +341,6 @@ class JudgeAgent:
             and not _is_contradicted_missing_export_finding(f, passed_exports)
         ]
 
-    def _is_low_value_quality_finding(self, finding: FindingSchema) -> bool:
-        if finding.category != "quality" or finding.severity == "ERROR":
-            return False
-
-        text = f"{finding.title} {finding.description}".lower()
-        has_low_value_marker = any(keyword in text for keyword in _LOW_VALUE_QUALITY_KEYWORDS)
-        has_consequence = any(keyword in text for keyword in _CONSEQUENCE_KEYWORDS)
-        return has_low_value_marker and not has_consequence
-
     def _is_frontend_security_guess(self, finding: FindingSchema) -> bool:
         if finding.category != "security":
             return False
@@ -437,11 +375,9 @@ class JudgeAgent:
             return False
 
         impact_type = (finding.impact_type or "").strip().lower()
-        if impact_type in _LOW_VALUE_IMPACT_TYPES:
+        if impact_type not in _ACTIONABLE_IMPACT_TYPES:
             return False
-        if impact_type in _ACTIONABLE_IMPACT_TYPES:
-            return bool((finding.impact_statement or "").strip())
-        return not self._is_low_value_quality_finding(finding)
+        return bool((finding.impact_statement or "").strip())
 
 
 def _passed_verified_imports(verification: dict) -> set[tuple[str, str]]:

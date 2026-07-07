@@ -14,6 +14,17 @@ SEVERITY_ORDER = {"ERROR": 0, "WARNING": 1, "INFO": 2}
 # agents are instructed in their system prompts not to report issues inside
 # docstrings or comments — that handles the multiline case at the source.
 
+def _is_comment_line(stripped: str) -> bool:
+    if stripped.startswith(("# ", "#!", "//")):
+        return True
+    # "* " or lone "*" = JSDoc comment line; "**kwargs" or "*args" are not
+    if stripped.startswith("* ") or stripped == "*":
+        return True
+    if stripped.startswith("/*"):
+        return True
+    return False
+
+
 def is_line_in_non_executable_context(diff: str, file_path: str, line_num: int) -> bool:
     """Return True if the reported line is a single-line comment.
 
@@ -43,22 +54,12 @@ def is_line_in_non_executable_context(diff: str, file_path: str, line_num: int) 
                 new_line += 1
                 if new_line == line_num:
                     stripped = raw[1:].strip()
-                    return (
-                        stripped.startswith("#")
-                        or stripped.startswith("//")
-                        or stripped.startswith("*")
-                        or stripped.startswith("/*")
-                    )
+                    return _is_comment_line(stripped)
             elif raw.startswith(" "):
                 new_line += 1
                 if new_line == line_num:
                     stripped = raw[1:].strip()
-                    return (
-                        stripped.startswith("#")
-                        or stripped.startswith("//")
-                        or stripped.startswith("*")
-                        or stripped.startswith("/*")
-                    )
+                    return _is_comment_line(stripped)
     return False
 
 

@@ -3,8 +3,6 @@ import logging
 import re
 from abc import ABC, abstractmethod
 
-from json_repair import repair_json
-
 from app.models.agent import AgentResult, AgentStatus, FindingSchema
 from app.services.llm import LLMClient
 
@@ -48,10 +46,18 @@ class BaseAgent(ABC):
         else:
             json_part = content.strip()
 
+        # With response_format=json_object the content is already valid JSON.
+        # Still extract the outermost {...} as a safety net for any preamble text.
         if "{" in json_part and "}" in json_part:
             json_part = json_part[json_part.find("{"):json_part.rfind("}") + 1]
-        repaired = repair_json(json_part, return_objects=False)
-        data = json.loads(repaired)
+
+        try:
+            data = json.loads(json_part)
+        except json.JSONDecodeError:
+            # Fallback: attempt structural repair for models that ignore response_format
+            from json_repair import repair_json
+            data = json.loads(repair_json(json_part, return_objects=False))
+
         if isinstance(data, list):
             findings_data = data
         else:
@@ -73,6 +79,7 @@ class BaseAgent(ABC):
                 messages=messages,
                 temperature=0.0,
                 estimated_tokens=len(diff) // 4,
+                response_format={"type": "json_object"},
             )
         except Exception as e:
             logger.warning("%s: agent failed: %s", self.__class__.__name__, e)

@@ -17,6 +17,7 @@ from app.agents.performance import PerformanceAgent
 from app.agents.quality import QualityAgent
 from app.agents.security import SecurityAgent
 from app.models.agent import AgentResult, AgentStatus, FindingSchema
+from app.services.diff import filter_mechanical_hunks
 from app.services.evidence import publication_gate, severity
 
 logger = structlog.get_logger(__name__)
@@ -125,8 +126,6 @@ class ReviewGraph:
         owner, repo, pr_number = parse_pr_url(pr_url)
         ctx = await github_fetch_context(owner, repo, pr_number)
         ctx["pr_url"] = pr_url
-        if ctx.get("diff_truncated"):
-            logger.warning("diff truncated >100KB for %s — coverage may be partial", pr_url)
         return ctx
 
     async def _fetch_pr_context(self, pr_url: str, github_token: str | None = None) -> dict:
@@ -138,8 +137,6 @@ class ReviewGraph:
         owner, repo, pr_number = parse_pr_url(pr_url)
         ctx = await github_fetch_context(owner, repo, pr_number, github_token)
         ctx["pr_url"] = pr_url
-        if ctx.get("diff_truncated"):
-            logger.warning("diff truncated >100KB for %s — coverage may be partial", pr_url)
         return ctx
 
     async def run(
@@ -191,8 +188,7 @@ class ReviewGraph:
             return await self._run_per_file(context, pr_url, t0, event=event)
 
         needs_batching = (
-            context.get("diff_truncated", False)
-            or len(context.get("files", [])) > _BATCH_SIZE
+            len(context.get("files", [])) > _BATCH_SIZE
             or diff_tokens > _max_tokens_per_call()
         )
         if not needs_batching:
@@ -754,26 +750,54 @@ class ReviewGraph:
         )
 
     async def _run_per_file(self, context: dict, pr_url: str, t0: float, event: str = "") -> dict:
+        # Prefer per-file patch fields (no truncation) over the whole-diff fallback
         diff = context.get("diff", "")
-        file_diffs = split_diff_by_file(diff)
+        files_detail = context.get("files_detail", [])
+        if files_detail and any(fd.get("patch") for fd in files_detail):
+            raw_items = [
+                {"file": fd["filename"], "diff": fd["patch"]}
+                for fd in files_detail
+                if fd.get("patch")
+            ]
+        else:
+            file_diffs_map = split_diff_by_file(diff)
+            raw_items = [{"file": f, "diff": d} for f, d in file_diffs_map.items()]
 
-        # 基础过滤：始终跳过 node_modules / lock 文件等
-        candidates = {f: d for f, d in file_diffs.items() if not _should_skip_diff_file(f)}
+        total_files = len(raw_items)
 
-        # 大 PR 主动降级：超过阈值时额外过滤文档/配置/图片等非核心文件
-        is_large_pr = len(candidates) > _LARGE_PR_FILE_THRESHOLD
+        # Basic filter: always skip node_modules / lock files etc.
+        file_items = [fi for fi in raw_items if not _should_skip_diff_file(fi["file"])]
+
+        # Large PR: additionally skip docs/config/image files
+        is_large_pr = len(file_items) > _LARGE_PR_FILE_THRESHOLD
         if is_large_pr:
-            before = len(candidates)
-            candidates = {f: d for f, d in candidates.items() if not _should_skip_large_pr_file(f)}
+            before = len(file_items)
+            file_items = [fi for fi in file_items if not _should_skip_large_pr_file(fi["file"])]
             logger.info(
-                "per-file: large PR (%d files) — degraded mode, skipped %d non-code files, reviewing %d",
-                len(file_diffs), before - len(candidates), len(candidates),
+                "per-file: large PR (%d files) — skipped %d non-code files, reviewing %d",
+                total_files, before - len(file_items), len(file_items),
             )
 
-        file_items = [{"file": f, "diff": d} for f, d in candidates.items()]
+        # Hunk-level filter: drop mechanical-only hunks (rename / whitespace / imports)
+        file_items, skipped_mechanical = filter_mechanical_hunks(file_items)
+        if skipped_mechanical:
+            logger.info(
+                "per-file: hunk filter skipped %d fully-mechanical files: %s",
+                len(skipped_mechanical), skipped_mechanical[:5],
+            )
+
+        # Store coverage metadata for large-PR warning in PR comment
+        context["_coverage"] = {
+            "total": total_files,
+            "reviewed": len(file_items),
+            "skipped_mechanical": skipped_mechanical,
+            "is_large_pr": is_large_pr or (total_files > _LARGE_PR_FILE_THRESHOLD),
+        }
+
         logger.info(
-            "per-file: %d files after filtering (skipped %d)",
-            len(file_items), len(file_diffs) - len(file_items),
+            "per-file: %d files after filtering (skipped %d basic + %d mechanical)",
+            len(file_items), total_files - len(file_items) - len(skipped_mechanical),
+            len(skipped_mechanical),
         )
 
         if not file_items:
@@ -788,10 +812,6 @@ class ReviewGraph:
                     **context,
                     "diff": item["diff"],
                     "files": [item["file"]],
-                    # per-file 模式下去掉 PR description：
-                    # 每个文件的 agent 只看局部 diff，完整 description 会导致
-                    # "description 和这个文件不匹配"的重复噪声
-                    "pr_description": "",
                 }
                 return await self._run_agents(item["diff"], file_ctx)
 
@@ -979,8 +999,8 @@ class ReviewGraph:
             "merge_recommendation": decision,
             "skipped_agents": skipped,
             "diff": diff or "",
-            "diff_truncated": context.get("diff_truncated", False),
             "event": event,
+            "coverage": context.get("_coverage"),
         }
 
     async def post_comment(
@@ -1006,7 +1026,7 @@ class ReviewGraph:
             risk_level=result.get("risk_level", "LOW"),
             issues=issues,
             stats=stats,
-            diff_truncated=result.get("diff_truncated", False),
+            diff_truncated=False,
         )
 
         event = result.get("event", "")
@@ -1017,7 +1037,8 @@ class ReviewGraph:
         for attempt in range(3):
             try:
                 data = await post_review_to_github(
-                    owner, repo, pr_number, github_token, review_result, position_map
+                    owner, repo, pr_number, github_token, review_result, position_map,
+                    coverage=result.get("coverage"),
                 )
                 if "synchronize" in event:
                     await dismiss_old_reviews(owner, repo, pr_number, github_token)

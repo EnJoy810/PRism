@@ -76,10 +76,6 @@ async def fetch_pr_context(
         )
         diff_resp.raise_for_status()
         diff_text = diff_resp.text
-        diff_truncated = False
-        if len(diff_text) > 100_000:
-            diff_text = diff_text[:100_000]
-            diff_truncated = True
 
         # Paginate through all files
         files_data: list[dict] = []
@@ -108,7 +104,6 @@ async def fetch_pr_context(
         "title": pr_data["title"],
         "description": pr_data.get("body") or "",
         "diff": diff_text,
-        "diff_truncated": diff_truncated,
         "files": [f["filename"] for f in files_data],
         "stats": stats,
         "head_sha": pr_data["head"]["sha"],
@@ -120,7 +115,13 @@ async def fetch_pr_context(
         "created_at": pr_data.get("created_at", ""),
         "commits": pr_data.get("commits", 0),
         "files_detail": [
-            {"filename": f["filename"], "additions": f["additions"], "deletions": f["deletions"]}
+            {
+                "filename": f["filename"],
+                "additions": f["additions"],
+                "deletions": f["deletions"],
+                "status": f.get("status", "modified"),  # added / modified / removed / renamed
+                "patch": f.get("patch", ""),             # 该文件自己的 diff，无截断
+            }
             for f in files_data
         ],
     }

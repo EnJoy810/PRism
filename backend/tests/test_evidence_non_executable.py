@@ -143,3 +143,43 @@ def test_real_code_line_returns_false():
     diff = _make_diff("app/foo.py", content)
     # line 2: "    x = import_module('os')"  — 真实代码（虽然有 import 字样）
     assert is_line_in_non_executable_context(diff, "app/foo.py", 2) is False
+
+
+# ---------------------------------------------------------------------------
+# *args / **kwargs 不应被误判为注释（旧代码 startswith("*") 的 bug 修复）
+# ---------------------------------------------------------------------------
+
+def test_python_args_not_treated_as_comment():
+    content = textwrap.dedent("""\
+        def foo(*args, **kwargs):
+            return args
+    """)
+    diff = _make_diff("app/foo.py", content)
+    # line 1: "def foo(*args, **kwargs):"  — 真实代码
+    assert is_line_in_non_executable_context(diff, "app/foo.py", 1) is False
+
+
+def test_python_kwargs_not_treated_as_comment():
+    content = textwrap.dedent("""\
+        def foo(**kwargs):
+            return kwargs
+    """)
+    diff = _make_diff("app/foo.py", content)
+    # line 1: "def foo(**kwargs):"  — 真实代码
+    assert is_line_in_non_executable_context(diff, "app/foo.py", 1) is False
+
+
+def test_jsdoc_continuation_line_with_star_is_comment():
+    """A line starting with '* ' (JSDoc continuation) IS a comment."""
+    content = textwrap.dedent("""\
+        * This is a JSDoc continuation line
+    """)
+    diff = _make_diff("src/foo.ts", content)
+    assert is_line_in_non_executable_context(diff, "src/foo.ts", 1) is True
+
+
+def test_lone_star_is_comment():
+    """A bare '*' line (JSDoc closer area) IS a comment."""
+    content = "*\n"
+    diff = _make_diff("src/foo.ts", content)
+    assert is_line_in_non_executable_context(diff, "src/foo.ts", 1) is True
